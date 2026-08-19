@@ -77,7 +77,7 @@ public sealed class ThermalCoreRuntimeTests
     {
         using var vm = new MainViewModel(new FakeRuntime());
         var view = Arrange(new DashboardView { DataContext = vm }, 1104, 652);
-        var toggle = Assert.IsType<ToggleButton>(view.FindName("ModeToggle"));
+        var toggle = Assert.IsAssignableFrom<ToggleButton>(view.FindName("ModeToggle"));
         var shell = new MainWindow { DataContext = vm };
 
         try
@@ -99,8 +99,8 @@ public sealed class ThermalCoreRuntimeTests
         var runtime = new FakeRuntime();
         using var vm = new MainViewModel(runtime);
         var view = Arrange(new DashboardView { DataContext = vm }, 1104, 652);
-        var toggle = Assert.IsType<ToggleButton>(view.FindName("ModeToggle"));
-        var peer = new ToggleButtonAutomationPeer(toggle);
+        var toggle = Assert.IsAssignableFrom<ToggleButton>(view.FindName("ModeToggle"));
+        var peer = Assert.IsAssignableFrom<ToggleButtonAutomationPeer>(UIElementAutomationPeer.CreatePeerForElement(toggle));
         var provider = Assert.IsAssignableFrom<IToggleProvider>(peer.GetPattern(PatternInterface.Toggle));
 
         Assert.Equal(ToggleState.Off, provider.ToggleState);
@@ -113,6 +113,74 @@ public sealed class ThermalCoreRuntimeTests
 
         Assert.True(toggle.IsChecked);
         Assert.Equal(ToggleState.On, provider.ToggleState);
+    });
+
+    [Fact]
+    public void ModeToggle_AutomationActivationWaitsForAuthoritativeRuntimeSnapshot() => _sta.Run(() =>
+    {
+        var runtime = new ControlledModeRuntime();
+        using var vm = new MainViewModel(runtime, new DispatcherSynchronizationContext(Dispatcher.CurrentDispatcher));
+        var view = Arrange(new DashboardView { DataContext = vm }, 1104, 652);
+        var toggle = Assert.IsAssignableFrom<ToggleButton>(view.FindName("ModeToggle"));
+        var peer = Assert.IsAssignableFrom<ToggleButtonAutomationPeer>(UIElementAutomationPeer.CreatePeerForElement(toggle));
+        var provider = Assert.IsAssignableFrom<IToggleProvider>(peer.GetPattern(PatternInterface.Toggle));
+        var previousContext = SynchronizationContext.Current;
+        SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext(Dispatcher.CurrentDispatcher));
+        try
+        {
+            provider.Toggle();
+
+            Assert.False(toggle.IsChecked);
+            Assert.Equal(ToggleState.Off, provider.ToggleState);
+            Assert.Equal(1, runtime.ModeRequestCount);
+
+            Assert.False(toggle.IsEnabled);
+            Assert.Throws<ElementNotEnabledException>(() => provider.Toggle());
+            Assert.Equal(1, runtime.ModeRequestCount);
+            Assert.Equal(ToggleState.Off, provider.ToggleState);
+
+            runtime.CompleteRequest();
+            PumpUntil(() => !vm.ToggleModeCommand.IsExecuting);
+            Assert.Equal(ToggleState.Off, provider.ToggleState);
+
+            runtime.Publish(Snapshot(RuntimeStatus.Active, 68, new RgbColor(0xFF, 0xC6, 0x4A)));
+            PumpUntil(() => provider.ToggleState == ToggleState.On);
+
+            Assert.True(toggle.IsChecked);
+            Assert.Equal(ToggleState.On, provider.ToggleState);
+        }
+        finally
+        {
+            SynchronizationContext.SetSynchronizationContext(previousContext);
+        }
+    });
+
+    [Fact]
+    public void ModeToggle_FailedAutomationActivationStaysOffAndReportsFailure() => _sta.Run(() =>
+    {
+        var runtime = new ControlledModeRuntime();
+        using var vm = new MainViewModel(runtime, new DispatcherSynchronizationContext(Dispatcher.CurrentDispatcher));
+        var view = Arrange(new DashboardView { DataContext = vm }, 1104, 652);
+        var toggle = Assert.IsAssignableFrom<ToggleButton>(view.FindName("ModeToggle"));
+        var peer = Assert.IsAssignableFrom<ToggleButtonAutomationPeer>(UIElementAutomationPeer.CreatePeerForElement(toggle));
+        var provider = Assert.IsAssignableFrom<IToggleProvider>(peer.GetPattern(PatternInterface.Toggle));
+        var previousContext = SynchronizationContext.Current;
+        SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext(Dispatcher.CurrentDispatcher));
+        try
+        {
+            provider.Toggle();
+            runtime.FailRequest(new InvalidOperationException("runtime rejected mode request"));
+            PumpUntil(() => !vm.ToggleModeCommand.IsExecuting && view.ModeStatusText.Text == "Не удалось изменить режим.");
+
+            Assert.False(toggle.IsChecked);
+            Assert.Equal(ToggleState.Off, provider.ToggleState);
+            Assert.Equal(1, runtime.ModeRequestCount);
+            Assert.Equal("Не удалось изменить режим.", view.ModeStatusText.Text);
+        }
+        finally
+        {
+            SynchronizationContext.SetSynchronizationContext(previousContext);
+        }
     });
 
     [Theory]
@@ -376,6 +444,44 @@ public sealed class ThermalCoreRuntimeTests
         }
     });
 
+    [Theory]
+    [InlineData(1104, 720, 0.182294282442410, -0.195720540466015, 0.817705717557590, 1.195720540466020)]
+    [InlineData(884, 620, 0.170739926983209, -0.170459986143814, 0.829260073016791, 1.170459986143810)]
+    public void WorkspaceGradient_UsesCssOneHundredFortyFiveDegreeGeometry(
+        double width,
+        double height,
+        double expectedStartX,
+        double expectedStartY,
+        double expectedEndX,
+        double expectedEndY) => _sta.Run(() =>
+    {
+        using var vm = new MainViewModel(new FakeRuntime());
+        var shell = new MainWindow { DataContext = vm };
+        try
+        {
+            var workspace = Assert.IsType<Grid>(shell.FindName("WorkspaceSurface"));
+            Arrange(workspace, width, height);
+            var brush = Assert.IsType<LinearGradientBrush>(workspace.Background);
+
+            Assert.Equal(expectedStartX, brush.StartPoint.X, 12);
+            Assert.Equal(expectedStartY, brush.StartPoint.Y, 12);
+            Assert.Equal(expectedEndX, brush.EndPoint.X, 12);
+            Assert.Equal(expectedEndY, brush.EndPoint.Y, 12);
+
+            var physicalX = (brush.EndPoint.X - brush.StartPoint.X) * width;
+            var physicalY = (brush.EndPoint.Y - brush.StartPoint.Y) * height;
+            Assert.Equal(0.573576436351046, physicalX / Math.Sqrt((physicalX * physicalX) + (physicalY * physicalY)), 12);
+            Assert.Equal(0.819152044288992, physicalY / Math.Sqrt((physicalX * physicalX) + (physicalY * physicalY)), 12);
+            Assert.Equal(Color.FromRgb(0x1B, 0x20, 0x25), brush.GradientStops[0].Color);
+            Assert.Equal(Color.FromRgb(0x15, 0x19, 0x1D), brush.GradientStops[1].Color);
+            Assert.Equal(0.65, brush.GradientStops[1].Offset);
+        }
+        finally
+        {
+            shell.Close();
+        }
+    });
+
     [Fact]
     public void Sparkline_RendersAmberAreaBelowActualLine() => _sta.Run(() =>
     {
@@ -424,6 +530,18 @@ public sealed class ThermalCoreRuntimeTests
         return Color.FromArgb(pixel[3], pixel[2], pixel[1], pixel[0]);
     }
 
+    private static void PumpUntil(Func<bool> condition)
+    {
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(2);
+        while (!condition() && DateTime.UtcNow < deadline)
+        {
+            Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.Background);
+            Thread.Yield();
+        }
+
+        Assert.True(condition(), "Condition did not become true before the finite dispatcher deadline.");
+    }
+
     private static RuntimeSnapshot Snapshot(RuntimeStatus status, double temperature, RgbColor color) => new(
         status,
         new TemperatureReading(temperature, "NVIDIA", "NVIDIA GeForce RTX 5070", DateTimeOffset.UtcNow),
@@ -452,6 +570,38 @@ public sealed class ThermalCoreRuntimeTests
             return Task.CompletedTask;
         }
 
+        public Task StartAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+        public Task UpdateSettingsAsync(AppSettings settings, CancellationToken cancellationToken) => Task.CompletedTask;
+        public Task SuspendAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+        public Task ResumeAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+        public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    private sealed class ControlledModeRuntime : IThermalRuntime
+    {
+        private readonly TaskCompletionSource _modeRequest = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public event EventHandler<RuntimeSnapshot>? SnapshotChanged;
+        public RuntimeSnapshot CurrentSnapshot { get; private set; } = new(RuntimeStatus.Disabled, null, null, null, null, null, DateTimeOffset.MinValue, false);
+        public AppSettings CurrentSettings { get; private set; } = AppSettings.Default;
+        public int ModeRequestCount { get; private set; }
+
+        public void Publish(RuntimeSnapshot snapshot)
+        {
+            CurrentSnapshot = snapshot;
+            SnapshotChanged?.Invoke(this, snapshot);
+        }
+
+        public Task SetModeEnabledAsync(bool enabled, CancellationToken cancellationToken)
+        {
+            ModeRequestCount++;
+            CurrentSettings = CurrentSettings with { IsModeEnabled = enabled };
+            return _modeRequest.Task;
+        }
+
+        public void CompleteRequest() => _modeRequest.TrySetResult();
+        public void FailRequest(Exception exception) => _modeRequest.TrySetException(exception);
         public Task StartAsync(CancellationToken cancellationToken) => Task.CompletedTask;
         public Task UpdateSettingsAsync(AppSettings settings, CancellationToken cancellationToken) => Task.CompletedTask;
         public Task SuspendAsync(CancellationToken cancellationToken) => Task.CompletedTask;

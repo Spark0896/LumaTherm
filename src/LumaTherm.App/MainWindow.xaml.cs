@@ -11,6 +11,8 @@ namespace LumaTherm.App;
 
 public partial class MainWindow : System.Windows.Window
 {
+    private const double WorkspaceGradientAngleDegrees = 145;
+
     public MainWindow() => InitializeComponent();
 
     internal IReadOnlyList<Button> IconOnlyButtons => [HomeButton, SettingsButton, AboutButton, MinimizeButton, MaximizeButton, CloseButton];
@@ -57,5 +59,23 @@ public partial class MainWindow : System.Windows.Window
         }
 
         if (e.ButtonState == MouseButtonState.Pressed) DragMove();
+    }
+
+    private void WorkspaceSurface_SizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        if (e.NewSize.Width <= 0 || e.NewSize.Height <= 0 || WorkspaceSurface.Background is not LinearGradientBrush brush)
+        {
+            return;
+        }
+
+        var radians = WorkspaceGradientAngleDegrees * Math.PI / 180;
+        var directionX = Math.Sin(radians);
+        var directionY = -Math.Cos(radians);
+        var lineLength = Math.Abs(e.NewSize.Width * directionX) + Math.Abs(e.NewSize.Height * directionY);
+        var halfRelativeX = directionX * lineLength / (2 * e.NewSize.Width);
+        var halfRelativeY = directionY * lineLength / (2 * e.NewSize.Height);
+
+        brush.StartPoint = new System.Windows.Point(0.5 - halfRelativeX, 0.5 - halfRelativeY);
+        brush.EndPoint = new System.Windows.Point(0.5 + halfRelativeX, 0.5 + halfRelativeY);
     }
 }

@@ -40,14 +40,14 @@
                 </StackPanel>
                 <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
                     <TextBlock x:Name="ModeStatusText" Text="{Binding StatusText}" Foreground="#B9C2C9" FontSize="11" VerticalAlignment="Center" Margin="0,0,10,0" />
-                    <ToggleButton x:Name="ModeToggle"
+                    <controls:AuthoritativeToggleButton x:Name="ModeToggle"
                             Width="44" Height="24" Padding="3" BorderThickness="0"
                             Command="{Binding ToggleModeCommand}"
                             IsChecked="{Binding IsModeEnabled, Mode=OneWay}"
                             automation:AutomationProperties.Name="Включить или выключить термосинхронизацию"
                             KeyboardNavigation.IsTabStop="True">
-                        <ToggleButton.Style>
-                            <Style TargetType="ToggleButton">
+                        <controls:AuthoritativeToggleButton.Style>
+                            <Style TargetType="{x:Type controls:AuthoritativeToggleButton}">
                                 <Setter Property="Background" Value="#343B42" />
                                 <Setter Property="FocusVisualStyle">
                                     <Setter.Value>
@@ -60,7 +60,7 @@
                                 </Setter>
                                 <Setter Property="Template">
                                     <Setter.Value>
-                                        <ControlTemplate TargetType="ToggleButton">
+                                        <ControlTemplate TargetType="{x:Type controls:AuthoritativeToggleButton}">
                                             <Border x:Name="SwitchTrack" Background="{TemplateBinding Background}" CornerRadius="13" Padding="3">
                                                 <Ellipse x:Name="SwitchThumb" Width="18" Height="18" Fill="#7A858E" HorizontalAlignment="Left" />
                                             </Border>
@@ -78,8 +78,8 @@
                                     </Setter.Value>
                                 </Setter>
                             </Style>
-                        </ToggleButton.Style>
-                    </ToggleButton>
+                        </controls:AuthoritativeToggleButton.Style>
+                    </controls:AuthoritativeToggleButton>
                 </StackPanel>
             </Grid>
 

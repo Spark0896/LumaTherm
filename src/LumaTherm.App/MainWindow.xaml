@@ -57,7 +57,7 @@
                 </Grid>
             </Border>
 
-            <Grid x:Name="WorkspaceSurface" Grid.Column="1">
+            <Grid x:Name="WorkspaceSurface" Grid.Column="1" SizeChanged="WorkspaceSurface_SizeChanged">
                 <Grid.Background>
                     <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
                         <GradientStop Color="#1B2025" Offset="0" />
