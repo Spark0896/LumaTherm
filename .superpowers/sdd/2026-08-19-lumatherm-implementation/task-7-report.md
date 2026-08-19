@@ -93,3 +93,5 @@ The following test-first changes were made against commit `c147671`:
 - `ThermalRuntime.UpdateSettingsAsync` is the sole persistence owner. Shared-recorder tests prove normal ordering and exactly one persistence.
 - Any post-startup runtime failure compensates autostart and leaves live settings/profile events unchanged; rollback failure is visible and user-safe.
 - `SaveCommand` exposes/recovers execution state and contains unexpected errors; queued callbacks and profile synchronization are ignored after disposal.
+
+Fix implementation commit: `ec48693` (`fix: harden view model state and settings saves`).
