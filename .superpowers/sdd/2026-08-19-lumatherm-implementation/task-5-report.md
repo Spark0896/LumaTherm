@@ -71,3 +71,69 @@ Exit code: `0`; warnings `0`; errors `0`. This separately compiled the real Wind
 
 - Physical LampArray behavior was intentionally not exercised. Runtime validation against `VID_048D&PID_5702` remains a manual hardware step.
 - `DevicesChanged` is forwarded on the DeviceWatcher callback thread; a future UI subscriber must marshal to its dispatcher, as is standard for infrastructure events.
+
+## Fix Round 1/5 — Important/spec findings
+
+### Root causes
+
+1. `DiscoverAsync` projected only handles passing `IsAvailable`, losing stable unavailable IDs needed by settings.
+2. `ConnectAsync` selected from one snapshot and published after `Enable` without rechecking availability or whether a device event invalidated that snapshot.
+3. Windows enumeration wrote directly into a last-writer-wins cache, so an old asynchronous snapshot could overwrite a newer removal.
+4. `DisposeAsync` performed handle disable before platform disposal without failure aggregation/finalization; a disable exception skipped watcher disposal after `_disposed` was already set.
+5. `DiscoverAsync` did not participate in the controller operation gate, allowing platform disposal during its await; the Windows adapter had the same direct-call lifecycle gap.
+
+### Witnessed RED
+
+Controller tests were changed/added before controller production changes:
+
+```powershell
+& "$PWD\.dotnet\dotnet.exe" test LumaTherm.sln --no-restore --filter "FullyQualifiedName~LampArrayLightingControllerTests"
+```
+
+Exit code `1`: `5` intended failures, `10` passes. The failures independently reproduced unavailable discovery omission, disposal overtaking blocked discovery, blocked-enable removal returning `true`, synchronous remove/re-add returning `true`, and platform disposal count remaining `0` after a throwing handle disable.
+
+The pure availability-state tests were then added before extracting the cache state:
+
+```powershell
+& "$PWD\.dotnet\dotnet.exe" test LumaTherm.sln --no-restore --filter "FullyQualifiedName~LampArrayAvailabilityStateTests"
+```
+
+Exit code `1`: expected `CS0246` because `LampArrayAvailabilityState` did not yet exist.
+
+### GREEN and implementation
+
+- Discovery now returns all platform device infos, including literal `IsAvailable = false`; connection selection still filters to available handles.
+- Discovery, connection, write, release, and disposal share the controller operation gate and recheck disposal after awaits.
+- Connection captures the device-event generation before discovery, enables without holding the state lock, and publishes only when both generation and availability remain valid. Stale/removed handles are disabled and return `false`.
+- Controller disposal clears connection state first, always attempts platform disposal, preserves a single original exception, aggregates dual failures deterministically, and remains idempotent.
+- New internal `LampArrayAvailabilityState` records watcher observations with generations and applies enumeration snapshots only when they are not older than the per-device entry. Tests cover both removal tombstone preservation and a genuinely newer reappearance.
+- `WindowsLampArrayPlatform` uses that state and serializes direct `FindAllAsync`/`DisposeAsync` calls, with disposed rechecks after WinRT awaits. Physical LampArray was not instantiated by tests.
+
+Focused final command:
+
+```powershell
+& "$PWD\.dotnet\dotnet.exe" test LumaTherm.sln --no-restore --filter "FullyQualifiedName~Lighting"
+```
+
+Exit code `0`: Core Lighting `2/2`; Infrastructure Lighting `17/17`; total `19/19`.
+
+### Final verification
+
+```powershell
+& "$PWD\.dotnet\dotnet.exe" test LumaTherm.sln --no-restore
+```
+
+Exit code `0`: Core `36/36`; Infrastructure `58/58`; total `94/94`, no failures or skips.
+
+```powershell
+& "$PWD\.dotnet\dotnet.exe" build LumaTherm.sln --no-restore
+```
+
+Exit code `0`: warnings `0`, errors `0`; the real Windows adapter compiled at `net8.0-windows10.0.22621.0`.
+
+### Self-review and concerns
+
+- Mutation audit: reinstating discovery filtering, omitting either post-enable check, removing generation comparison, restoring last-writer cache behavior, skipping platform disposal after disable failure, or removing discovery serialization breaks a focused test.
+- Controller policy, pure availability state, and WinRT adapter responsibilities remain separate. Core remains BCL-only.
+- The two deferred minor findings were not changed.
+- Remaining concern is unchanged: runtime HID behavior requires a deliberate manual hardware validation; automated tests never write physical lighting.

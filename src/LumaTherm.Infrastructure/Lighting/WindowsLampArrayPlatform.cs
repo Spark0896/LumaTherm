@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using LumaTherm.Core.Colors;
 using Windows.Devices.Enumeration;
 using Windows.Devices.Lights;
@@ -7,9 +6,10 @@ namespace LumaTherm.Infrastructure.Lighting;
 
 public sealed class WindowsLampArrayPlatform : ILampArrayPlatform
 {
-    private readonly ConcurrentDictionary<string, bool> _availability = new(StringComparer.Ordinal);
+    private readonly LampArrayAvailabilityState _availability = new();
     private readonly DeviceWatcher _watcher;
     private readonly object _lifetimeLock = new();
+    private readonly SemaphoreSlim _operations = new(1, 1);
     private bool _disposed;
 
     public WindowsLampArrayPlatform()
@@ -26,62 +26,80 @@ public sealed class WindowsLampArrayPlatform : ILampArrayPlatform
     public async Task<IReadOnlyList<ILampArrayHandle>> FindAllAsync(CancellationToken cancellationToken)
     {
         ThrowIfDisposed();
-        var deviceInformation = await DeviceInformation
-            .FindAllAsync(LampArray.GetDeviceSelector())
-            .AsTask(cancellationToken)
-            .ConfigureAwait(false);
-        var handles = new List<ILampArrayHandle>(deviceInformation.Count);
-
-        foreach (var device in deviceInformation)
+        await _operations.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            _availability[device.Id] = device.IsEnabled;
-            var lampArray = await LampArray.FromIdAsync(device.Id)
+            ThrowIfDisposed();
+            var snapshotGeneration = _availability.CaptureGeneration();
+            var deviceInformation = await DeviceInformation
+                .FindAllAsync(LampArray.GetDeviceSelector())
                 .AsTask(cancellationToken)
                 .ConfigureAwait(false);
-            if (lampArray is not null)
-            {
-                handles.Add(new WindowsLampArrayHandle(
-                    lampArray,
-                    device.Name,
-                    () => _availability.GetValueOrDefault(device.Id)));
-            }
-        }
+            ThrowIfDisposed();
+            var handles = new List<ILampArrayHandle>(deviceInformation.Count);
 
-        return handles;
+            foreach (var device in deviceInformation)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                _availability.ApplySnapshot(device.Id, device.IsEnabled, snapshotGeneration);
+                var lampArray = await LampArray.FromIdAsync(device.Id)
+                    .AsTask(cancellationToken)
+                    .ConfigureAwait(false);
+                ThrowIfDisposed();
+                if (lampArray is not null)
+                {
+                    handles.Add(new WindowsLampArrayHandle(
+                        lampArray,
+                        device.Name,
+                        () => _availability.IsAvailable(device.Id)));
+                }
+            }
+
+            return handles;
+        }
+        finally
+        {
+            _operations.Release();
+        }
     }
 
-    public ValueTask DisposeAsync()
+    public async ValueTask DisposeAsync()
     {
-        lock (_lifetimeLock)
+        await _operations.WaitAsync().ConfigureAwait(false);
+        try
         {
-            if (_disposed)
+            lock (_lifetimeLock)
             {
-                return ValueTask.CompletedTask;
-            }
+                if (_disposed)
+                {
+                    return;
+                }
 
-            _disposed = true;
-            _watcher.Added -= OnDeviceAdded;
-            _watcher.Removed -= OnDeviceRemoved;
-            _watcher.Updated -= OnDeviceUpdated;
-            if (_watcher.Status is DeviceWatcherStatus.Started or DeviceWatcherStatus.EnumerationCompleted)
-            {
-                _watcher.Stop();
+                _disposed = true;
+                _watcher.Added -= OnDeviceAdded;
+                _watcher.Removed -= OnDeviceRemoved;
+                _watcher.Updated -= OnDeviceUpdated;
+                if (_watcher.Status is DeviceWatcherStatus.Started or DeviceWatcherStatus.EnumerationCompleted)
+                {
+                    _watcher.Stop();
+                }
             }
         }
-
-        return ValueTask.CompletedTask;
+        finally
+        {
+            _operations.Release();
+        }
     }
 
     private void OnDeviceAdded(DeviceWatcher sender, DeviceInformation device)
     {
-        _availability[device.Id] = device.IsEnabled;
+        _availability.RecordWatcherUpdate(device.Id, device.IsEnabled);
         RaiseDevicesChanged();
     }
 
     private void OnDeviceRemoved(DeviceWatcher sender, DeviceInformationUpdate device)
     {
-        _availability[device.Id] = false;
+        _availability.RecordWatcherUpdate(device.Id, false);
         RaiseDevicesChanged();
     }
 

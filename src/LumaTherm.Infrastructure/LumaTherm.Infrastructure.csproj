@@ -6,4 +6,7 @@
   <ItemGroup>
     <ProjectReference Include="..\LumaTherm.Core\LumaTherm.Core.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="LumaTherm.Infrastructure.Tests" />
+  </ItemGroup>
 </Project>

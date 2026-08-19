@@ -7,7 +7,7 @@ namespace LumaTherm.Infrastructure.Tests.Lighting;
 public sealed class LampArrayLightingControllerTests
 {
     [Fact]
-    public async Task DiscoverAsync_ReturnsAllAvailableDeviceInformation()
+    public async Task DiscoverAsync_ReturnsAvailableAndUnavailableDeviceInformation()
     {
         var platform = new InMemoryLampArrayPlatform(
             new InMemoryLampArrayHandle("device-1", "Other Device", 8, true),
@@ -21,8 +21,36 @@ public sealed class LampArrayLightingControllerTests
             [
                 new LightingDeviceInfo("device-1", "Other Device", 8, true),
                 new LightingDeviceInfo("device-2", "GIGABYTE Device", 16, true),
+                new LightingDeviceInfo("device-3", "Unavailable Device", 32, false),
             ],
             devices);
+    }
+
+    [Fact]
+    public async Task DiscoverAsync_CompletesBeforeAConcurrentDisposalReleasesThePlatform()
+    {
+        var handle = new InMemoryLampArrayHandle("device-1", "Other Device", 8, true);
+        var platform = new InMemoryLampArrayPlatform(handle);
+        platform.BlockFindAll();
+        var controller = new LampArrayLightingController(platform);
+        var discovery = controller.DiscoverAsync(TestContext.Current.CancellationToken);
+        await platform.FindAllStarted;
+
+        var disposal = controller.DisposeAsync().AsTask();
+        try
+        {
+            Assert.False(disposal.IsCompleted);
+            Assert.Equal(0, platform.DisposeCount);
+        }
+        finally
+        {
+            platform.ReleaseFindAll();
+        }
+
+        var devices = await discovery;
+        await disposal;
+        Assert.Equal([new LightingDeviceInfo("device-1", "Other Device", 8, true)], devices);
+        Assert.Equal(1, platform.DisposeCount);
     }
 
     [Fact]
@@ -102,6 +130,55 @@ public sealed class LampArrayLightingControllerTests
     }
 
     [Fact]
+    public async Task ConnectAsync_RejectsADeviceThatBecomesUnavailableWhileEnableIsBlocked()
+    {
+        var enableEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var continueEnable = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var handle = new InMemoryLampArrayHandle("selected", "GIGABYTE Device", 8, true)
+        {
+            OnEnable = () =>
+            {
+                enableEntered.TrySetResult();
+                continueEnable.Task.GetAwaiter().GetResult();
+            },
+        };
+        var platform = new InMemoryLampArrayPlatform(handle);
+        await using var controller = new LampArrayLightingController(platform);
+        var connection = Task.Run(
+            () => controller.ConnectAsync(null, TestContext.Current.CancellationToken),
+            TestContext.Current.CancellationToken);
+        await enableEntered.Task.WaitAsync(TestContext.Current.CancellationToken);
+
+        handle.IsAvailable = false;
+        continueEnable.TrySetResult();
+
+        Assert.False(await connection);
+        Assert.False(controller.IsConnected);
+        Assert.Null(controller.ConnectedDevice);
+        Assert.Equal(1, handle.DisableCount);
+    }
+
+    [Fact]
+    public async Task ConnectAsync_RejectsAStaleHandleWhenRemovalAndReadditionOccurDuringEnable()
+    {
+        var handle = new InMemoryLampArrayHandle("selected", "GIGABYTE Device", 8, true);
+        var platform = new InMemoryLampArrayPlatform(handle);
+        handle.OnEnable = () =>
+        {
+            platform.Remove("selected");
+            platform.Restore("selected");
+        };
+        await using var controller = new LampArrayLightingController(platform);
+
+        var connected = await controller.ConnectAsync(null, TestContext.Current.CancellationToken);
+
+        Assert.False(connected);
+        Assert.False(controller.IsConnected);
+        Assert.Null(controller.ConnectedDevice);
+        Assert.Equal(1, handle.DisableCount);
+    }
+
+    [Fact]
     public async Task DevicesChanged_ClearsAConnectionWhenTheSelectedDeviceIsRemoved()
     {
         var handle = new InMemoryLampArrayHandle("selected", "GIGABYTE Device", 8, true);
@@ -178,24 +255,69 @@ public sealed class LampArrayLightingControllerTests
         Assert.Equal(1, platform.DisposeCount);
     }
 
+    [Fact]
+    public async Task DisposeAsync_ReleasesThePlatformWhenDisablingTheHandleThrows()
+    {
+        var handle = new InMemoryLampArrayHandle("selected", "GIGABYTE Device", 8, true)
+        {
+            DisableException = new InvalidOperationException("disable failed"),
+        };
+        var platform = new InMemoryLampArrayPlatform(handle);
+        var controller = new LampArrayLightingController(platform);
+        await controller.ConnectAsync(null, TestContext.Current.CancellationToken);
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => controller.DisposeAsync().AsTask());
+
+        Assert.Equal("disable failed", exception.Message);
+        Assert.False(controller.IsConnected);
+        Assert.Equal(1, platform.DisposeCount);
+        await controller.DisposeAsync();
+        Assert.Equal(1, platform.DisposeCount);
+    }
+
     private sealed class InMemoryLampArrayPlatform(params InMemoryLampArrayHandle[] handles) : ILampArrayPlatform
     {
         private readonly IReadOnlyList<InMemoryLampArrayHandle> _handles = handles;
+        private TaskCompletionSource? _findAllStarted;
+        private TaskCompletionSource? _continueFindAll;
 
         public event EventHandler? DevicesChanged;
 
         public int DisposeCount { get; private set; }
+        public Task FindAllStarted => _findAllStarted?.Task ?? Task.CompletedTask;
 
-        public Task<IReadOnlyList<ILampArrayHandle>> FindAllAsync(CancellationToken cancellationToken)
+        public async Task<IReadOnlyList<ILampArrayHandle>> FindAllAsync(CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            return Task.FromResult<IReadOnlyList<ILampArrayHandle>>([.. _handles]);
+            IReadOnlyList<ILampArrayHandle> snapshot = [.. _handles];
+            _findAllStarted?.TrySetResult();
+            if (_continueFindAll is not null)
+            {
+                await _continueFindAll.Task.WaitAsync(cancellationToken);
+            }
+
+            return snapshot;
         }
+
+        public void BlockFindAll()
+        {
+            _findAllStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            _continueFindAll = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        }
+
+        public void ReleaseFindAll() => _continueFindAll?.TrySetResult();
 
         public void Remove(string id)
         {
             var handle = _handles.Single(candidate => candidate.Id == id);
             handle.IsAvailable = false;
+            DevicesChanged?.Invoke(this, EventArgs.Empty);
+        }
+
+        public void Restore(string id)
+        {
+            var handle = _handles.Single(candidate => candidate.Id == id);
+            handle.IsAvailable = true;
             DevicesChanged?.Invoke(this, EventArgs.Empty);
         }
 
@@ -220,11 +342,14 @@ public sealed class LampArrayLightingControllerTests
         public int EnableCount { get; private set; }
         public int DisableCount { get; private set; }
         public List<RgbColor> Colors { get; } = [];
+        public Action? OnEnable { get; set; }
+        public Exception? DisableException { get; set; }
 
         public void Enable()
         {
             EnableCount++;
             operations?.Add($"enable:{Id}");
+            OnEnable?.Invoke();
         }
 
         public void SetColor(RgbColor color) => Colors.Add(color);
@@ -233,6 +358,10 @@ public sealed class LampArrayLightingControllerTests
         {
             DisableCount++;
             operations?.Add($"disable:{Id}");
+            if (DisableException is not null)
+            {
+                throw DisableException;
+            }
         }
     }
 }

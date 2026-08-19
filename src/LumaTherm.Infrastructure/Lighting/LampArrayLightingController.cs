@@ -1,5 +1,6 @@
 using LumaTherm.Core.Colors;
 using LumaTherm.Core.Lighting;
+using System.Runtime.ExceptionServices;
 
 namespace LumaTherm.Infrastructure.Lighting;
 
@@ -9,6 +10,7 @@ public sealed class LampArrayLightingController : ILightingController
     private readonly SemaphoreSlim _operations = new(1, 1);
     private readonly object _stateLock = new();
     private ILampArrayHandle? _connectedHandle;
+    private long _deviceGeneration;
     private bool _disposed;
 
     public LampArrayLightingController(ILampArrayPlatform platform)
@@ -44,8 +46,18 @@ public sealed class LampArrayLightingController : ILightingController
     public async Task<IReadOnlyList<LightingDeviceInfo>> DiscoverAsync(CancellationToken cancellationToken)
     {
         ThrowIfDisposed();
-        var handles = await _platform.FindAllAsync(cancellationToken).ConfigureAwait(false);
-        return handles.Where(handle => handle.IsAvailable).Select(ToDeviceInfo).ToArray();
+        await _operations.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            ThrowIfDisposed();
+            var handles = await _platform.FindAllAsync(cancellationToken).ConfigureAwait(false);
+            ThrowIfDisposed();
+            return handles.Select(ToDeviceInfo).ToArray();
+        }
+        finally
+        {
+            _operations.Release();
+        }
     }
 
     public async Task<bool> ConnectAsync(string? preferredDeviceId, CancellationToken cancellationToken)
@@ -55,6 +67,12 @@ public sealed class LampArrayLightingController : ILightingController
         try
         {
             ThrowIfDisposed();
+            long generation;
+            lock (_stateLock)
+            {
+                generation = _deviceGeneration;
+            }
+
             var handles = await _platform.FindAllAsync(cancellationToken).ConfigureAwait(false);
             var available = handles.Where(handle => handle.IsAvailable).ToArray();
             var selected = SelectHandle(available, preferredDeviceId);
@@ -62,15 +80,25 @@ public sealed class LampArrayLightingController : ILightingController
             lock (_stateLock)
             {
                 DisconnectCurrentHandle();
-                if (selected is null)
-                {
-                    return false;
-                }
-
-                selected.Enable();
-                _connectedHandle = selected;
-                return true;
             }
+
+            if (selected is null)
+            {
+                return false;
+            }
+
+            selected.Enable();
+            lock (_stateLock)
+            {
+                if (_deviceGeneration == generation && selected.IsAvailable)
+                {
+                    _connectedHandle = selected;
+                    return true;
+                }
+            }
+
+            selected.Disable();
+            return false;
         }
         finally
         {
@@ -135,12 +163,32 @@ public sealed class LampArrayLightingController : ILightingController
 
             _disposed = true;
             _platform.DevicesChanged -= OnDevicesChanged;
+            Exception? failure = null;
             lock (_stateLock)
             {
-                DisconnectCurrentHandle();
+                try
+                {
+                    DisconnectCurrentHandle();
+                }
+                catch (Exception exception)
+                {
+                    failure = exception;
+                }
             }
 
-            await _platform.DisposeAsync().ConfigureAwait(false);
+            try
+            {
+                await _platform.DisposeAsync().ConfigureAwait(false);
+            }
+            catch (Exception exception)
+            {
+                failure = failure is null ? exception : new AggregateException(failure, exception);
+            }
+
+            if (failure is not null)
+            {
+                ExceptionDispatchInfo.Capture(failure).Throw();
+            }
         }
         finally
         {
@@ -184,6 +232,7 @@ public sealed class LampArrayLightingController : ILightingController
     {
         lock (_stateLock)
         {
+            _deviceGeneration++;
             if (_connectedHandle is { IsAvailable: false })
             {
                 DisconnectCurrentHandle();
