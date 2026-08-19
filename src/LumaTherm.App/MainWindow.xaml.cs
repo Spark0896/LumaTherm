@@ -19,6 +19,8 @@ public partial class MainWindow : System.Windows.Window
     {
         DashboardContent.Visibility = Visibility.Visible;
         SettingsPlaceholder.Visibility = Visibility.Collapsed;
+        HomeSelectionIndicator.Visibility = Visibility.Visible;
+        SettingsSelectionIndicator.Visibility = Visibility.Collapsed;
         SetNavigationState(HomeButton, SettingsButton);
     }
 
@@ -26,6 +28,8 @@ public partial class MainWindow : System.Windows.Window
     {
         DashboardContent.Visibility = Visibility.Collapsed;
         SettingsPlaceholder.Visibility = Visibility.Visible;
+        HomeSelectionIndicator.Visibility = Visibility.Collapsed;
+        SettingsSelectionIndicator.Visibility = Visibility.Visible;
         SetNavigationState(SettingsButton, HomeButton);
     }
 

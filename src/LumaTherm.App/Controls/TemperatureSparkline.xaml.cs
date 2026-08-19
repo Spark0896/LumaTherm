@@ -18,15 +18,18 @@ public partial class TemperatureSparkline : UserControl
 
     private INotifyCollectionChanged? _observedCollection;
 
-    public TemperatureSparkline() => InitializeComponent();
+    public TemperatureSparkline()
+    {
+        InitializeComponent();
+        Loaded += OnLoaded;
+        Unloaded += OnUnloaded;
+    }
 
     public IEnumerable<TemperaturePoint>? ItemsSource
     {
         get => (IEnumerable<TemperaturePoint>?)GetValue(ItemsSourceProperty);
         set => SetValue(ItemsSourceProperty, value);
     }
-
-    internal int ObservedCollectionChangeCount { get; private set; }
 
     protected override void OnRender(DrawingContext drawingContext)
     {
@@ -65,6 +68,23 @@ public partial class TemperatureSparkline : UserControl
             for (var i = 1; i < points.Length; i++) context.LineTo(Project(i), true, false);
         }
         geometry.Freeze();
+
+        var areaGeometry = new StreamGeometry();
+        using (var context = areaGeometry.Open())
+        {
+            context.BeginFigure(Project(0), true, true);
+            for (var i = 1; i < points.Length; i++) context.LineTo(Project(i), true, false);
+            context.LineTo(new Point(ActualWidth, ActualHeight), true, false);
+            context.LineTo(new Point(0, ActualHeight), true, false);
+        }
+        areaGeometry.Freeze();
+        var area = new LinearGradientBrush(
+            Color.FromArgb(43, 0xFF, 0xC6, 0x4A),
+            Color.FromArgb(0, 0xFF, 0xC6, 0x4A),
+            new Point(0, 0),
+            new Point(0, 1));
+        drawingContext.DrawGeometry(area, null, areaGeometry);
+
         var pen = new Pen(stroke, 2.5) { StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round, LineJoin = PenLineJoin.Round };
         drawingContext.DrawGeometry(null, pen, geometry);
     }
@@ -73,25 +93,31 @@ public partial class TemperatureSparkline : UserControl
     {
         var control = (TemperatureSparkline)dependencyObject;
         control.Detach(args.OldValue as INotifyCollectionChanged);
-        control.Attach(args.NewValue as INotifyCollectionChanged);
+        if (control.IsLoaded) control.Attach(args.NewValue as INotifyCollectionChanged);
         control.InvalidateVisual();
     }
 
     private void Attach(INotifyCollectionChanged? collection)
     {
+        if (collection is null || ReferenceEquals(_observedCollection, collection)) return;
+        Detach(_observedCollection);
         _observedCollection = collection;
-        if (_observedCollection is not null) _observedCollection.CollectionChanged += OnCollectionChanged;
+        _observedCollection.CollectionChanged += OnCollectionChanged;
     }
 
     private void Detach(INotifyCollectionChanged? collection)
     {
-        if (collection is not null) collection.CollectionChanged -= OnCollectionChanged;
-        if (ReferenceEquals(_observedCollection, collection)) _observedCollection = null;
+        if (collection is null || !ReferenceEquals(_observedCollection, collection)) return;
+        _observedCollection.CollectionChanged -= OnCollectionChanged;
+        _observedCollection = null;
     }
 
     private void OnCollectionChanged(object? sender, NotifyCollectionChangedEventArgs args)
     {
-        ObservedCollectionChangeCount++;
         InvalidateVisual();
     }
+
+    private void OnLoaded(object sender, RoutedEventArgs args) => Attach(ItemsSource as INotifyCollectionChanged);
+
+    private void OnUnloaded(object sender, RoutedEventArgs args) => Detach(_observedCollection);
 }

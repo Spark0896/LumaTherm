@@ -40,13 +40,14 @@
                 </StackPanel>
                 <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
                     <TextBlock x:Name="ModeStatusText" Text="{Binding StatusText}" Foreground="#B9C2C9" FontSize="11" VerticalAlignment="Center" Margin="0,0,10,0" />
-                    <Button x:Name="ModeToggle"
+                    <ToggleButton x:Name="ModeToggle"
                             Width="44" Height="24" Padding="3" BorderThickness="0"
                             Command="{Binding ToggleModeCommand}"
+                            IsChecked="{Binding IsModeEnabled, Mode=OneWay}"
                             automation:AutomationProperties.Name="Включить или выключить термосинхронизацию"
                             KeyboardNavigation.IsTabStop="True">
-                        <Button.Style>
-                            <Style TargetType="Button">
+                        <ToggleButton.Style>
+                            <Style TargetType="ToggleButton">
                                 <Setter Property="Background" Value="#343B42" />
                                 <Setter Property="FocusVisualStyle">
                                     <Setter.Value>
@@ -59,16 +60,16 @@
                                 </Setter>
                                 <Setter Property="Template">
                                     <Setter.Value>
-                                        <ControlTemplate TargetType="Button">
+                                        <ControlTemplate TargetType="ToggleButton">
                                             <Border x:Name="SwitchTrack" Background="{TemplateBinding Background}" CornerRadius="13" Padding="3">
                                                 <Ellipse x:Name="SwitchThumb" Width="18" Height="18" Fill="#7A858E" HorizontalAlignment="Left" />
                                             </Border>
                                             <ControlTemplate.Triggers>
-                                                <DataTrigger Binding="{Binding IsModeEnabled}" Value="True">
+                                                <Trigger Property="IsChecked" Value="True">
                                                     <Setter TargetName="SwitchTrack" Property="Background" Value="{StaticResource ColdColorBrush}" />
                                                     <Setter TargetName="SwitchThumb" Property="Fill" Value="#081116" />
                                                     <Setter TargetName="SwitchThumb" Property="HorizontalAlignment" Value="Right" />
-                                                </DataTrigger>
+                                                </Trigger>
                                                 <Trigger Property="IsMouseOver" Value="True"><Setter Property="Opacity" Value="0.9" /></Trigger>
                                                 <Trigger Property="IsPressed" Value="True"><Setter Property="Opacity" Value="0.72" /></Trigger>
                                                 <Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.35" /></Trigger>
@@ -77,8 +78,8 @@
                                     </Setter.Value>
                                 </Setter>
                             </Style>
-                        </Button.Style>
-                    </Button>
+                        </ToggleButton.Style>
+                    </ToggleButton>
                 </StackPanel>
             </Grid>
 
@@ -94,11 +95,21 @@
                     <RowDefinition x:Name="TopSecondRow" Height="0" />
                 </Grid.RowDefinitions>
 
-                <Border x:Name="RingPanel" Style="{StaticResource PanelStyle}" ClipToBounds="False">
-                    <controls:TemperatureRing x:Name="TemperatureRing" Width="164" Height="164"
-                                              HorizontalAlignment="Center" VerticalAlignment="Center"
-                                              Temperature="{Binding CurrentTemperature}"
-                                              DisplayColor="{Binding DisplayColor}" />
+                <Border x:Name="RingPanel" Style="{StaticResource PanelStyle}" ClipToBounds="True">
+                    <Grid>
+                        <Ellipse x:Name="TemperatureCardGlow" Width="280" Height="130" HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,-88" IsHitTestVisible="False">
+                            <Ellipse.Fill>
+                                <RadialGradientBrush>
+                                    <GradientStop Color="#26FFC64A" Offset="0" />
+                                    <GradientStop Color="#00FFC64A" Offset="0.66" />
+                                </RadialGradientBrush>
+                            </Ellipse.Fill>
+                        </Ellipse>
+                        <controls:TemperatureRing x:Name="TemperatureRing" Width="164" Height="164"
+                                                  HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                  Temperature="{Binding CurrentTemperature}"
+                                                  DisplayColor="{Binding DisplayColor}" />
+                    </Grid>
                 </Border>
 
                 <Border x:Name="ProfilePanel" Grid.Column="2" Style="{StaticResource PanelStyle}" Padding="20,18">
@@ -118,7 +129,7 @@
                             <Border Grid.Column="2" Width="15" Height="15" CornerRadius="4"
                                     Background="{Binding DisplayColor, Converter={StaticResource RgbColorBrushConverter}}" />
                         </Grid>
-                        <controls:ThermalGradientBar Grid.Row="1" Height="76" VerticalAlignment="Center"
+                        <controls:ThermalGradientBar x:Name="ProfileGradientBar" Grid.Row="1" Height="76" VerticalAlignment="Center"
                                                      ColdTemperature="{Binding Profile.ColdTemperature}"
                                                      WarmTemperature="{Binding Profile.WarmTemperature}"
                                                      HotTemperature="{Binding Profile.HotTemperature}"
