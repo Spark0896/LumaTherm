@@ -160,3 +160,41 @@ Results: Core passed `60/60`; Infrastructure passed `58/58`; total `118/118`. Bu
 - Removing pending-release state, exception-to-message conversion, or same-call retry breaks at least one of the three lifecycle tests. Existing persist-before-release assertions remain green.
 - Replacing `UpdateProfile` with raw-target engine construction turns the runtime continuation immediately hot; invalid-profile and preserved-ramp tests cover both API boundaries.
 - Core project references remain unchanged and BCL-only. No new concern remains beyond the existing hardware-only LampArray/live telemetry validation boundary.
+
+## Fix Round 2/5: pending release across disabled resume
+
+### Finding and RED
+
+`ResumeAsync` cleared `_releasePending` before checking whether mode was enabled. The deterministic regression exercises the exact sequence: an active runtime's suspend release fails, disabling while still suspended retries and fails again, disabled resume runs, and an identical disable must make the third, successful release attempt.
+
+Command:
+
+```powershell
+& "$PWD\.dotnet\dotnet.exe" test tests\LumaTherm.Core.Tests\LumaTherm.Core.Tests.csproj --no-restore --filter FullyQualifiedName~DisabledResume_PreservesPendingRelease
+```
+
+Exit code `1`: `DisabledResume_PreservesPendingReleaseForAnIdenticalDisableRetry` expected `3` release calls and observed `2`. The identical disable returned early because disabled resume had discarded the pending-release obligation.
+
+### GREEN and ownership audit
+
+Disabled resume now preserves `_releasePending`. The same focused command passed `1/1` in 31 ms; after two failed releases, the later identical disable performs attempt three, publishes `Disabled` without an error message, and does not repeat the already-persisted mode save.
+
+The enabled resume/enable paths were audited under the same rule. Merely scheduling the background loop is not treated as successful ownership, so these paths no longer clear pending release. The bit clears only when `ReleaseAsync` succeeds or a render tick successfully reaches `Active` after regaining lighting ownership. Connection or write failures therefore cannot silently erase the obligation.
+
+### Final verification
+
+```powershell
+& "$PWD\.dotnet\dotnet.exe" test tests\LumaTherm.Core.Tests\LumaTherm.Core.Tests.csproj --no-restore --filter FullyQualifiedName~ThermalRuntimeTests
+& "$PWD\.dotnet\dotnet.exe" test LumaTherm.sln --no-restore
+& "$PWD\.dotnet\dotnet.exe" build LumaTherm.sln --no-restore
+git diff --check
+```
+
+Results: runtime passed `23/23`; full Core passed `61/61`; Infrastructure passed `58/58`; total `119/119`. Build completed with warnings `0`, errors `0`. Whitespace check exited `0` with only expected LF-to-CRLF notices.
+
+### Self-review and concerns
+
+- Clearing pending release during disabled resume reproduces the literal `2` versus `3` failure.
+- Pending release is now cleared at exactly two observable successful boundaries: completed lighting release or an `Active` render tick with lighting ownership. It remains set through disabled resume and through enable/resume attempts that have not yet reached `Active`.
+- Persist-before-observe behavior is unchanged; the retry does not save the identical disabled mode a second time.
+- Deferred findings were not changed. No new concern remains.

@@ -159,12 +159,10 @@ public sealed class ThermalRuntime : IThermalRuntime
             }
             else if (_suspended)
             {
-                _releasePending = false;
                 snapshot = CreateSnapshot(RuntimeStatus.Suspended, _targetReading, _displayedColor, _targetRange, null);
             }
             else
             {
-                _releasePending = false;
                 StartLoopNoLock();
                 snapshot = CreateSnapshot(RuntimeStatus.Connecting, _targetReading, _displayedColor, _targetRange, null);
             }
@@ -215,7 +213,6 @@ public sealed class ThermalRuntime : IThermalRuntime
                 }
                 else if (modeChanged && !_suspended)
                 {
-                    _releasePending = false;
                     StartLoopNoLock();
                     snapshot = CreateSnapshot(RuntimeStatus.Connecting, _targetReading, _displayedColor, _targetRange, null);
                 }
@@ -290,10 +287,9 @@ public sealed class ThermalRuntime : IThermalRuntime
             }
 
             _suspended = false;
-            _releasePending = false;
-            _lightingGate.Reset();
             if (_settings.IsModeEnabled)
             {
+                _lightingGate.Reset();
                 StartLoopNoLock();
                 snapshot = CreateSnapshot(RuntimeStatus.Connecting, _targetReading, _displayedColor, _targetRange, null);
             }
@@ -513,6 +509,7 @@ public sealed class ThermalRuntime : IThermalRuntime
                 }
             }
 
+            _releasePending = false;
             return CreateSnapshot(RuntimeStatus.Active, _targetReading, _displayedColor, _targetRange, null);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)

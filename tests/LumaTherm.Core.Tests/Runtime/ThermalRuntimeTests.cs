@@ -285,6 +285,24 @@ public sealed class ThermalRuntimeTests
     }
 
     [Fact]
+    public async Task DisabledResume_PreservesPendingReleaseForAnIdenticalDisableRetry()
+    {
+        await using var fixture = RuntimeFixture.Create(modeEnabled: true, temperatures: [68]);
+        await fixture.Runtime.ProcessOnceAsync(CancellationToken.None);
+        fixture.Lighting.ReleaseFailuresRemaining = 2;
+
+        await fixture.Runtime.SuspendAsync(CancellationToken.None);
+        await fixture.Runtime.SetModeEnabledAsync(false, CancellationToken.None);
+        await fixture.Runtime.ResumeAsync(CancellationToken.None);
+        await fixture.Runtime.SetModeEnabledAsync(false, CancellationToken.None);
+
+        Assert.Equal(RuntimeStatus.Disabled, fixture.Runtime.CurrentSnapshot.Status);
+        Assert.Null(fixture.Runtime.CurrentSnapshot.Message);
+        Assert.Equal(1, fixture.SettingsStore.SaveCalls);
+        Assert.Equal(3, fixture.Lighting.ReleaseCalls);
+    }
+
+    [Fact]
     public async Task UpdateSettings_DuringRamp_PreservesSmoothedTemperature()
     {
         await using var fixture = RuntimeFixture.Create(modeEnabled: true, temperatures: [35, 85]);
