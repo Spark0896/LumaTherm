@@ -18,7 +18,13 @@ public sealed class ColorEngine
         _smoothedTemperature = initialTemperature;
     }
 
-    public ThermalProfile Profile { get; }
+    public ThermalProfile Profile { get; private set; }
+
+    public void UpdateProfile(ThermalProfile profile)
+    {
+        ArgumentNullException.ThrowIfNull(profile);
+        Profile = profile.Validate();
+    }
 
     public ThermalRange Classify(double temperature) => temperature <= Profile.ColdTemperature
         ? ThermalRange.Cold

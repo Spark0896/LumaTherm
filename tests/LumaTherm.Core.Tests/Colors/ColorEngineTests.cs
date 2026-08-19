@@ -151,6 +151,29 @@ public sealed class ColorEngineTests
         Assert.Equal(new RgbColor(161, 161, 161), color);
     }
 
+    [Fact]
+    public void UpdateProfile_PreservesTheSmoothedTemperature()
+    {
+        var engine = new ColorEngine(Profile, 35);
+        engine.Step(85, TimeSpan.FromMilliseconds(100));
+        var slowerProfile = Profile with { SmoothingSeconds = 2 };
+
+        engine.UpdateProfile(slowerProfile);
+        var next = engine.Step(85, TimeSpan.FromMilliseconds(100));
+
+        Assert.Equal(slowerProfile, engine.Profile);
+        Assert.NotEqual(new RgbColor(0xFF, 0x56, 0x5D), next);
+    }
+
+    [Fact]
+    public void UpdateProfile_RejectsInvalidProfilesWithoutReplacingTheActiveProfile()
+    {
+        var engine = new ColorEngine(Profile, 35);
+
+        Assert.Throws<ArgumentException>(() => engine.UpdateProfile(Profile with { SmoothingSeconds = 0 }));
+        Assert.Equal(Profile, engine.Profile);
+    }
+
     [Theory]
     [InlineData(-10, ThermalRange.Cold)]
     [InlineData(35, ThermalRange.Cold)]

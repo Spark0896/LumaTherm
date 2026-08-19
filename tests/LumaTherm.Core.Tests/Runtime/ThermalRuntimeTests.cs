@@ -221,6 +221,90 @@ public sealed class ThermalRuntimeTests
     }
 
     [Fact]
+    public async Task DisableMode_WhenReleaseFails_PublishesDisabledAndRetriesOnRepeat()
+    {
+        await using var fixture = RuntimeFixture.Create(modeEnabled: true, temperatures: [68]);
+        await fixture.Runtime.ProcessOnceAsync(CancellationToken.None);
+        fixture.Lighting.ReleaseFailuresRemaining = 1;
+
+        await fixture.Runtime.SetModeEnabledAsync(false, CancellationToken.None);
+
+        Assert.Equal(RuntimeStatus.Disabled, fixture.Runtime.CurrentSnapshot.Status);
+        Assert.Contains("release failed", fixture.Runtime.CurrentSnapshot.Message);
+        Assert.Equal(1, fixture.SettingsStore.SaveCalls);
+        Assert.Equal(1, fixture.Lighting.ReleaseCalls);
+
+        await fixture.Runtime.SetModeEnabledAsync(false, CancellationToken.None);
+
+        Assert.Equal(RuntimeStatus.Disabled, fixture.Runtime.CurrentSnapshot.Status);
+        Assert.Null(fixture.Runtime.CurrentSnapshot.Message);
+        Assert.Equal(1, fixture.SettingsStore.SaveCalls);
+        Assert.Equal(2, fixture.Lighting.ReleaseCalls);
+    }
+
+    [Fact]
+    public async Task UpdateSettings_WhenDisableReleaseFails_PublishesDisabledAndRetriesOnRepeat()
+    {
+        await using var fixture = RuntimeFixture.Create(modeEnabled: true, temperatures: [68]);
+        await fixture.Runtime.ProcessOnceAsync(CancellationToken.None);
+        fixture.Lighting.ReleaseFailuresRemaining = 1;
+        var disabled = fixture.SettingsStore.Initial with { IsModeEnabled = false, NotificationsEnabled = false };
+
+        await fixture.Runtime.UpdateSettingsAsync(disabled, CancellationToken.None);
+
+        Assert.Equal(RuntimeStatus.Disabled, fixture.Runtime.CurrentSnapshot.Status);
+        Assert.Contains("release failed", fixture.Runtime.CurrentSnapshot.Message);
+        Assert.Equal(1, fixture.Lighting.ReleaseCalls);
+
+        await fixture.Runtime.UpdateSettingsAsync(disabled, CancellationToken.None);
+
+        Assert.Equal(RuntimeStatus.Disabled, fixture.Runtime.CurrentSnapshot.Status);
+        Assert.Null(fixture.Runtime.CurrentSnapshot.Message);
+        Assert.Equal(2, fixture.SettingsStore.SaveCalls);
+        Assert.Equal(2, fixture.Lighting.ReleaseCalls);
+    }
+
+    [Fact]
+    public async Task Suspend_WhenReleaseFails_PublishesSuspendedAndRetriesOnRepeat()
+    {
+        await using var fixture = RuntimeFixture.Create(modeEnabled: true, temperatures: [68]);
+        await fixture.Runtime.ProcessOnceAsync(CancellationToken.None);
+        fixture.Lighting.ReleaseFailuresRemaining = 1;
+
+        await fixture.Runtime.SuspendAsync(CancellationToken.None);
+
+        Assert.Equal(RuntimeStatus.Suspended, fixture.Runtime.CurrentSnapshot.Status);
+        Assert.Contains("release failed", fixture.Runtime.CurrentSnapshot.Message);
+        Assert.Equal(1, fixture.Lighting.ReleaseCalls);
+
+        await fixture.Runtime.SuspendAsync(CancellationToken.None);
+
+        Assert.Equal(RuntimeStatus.Suspended, fixture.Runtime.CurrentSnapshot.Status);
+        Assert.Null(fixture.Runtime.CurrentSnapshot.Message);
+        Assert.Equal(2, fixture.Lighting.ReleaseCalls);
+    }
+
+    [Fact]
+    public async Task UpdateSettings_DuringRamp_PreservesSmoothedTemperature()
+    {
+        await using var fixture = RuntimeFixture.Create(modeEnabled: true, temperatures: [35, 85]);
+        await fixture.Runtime.ProcessOnceAsync(CancellationToken.None);
+        fixture.Advance(TimeSpan.FromMilliseconds(500));
+        var ramping = await fixture.Runtime.ProcessOnceAsync(CancellationToken.None);
+        var slowerProfile = fixture.SettingsStore.Initial.Profile with { SmoothingSeconds = 2 };
+        await fixture.Runtime.UpdateSettingsAsync(
+            fixture.SettingsStore.Initial with { Profile = slowerProfile },
+            CancellationToken.None);
+        fixture.Advance(TimeSpan.FromMilliseconds(100));
+
+        var continued = await fixture.Runtime.ProcessOnceAsync(CancellationToken.None);
+
+        Assert.NotEqual(new RgbColor(0xFF, 0x56, 0x5D), ramping.Color);
+        Assert.NotEqual(new RgbColor(0xFF, 0x56, 0x5D), continued.Color);
+        Assert.NotEqual(ramping.Color, continued.Color);
+    }
+
+    [Fact]
     public async Task SuspendResumeAndStop_AreIdempotentAndPreserveMode()
     {
         await using var fixture = RuntimeFixture.Create(modeEnabled: true, temperatures: [68, 69]);
@@ -359,6 +443,38 @@ public sealed class ThermalRuntimeTests
 
         Assert.Equal(0, fixture.Clock.ActiveTimerCount);
         Assert.Equal(1, fixture.Temperatures.DisposeCalls);
+        await fixture.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task FaultedSnapshot_FromThrowingActiveSubscriber_CanStopBackgroundLoopWithoutSelfDeadlock()
+    {
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+        timeout.CancelAfter(TimeSpan.FromSeconds(5));
+        var fixture = RuntimeFixture.Create(modeEnabled: true, temperatures: [68]);
+        var stopped = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        fixture.Runtime.SnapshotChanged += (_, snapshot) =>
+        {
+            if (snapshot.Status == RuntimeStatus.Active)
+            {
+                throw new InvalidOperationException("subscriber failed");
+            }
+
+            if (snapshot.Status == RuntimeStatus.Faulted)
+            {
+                fixture.Runtime.StopAsync(CancellationToken.None).GetAwaiter().GetResult();
+                stopped.TrySetResult();
+            }
+        };
+        await fixture.Runtime.StartAsync(CancellationToken.None);
+
+        var advancingClock = Task.Run(
+            () => fixture.Advance(TimeSpan.FromMilliseconds(100)),
+            TestContext.Current.CancellationToken);
+        await Task.WhenAll(stopped.Task, advancingClock).WaitAsync(timeout.Token);
+
+        Assert.Equal(RuntimeStatus.Disabled, fixture.Runtime.CurrentSnapshot.Status);
+        Assert.Equal(0, fixture.Clock.ActiveTimerCount);
         await fixture.DisposeAsync();
     }
 
@@ -668,6 +784,7 @@ public sealed class ThermalRuntimeTests
     {
         public AppSettings Initial { get; } = initial;
         public AppSettings? Saved { get; private set; }
+        public int SaveCalls { get; private set; }
         public Action<AppSettings>? OnSave { get; set; }
 
         public Task<SettingsLoadResult> LoadAsync(CancellationToken cancellationToken) =>
@@ -676,6 +793,7 @@ public sealed class ThermalRuntimeTests
         public Task SaveAsync(AppSettings settings, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            SaveCalls++;
             OnSave?.Invoke(settings);
             Saved = settings;
             return Task.CompletedTask;

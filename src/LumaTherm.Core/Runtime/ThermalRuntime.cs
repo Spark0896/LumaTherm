@@ -42,6 +42,7 @@ public sealed class ThermalRuntime : IThermalRuntime
     private RgbColor? _displayedColor;
     private int _missingRetryIndex;
     private bool _releasedForMissing;
+    private bool _releasePending;
     private bool _suspended;
     private bool _stopped;
     private bool _sourcesDisposed;
@@ -128,14 +129,18 @@ public sealed class ThermalRuntime : IThermalRuntime
         try
         {
             ThrowIfStopped();
-            if (_settings.IsModeEnabled == enabled)
+            var modeChanged = _settings.IsModeEnabled != enabled;
+            if (!modeChanged && (enabled || !_releasePending))
             {
                 return;
             }
 
-            var updated = (_settings with { IsModeEnabled = enabled }).Validate();
-            await _settingsStore.SaveAsync(updated, cancellationToken).ConfigureAwait(false);
-            _settings = updated;
+            if (modeChanged)
+            {
+                var updated = (_settings with { IsModeEnabled = enabled }).Validate();
+                await _settingsStore.SaveAsync(updated, cancellationToken).ConfigureAwait(false);
+                _settings = updated;
+            }
 
             if (!enabled)
             {
@@ -143,9 +148,9 @@ public sealed class ThermalRuntime : IThermalRuntime
                 await _processGate.WaitAsync(CancellationToken.None).ConfigureAwait(false);
                 try
                 {
-                    await ReleaseLightingAsync(CancellationToken.None).ConfigureAwait(false);
+                    var releaseMessage = await TryReleaseLightingAsync().ConfigureAwait(false);
                     ResetMonitoringState();
-                    snapshot = CreateSnapshot(RuntimeStatus.Disabled, null, null, null, null);
+                    snapshot = CreateSnapshot(RuntimeStatus.Disabled, null, null, null, releaseMessage);
                 }
                 finally
                 {
@@ -154,10 +159,12 @@ public sealed class ThermalRuntime : IThermalRuntime
             }
             else if (_suspended)
             {
+                _releasePending = false;
                 snapshot = CreateSnapshot(RuntimeStatus.Suspended, _targetReading, _displayedColor, _targetRange, null);
             }
             else
             {
+                _releasePending = false;
                 StartLoopNoLock();
                 snapshot = CreateSnapshot(RuntimeStatus.Connecting, _targetReading, _displayedColor, _targetRange, null);
             }
@@ -196,19 +203,19 @@ public sealed class ThermalRuntime : IThermalRuntime
                 _settings = validated;
                 if (profileChanged)
                 {
-                    _colorEngine = new ColorEngine(validated.Profile, _targetReading?.Celsius ?? validated.Profile.ColdTemperature);
+                    _colorEngine.UpdateProfile(validated.Profile);
                     _targetRange = _targetReading is null ? null : _colorEngine.Classify(_targetReading.Celsius);
-                    _lightingGate.Reset();
                 }
 
-                if (modeChanged && !validated.IsModeEnabled)
+                if (!validated.IsModeEnabled && (modeChanged || _releasePending))
                 {
-                    await ReleaseLightingAsync(CancellationToken.None).ConfigureAwait(false);
+                    var releaseMessage = await TryReleaseLightingAsync().ConfigureAwait(false);
                     ResetMonitoringState();
-                    snapshot = CreateSnapshot(RuntimeStatus.Disabled, null, null, null, null);
+                    snapshot = CreateSnapshot(RuntimeStatus.Disabled, null, null, null, releaseMessage);
                 }
                 else if (modeChanged && !_suspended)
                 {
+                    _releasePending = false;
                     StartLoopNoLock();
                     snapshot = CreateSnapshot(RuntimeStatus.Connecting, _targetReading, _displayedColor, _targetRange, null);
                 }
@@ -237,18 +244,22 @@ public sealed class ThermalRuntime : IThermalRuntime
         try
         {
             ThrowIfStopped();
-            if (_suspended)
+            if (_suspended && !_releasePending)
             {
                 return;
             }
 
-            _suspended = true;
-            await StopLoopNoLockAsync().ConfigureAwait(false);
+            if (!_suspended)
+            {
+                _suspended = true;
+                await StopLoopNoLockAsync().ConfigureAwait(false);
+            }
+
             await _processGate.WaitAsync(CancellationToken.None).ConfigureAwait(false);
             try
             {
-                await ReleaseLightingAsync(CancellationToken.None).ConfigureAwait(false);
-                snapshot = CreateSnapshot(RuntimeStatus.Suspended, _targetReading, _displayedColor, _targetRange, null);
+                var releaseMessage = await TryReleaseLightingAsync().ConfigureAwait(false);
+                snapshot = CreateSnapshot(RuntimeStatus.Suspended, _targetReading, null, _targetRange, releaseMessage);
             }
             finally
             {
@@ -279,6 +290,8 @@ public sealed class ThermalRuntime : IThermalRuntime
             }
 
             _suspended = false;
+            _releasePending = false;
+            _lightingGate.Reset();
             if (_settings.IsModeEnabled)
             {
                 StartLoopNoLock();
@@ -556,25 +569,25 @@ public sealed class ThermalRuntime : IThermalRuntime
             using var timer = new PeriodicTimer(RenderInterval, _timeProvider);
             while (await timer.WaitForNextTickAsync(cancellationToken).ConfigureAwait(false))
             {
+                _insideBackgroundLoop.Value = true;
                 try
                 {
-                    _insideBackgroundLoop.Value = true;
                     try
                     {
                         await ProcessOnceAsync(cancellationToken).ConfigureAwait(false);
                     }
-                    finally
+                    catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                     {
-                        _insideBackgroundLoop.Value = false;
+                        break;
+                    }
+                    catch (Exception exception)
+                    {
+                        Publish(CreateSnapshot(RuntimeStatus.Faulted, _targetReading, _displayedColor, _targetRange, exception.Message));
                     }
                 }
-                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                finally
                 {
-                    break;
-                }
-                catch (Exception exception)
-                {
-                    Publish(CreateSnapshot(RuntimeStatus.Faulted, _targetReading, _displayedColor, _targetRange, exception.Message));
+                    _insideBackgroundLoop.Value = false;
                 }
             }
         }
@@ -647,6 +660,21 @@ public sealed class ThermalRuntime : IThermalRuntime
         _displayedColor = null;
     }
 
+    private async Task<string?> TryReleaseLightingAsync()
+    {
+        try
+        {
+            await ReleaseLightingAsync(CancellationToken.None).ConfigureAwait(false);
+            _releasePending = false;
+            return null;
+        }
+        catch (Exception exception)
+        {
+            _releasePending = true;
+            return exception.Message;
+        }
+    }
+
     private void ResetMonitoringState()
     {
         _lastSensorPollAt = null;
@@ -656,6 +684,7 @@ public sealed class ThermalRuntime : IThermalRuntime
         _targetReading = null;
         _targetRange = null;
         _displayedColor = null;
+        _lightingGate.Reset();
         _missingRetryIndex = 0;
         _releasedForMissing = false;
     }

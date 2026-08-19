@@ -91,3 +91,72 @@ Final expected evidence is recorded immediately before commit: focused runtime `
 ## Concerns
 
 No code-level concerns remain. Physical LampArray and live telemetry integration are intentionally outside this Core fake-clock test boundary and remain hardware validation work.
+
+## Fix Round 1/5: fault publication, release retry, and smooth profile updates
+
+### Findings and implementation
+
+- The background-loop context marker now remains true while a failed render tick publishes its `Faulted` snapshot. A synchronous `StopAsync` from that event therefore follows the existing self-stop path instead of awaiting the current loop task.
+- Direct disable, settings-driven disable, and suspend now convert release failures into coherent committed snapshots rather than throwing with stale state. The selected contract is `Disabled` or `Suspended` with the release exception text in `Message`. A pending-release bit causes the identical lifecycle call to retry; a successful retry clears the message. Direct mode retry does not save again because the disabled setting was already persisted; settings updates retain their existing save-on-call contract.
+- `ColorEngine.UpdateProfile` validates and replaces only the profile while preserving `_smoothedTemperature`. Runtime settings updates use that API instead of constructing an engine at the raw target, so subsequent render ticks continue the existing ramp. Invalid profiles leave the active profile unchanged.
+- Deferred minor findings were not changed.
+
+### Witnessed RED
+
+Color API command:
+
+```powershell
+& "$PWD\.dotnet\dotnet.exe" test tests\LumaTherm.Core.Tests\LumaTherm.Core.Tests.csproj --no-restore --filter FullyQualifiedName~ColorEngineTests
+```
+
+Exit code `1`: both new tests failed compilation with `CS1061` because `ColorEngine.UpdateProfile` did not exist.
+
+Lifecycle/profile command:
+
+```powershell
+& "$PWD\.dotnet\dotnet.exe" test tests\LumaTherm.Core.Tests\LumaTherm.Core.Tests.csproj --no-restore --filter "FullyQualifiedName~DisableMode_WhenReleaseFails|FullyQualifiedName~UpdateSettings_WhenDisableReleaseFails|FullyQualifiedName~Suspend_WhenReleaseFails|FullyQualifiedName~UpdateSettings_DuringRamp"
+```
+
+Exit code `1`, failed `4/4`:
+
+- direct disable, settings-driven disable, and suspend each propagated `InvalidOperationException: release failed` before publishing the committed state;
+- the profile update test expected a non-hot continuation but received the literal hot color `RgbColor(255, 86, 93)`, proving the engine had snapped to the raw 85 °C target.
+
+Fault-publication command:
+
+```powershell
+& "$PWD\.dotnet\dotnet.exe" test tests\LumaTherm.Core.Tests\LumaTherm.Core.Tests.csproj --no-restore --filter FullyQualifiedName~FaultedSnapshot_FromThrowingActiveSubscriber
+```
+
+Exit code `1`: the test's five-second linked deadline produced `TaskCanceledException`. The Active subscriber threw, fault publication synchronously invoked `StopAsync`, and the cleared loop marker made that stop await its own loop task.
+
+### GREEN
+
+After adding the state-preserving Color API, the focused ColorEngine command passed `34/34`.
+
+The same four-test lifecycle/profile command passed `4/4`. The same fault-publication command passed `1/1` in 36 ms and asserted a final `Disabled` snapshot with zero active fake timers.
+
+Combined focused command:
+
+```powershell
+& "$PWD\.dotnet\dotnet.exe" test tests\LumaTherm.Core.Tests\LumaTherm.Core.Tests.csproj --no-restore --filter "FullyQualifiedName~ThermalRuntimeTests|FullyQualifiedName~ColorEngineTests"
+```
+
+Result: passed `56/56`, failed `0`, skipped `0`.
+
+### Final verification
+
+```powershell
+& "$PWD\.dotnet\dotnet.exe" test LumaTherm.sln --no-restore
+& "$PWD\.dotnet\dotnet.exe" build LumaTherm.sln --no-restore
+git diff --check
+```
+
+Results: Core passed `60/60`; Infrastructure passed `58/58`; total `118/118`. Build completed with warnings `0`, errors `0`. Whitespace check exited `0` (only the repository's expected LF-to-CRLF notices were printed).
+
+### Self-review and concerns
+
+- Removing the widened loop marker reproduces the bounded self-deadlock test failure; no background loop/timer remains after the corrected path.
+- Removing pending-release state, exception-to-message conversion, or same-call retry breaks at least one of the three lifecycle tests. Existing persist-before-release assertions remain green.
+- Replacing `UpdateProfile` with raw-target engine construction turns the runtime continuation immediately hot; invalid-profile and preserved-ramp tests cover both API boundaries.
+- Core project references remain unchanged and BCL-only. No new concern remains beyond the existing hardware-only LampArray/live telemetry validation boundary.
