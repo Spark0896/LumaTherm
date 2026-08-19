@@ -50,7 +50,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     public bool IsModeEnabled { get => _isModeEnabled; private set => SetProperty(ref _isModeEnabled, value); }
     public AsyncRelayCommand ToggleModeCommand { get; }
 
-    public void SynchronizeProfile(SettingsViewModel settingsViewModel)
+    internal void SynchronizeProfile(SettingsViewModel settingsViewModel)
     {
         ArgumentNullException.ThrowIfNull(settingsViewModel);
         if (_disposed)

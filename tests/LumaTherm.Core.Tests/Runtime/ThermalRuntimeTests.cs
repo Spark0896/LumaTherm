@@ -83,6 +83,94 @@ public sealed class ThermalRuntimeTests
     }
 
     [Fact]
+    public async Task UpdateSettings_PersistentClockFailureAfterCommit_UsesLastPublishedTimestampAndKeepsGateReusable()
+    {
+        await using var fixture = RuntimeFixture.Create(modeEnabled: false, temperatures: []);
+        var previous = fixture.Runtime.CurrentSnapshot;
+        var candidate = fixture.SettingsStore.Initial with { NotificationsEnabled = false };
+        fixture.Clock.FailGetUtcNow = true;
+
+        await fixture.Runtime.UpdateSettingsAsync(candidate, TestContext.Current.CancellationToken)
+            .WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+
+        Assert.Equal(candidate, fixture.Runtime.CurrentSettings);
+        Assert.Equal(candidate, fixture.SettingsStore.Saved);
+        Assert.Equal(RuntimeStatus.Faulted, fixture.Runtime.CurrentSnapshot.Status);
+        Assert.Equal(previous.Timestamp, fixture.Runtime.CurrentSnapshot.Timestamp);
+        Assert.False(fixture.Runtime.CurrentSnapshot.IsModeEnabled);
+        Assert.Contains("clock failed", fixture.Runtime.CurrentSnapshot.Message);
+
+        fixture.Clock.FailGetUtcNow = false;
+        await fixture.Runtime.UpdateSettingsAsync(candidate with { NotificationsEnabled = true }, TestContext.Current.CancellationToken)
+            .WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+        Assert.Equal(RuntimeStatus.Disabled, fixture.Runtime.CurrentSnapshot.Status);
+    }
+
+    [Fact]
+    public async Task SetModeEnabled_PersistentConnectedDeviceFailureAfterCommit_UsesLastPublishedDeviceAndKeepsGateReusable()
+    {
+        await using var fixture = RuntimeFixture.Create(modeEnabled: false, temperatures: []);
+        await fixture.Runtime.SuspendAsync(TestContext.Current.CancellationToken);
+        var previous = fixture.Runtime.CurrentSnapshot;
+        fixture.Lighting.FailConnectedDevice = true;
+
+        try
+        {
+            await fixture.Runtime.SetModeEnabledAsync(true, TestContext.Current.CancellationToken)
+                .WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+        }
+        finally
+        {
+            fixture.Lighting.FailConnectedDevice = false;
+        }
+
+        Assert.True(fixture.Runtime.CurrentSettings.IsModeEnabled);
+        Assert.True(fixture.SettingsStore.Saved!.IsModeEnabled);
+        Assert.Equal(RuntimeStatus.Faulted, fixture.Runtime.CurrentSnapshot.Status);
+        Assert.Equal(previous.LightingDevice, fixture.Runtime.CurrentSnapshot.LightingDevice);
+        Assert.True(fixture.Runtime.CurrentSnapshot.IsModeEnabled);
+        Assert.Contains("device failed", fixture.Runtime.CurrentSnapshot.Message);
+
+        await fixture.Runtime.SetModeEnabledAsync(false, TestContext.Current.CancellationToken)
+            .WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+        Assert.Equal(RuntimeStatus.Disabled, fixture.Runtime.CurrentSnapshot.Status);
+    }
+
+    [Fact]
+    public async Task UpdateSettings_StoreFailureBeforeCommit_ThrowsAndPreservesExactLastGoodState()
+    {
+        await using var fixture = RuntimeFixture.Create(modeEnabled: false, temperatures: []);
+        var previousSettings = fixture.Runtime.CurrentSettings;
+        var previousSnapshot = fixture.Runtime.CurrentSnapshot;
+        fixture.SettingsStore.Failure = new InvalidOperationException("store failed");
+
+        var failure = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            fixture.Runtime.UpdateSettingsAsync(
+                previousSettings with { NotificationsEnabled = false },
+                TestContext.Current.CancellationToken));
+
+        Assert.Equal("store failed", failure.Message);
+        Assert.Same(previousSettings, fixture.Runtime.CurrentSettings);
+        Assert.Same(previousSnapshot, fixture.Runtime.CurrentSnapshot);
+    }
+
+    [Fact]
+    public async Task SetModeEnabled_StoreFailureBeforeCommit_ThrowsAndPreservesExactLastGoodState()
+    {
+        await using var fixture = RuntimeFixture.Create(modeEnabled: false, temperatures: []);
+        var previousSettings = fixture.Runtime.CurrentSettings;
+        var previousSnapshot = fixture.Runtime.CurrentSnapshot;
+        fixture.SettingsStore.Failure = new InvalidOperationException("store failed");
+
+        var failure = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            fixture.Runtime.SetModeEnabledAsync(true, TestContext.Current.CancellationToken));
+
+        Assert.Equal("store failed", failure.Message);
+        Assert.Same(previousSettings, fixture.Runtime.CurrentSettings);
+        Assert.Same(previousSnapshot, fixture.Runtime.CurrentSnapshot);
+    }
+
+    [Fact]
     public async Task OneSecondRamp_ProducesTenGradualWritesBetweenSamples()
     {
         await using var fixture = RuntimeFixture.Create(modeEnabled: true, temperatures: [35, 85, 85]);
@@ -308,8 +396,73 @@ public sealed class ThermalRuntimeTests
 
         Assert.Equal(RuntimeStatus.Disabled, fixture.Runtime.CurrentSnapshot.Status);
         Assert.Null(fixture.Runtime.CurrentSnapshot.Message);
-        Assert.Equal(2, fixture.SettingsStore.SaveCalls);
+        Assert.Equal(1, fixture.SettingsStore.SaveCalls);
         Assert.Equal(2, fixture.Lighting.ReleaseCalls);
+    }
+
+    [Fact]
+    public async Task SetModeEnabled_FaultedBackgroundLoopDuringDisable_CommitsFaultAndRetriesReleaseWithoutRepersisting()
+    {
+        await using var fixture = RuntimeFixture.Create(modeEnabled: true, temperatures: [68]);
+        await fixture.Runtime.StartAsync(TestContext.Current.CancellationToken);
+        fixture.Clock.FailGetUtcNow = true;
+        fixture.Advance(TimeSpan.FromMilliseconds(100));
+        await fixture.Clock.PersistentFailuresObserved
+            .WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+
+        await fixture.Runtime.SetModeEnabledAsync(false, TestContext.Current.CancellationToken)
+            .WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+
+        Assert.False(fixture.Runtime.CurrentSettings.IsModeEnabled);
+        Assert.Equal(RuntimeStatus.Faulted, fixture.Runtime.CurrentSnapshot.Status);
+        Assert.False(fixture.Runtime.CurrentSnapshot.IsModeEnabled);
+        Assert.Contains("clock failed", fixture.Runtime.CurrentSnapshot.Message);
+        Assert.Equal(1, fixture.SettingsStore.SaveCalls);
+        Assert.Equal(0, fixture.Lighting.ReleaseCalls);
+
+        fixture.Clock.FailGetUtcNow = false;
+        await fixture.Runtime.SetModeEnabledAsync(false, TestContext.Current.CancellationToken)
+            .WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+
+        Assert.Equal(RuntimeStatus.Disabled, fixture.Runtime.CurrentSnapshot.Status);
+        Assert.Equal(1, fixture.SettingsStore.SaveCalls);
+        Assert.Equal(1, fixture.Lighting.ReleaseCalls);
+        await fixture.Runtime.SetModeEnabledAsync(false, TestContext.Current.CancellationToken)
+            .WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+        Assert.Equal(1, fixture.Lighting.ReleaseCalls);
+    }
+
+    [Fact]
+    public async Task UpdateSettings_FaultedBackgroundLoopDuringDisable_CommitsFaultAndRetriesReleaseWithoutRepersisting()
+    {
+        await using var fixture = RuntimeFixture.Create(modeEnabled: true, temperatures: [68]);
+        await fixture.Runtime.StartAsync(TestContext.Current.CancellationToken);
+        fixture.Clock.FailGetUtcNow = true;
+        fixture.Advance(TimeSpan.FromMilliseconds(100));
+        await fixture.Clock.PersistentFailuresObserved
+            .WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+        var disabled = fixture.SettingsStore.Initial with { IsModeEnabled = false, NotificationsEnabled = false };
+
+        await fixture.Runtime.UpdateSettingsAsync(disabled, TestContext.Current.CancellationToken)
+            .WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+
+        Assert.Equal(disabled, fixture.Runtime.CurrentSettings);
+        Assert.Equal(RuntimeStatus.Faulted, fixture.Runtime.CurrentSnapshot.Status);
+        Assert.False(fixture.Runtime.CurrentSnapshot.IsModeEnabled);
+        Assert.Contains("clock failed", fixture.Runtime.CurrentSnapshot.Message);
+        Assert.Equal(1, fixture.SettingsStore.SaveCalls);
+        Assert.Equal(0, fixture.Lighting.ReleaseCalls);
+
+        fixture.Clock.FailGetUtcNow = false;
+        await fixture.Runtime.UpdateSettingsAsync(disabled, TestContext.Current.CancellationToken)
+            .WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+
+        Assert.Equal(RuntimeStatus.Disabled, fixture.Runtime.CurrentSnapshot.Status);
+        Assert.Equal(1, fixture.SettingsStore.SaveCalls);
+        Assert.Equal(1, fixture.Lighting.ReleaseCalls);
+        await fixture.Runtime.UpdateSettingsAsync(disabled with { NotificationsEnabled = true }, TestContext.Current.CancellationToken)
+            .WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+        Assert.Equal(2, fixture.SettingsStore.SaveCalls);
     }
 
     [Fact]
@@ -580,8 +733,11 @@ public sealed class ThermalRuntimeTests
     {
         private readonly object _sync = new();
         private readonly List<FakeTimer> _timers = [];
+        private readonly TaskCompletionSource _persistentFailuresObserved = new(TaskCreationOptions.RunContinuationsAsynchronously);
         private DateTimeOffset _utcNow;
+        private int _persistentFailureCalls;
         public int GetUtcNowFailuresRemaining { get; set; }
+        public bool FailGetUtcNow { get; set; }
 
         public FakeTimeProvider(DateTimeOffset utcNow)
         {
@@ -599,11 +755,20 @@ public sealed class ThermalRuntimeTests
             }
         }
 
+        public Task PersistentFailuresObserved => _persistentFailuresObserved.Task;
+
         public override DateTimeOffset GetUtcNow()
         {
-            if (GetUtcNowFailuresRemaining > 0)
+            if (FailGetUtcNow || GetUtcNowFailuresRemaining > 0)
             {
-                GetUtcNowFailuresRemaining--;
+                if (FailGetUtcNow && Interlocked.Increment(ref _persistentFailureCalls) >= 2)
+                {
+                    _persistentFailuresObserved.TrySetResult();
+                }
+                if (GetUtcNowFailuresRemaining > 0)
+                {
+                    GetUtcNowFailuresRemaining--;
+                }
                 throw new InvalidOperationException("clock failed");
             }
             lock (_sync)
@@ -782,7 +947,10 @@ public sealed class ThermalRuntimeTests
     private sealed class FakeLightingController : ILightingController
     {
         public bool IsConnected { get; private set; }
-        public LightingDeviceInfo? ConnectedDevice => IsConnected ? new LightingDeviceInfo("lamp", "Lamp", 4, true) : null;
+        public bool FailConnectedDevice { get; set; }
+        public LightingDeviceInfo? ConnectedDevice => FailConnectedDevice
+            ? throw new InvalidOperationException("device failed")
+            : IsConnected ? new LightingDeviceInfo("lamp", "Lamp", 4, true) : null;
         public event EventHandler? DevicesChanged
         {
             add { }
@@ -855,6 +1023,7 @@ public sealed class ThermalRuntimeTests
         public AppSettings? Saved { get; private set; }
         public int SaveCalls { get; private set; }
         public Action<AppSettings>? OnSave { get; set; }
+        public Exception? Failure { get; set; }
 
         public Task<SettingsLoadResult> LoadAsync(CancellationToken cancellationToken) =>
             Task.FromResult(new SettingsLoadResult(Initial));
@@ -863,6 +1032,10 @@ public sealed class ThermalRuntimeTests
         {
             cancellationToken.ThrowIfCancellationRequested();
             SaveCalls++;
+            if (Failure is { } failure)
+            {
+                throw failure;
+            }
             OnSave?.Invoke(settings);
             Saved = settings;
             return Task.CompletedTask;

@@ -16,11 +16,12 @@ public sealed class SettingsViewModelTests
         var startup = new FakeStartupService(recorder);
         var vm = new SettingsViewModel(runtime, startup, AppSettings.Default) { ColdTemperature = 65 };
 
-        await vm.SaveAsync();
+        await vm.SaveCommand.ExecuteAsync();
 
         Assert.Equal("Температуры должны возрастать с шагом не менее 1 °C.", vm.ValidationMessage);
         Assert.Empty(recorder.Events);
-        Assert.Equal(ThermalProfile.Default, vm.LiveSettings.Profile);
+        Assert.Equal(AppSettings.Default, runtime.CurrentSettings);
+        Assert.Equal(AppSettings.Default, vm.LiveSettings);
     }
 
     [Fact]
@@ -37,13 +38,23 @@ public sealed class SettingsViewModelTests
         };
         vm.ProfileSaved += (_, _) => recorder.Record("vm.commit");
 
-        await vm.SaveAsync();
+        await vm.SaveCommand.ExecuteAsync();
 
+        var expected = AppSettings.Default with
+        {
+            Profile = new ThermalProfile(
+                40,
+                ThermalProfile.Default.ColdColor,
+                67,
+                ThermalProfile.Default.WarmColor,
+                88,
+                ThermalProfile.Default.HotColor,
+                ThermalProfile.Default.SmoothingSeconds),
+        };
         Assert.Equal(["runtime.persist", "vm.commit"], recorder.Events);
         Assert.Equal(1, runtime.PersistenceCount);
-        Assert.Equal(40, vm.LiveSettings.Profile.ColdTemperature);
-        Assert.Equal(67, vm.LiveSettings.Profile.WarmTemperature);
-        Assert.Equal(88, vm.LiveSettings.Profile.HotTemperature);
+        Assert.Equal(expected, runtime.CurrentSettings);
+        Assert.Equal(expected, vm.LiveSettings);
         Assert.Null(vm.ValidationMessage);
     }
 
@@ -56,9 +67,10 @@ public sealed class SettingsViewModelTests
         var vm = new SettingsViewModel(runtime, startup, AppSettings.Default) { IsAutostartEnabled = true };
         vm.ProfileSaved += (_, _) => recorder.Record("vm.commit");
 
-        await vm.SaveAsync();
+        await vm.SaveCommand.ExecuteAsync();
 
         Assert.Equal(["startup:true", "runtime.persist", "vm.commit"], recorder.Events);
+        Assert.True(startup.IsEnabled);
         Assert.True(vm.LiveSettings.IsAutostartEnabled);
     }
 
@@ -70,11 +82,13 @@ public sealed class SettingsViewModelTests
         var startup = new FakeStartupService(recorder);
         var vm = new SettingsViewModel(runtime, startup, AppSettings.Default) { IsAutostartEnabled = true };
 
-        await vm.SaveAsync();
+        await vm.SaveCommand.ExecuteAsync();
 
         Assert.Equal(["startup:true", "runtime.fail", "startup:false"], recorder.Events);
         Assert.Equal(0, runtime.PersistenceCount);
-        Assert.False(vm.LiveSettings.IsAutostartEnabled);
+        Assert.Equal(AppSettings.Default, runtime.CurrentSettings);
+        Assert.Equal(AppSettings.Default, vm.LiveSettings);
+        Assert.False(startup.IsEnabled);
         Assert.Equal("Не удалось сохранить настройки.", vm.ValidationMessage);
     }
 
@@ -86,10 +100,12 @@ public sealed class SettingsViewModelTests
         var startup = new FakeStartupService(recorder);
         var vm = new SettingsViewModel(runtime, startup, AppSettings.Default) { IsAutostartEnabled = true };
 
-        await vm.SaveAsync();
+        await vm.SaveCommand.ExecuteAsync();
 
         Assert.Equal(["startup:true", "runtime.fail", "startup:false"], recorder.Events);
-        Assert.False(vm.LiveSettings.IsAutostartEnabled);
+        Assert.Equal(AppSettings.Default, runtime.CurrentSettings);
+        Assert.Equal(AppSettings.Default, vm.LiveSettings);
+        Assert.False(startup.IsEnabled);
         Assert.Equal("Не удалось сохранить настройки.", vm.ValidationMessage);
     }
 
@@ -101,11 +117,13 @@ public sealed class SettingsViewModelTests
         var startup = new FakeStartupService(recorder) { FailWhenDisabled = true };
         var vm = new SettingsViewModel(runtime, startup, AppSettings.Default) { IsAutostartEnabled = true };
 
-        await vm.SaveAsync();
+        await vm.SaveCommand.ExecuteAsync();
 
         Assert.Equal(["startup:true", "runtime.fail", "startup:false"], recorder.Events);
         Assert.Equal("Не удалось сохранить настройки. Не удалось вернуть настройку автозапуска.", vm.ValidationMessage);
-        Assert.False(vm.LiveSettings.IsAutostartEnabled);
+        Assert.Equal(AppSettings.Default, runtime.CurrentSettings);
+        Assert.Equal(AppSettings.Default, vm.LiveSettings);
+        Assert.True(startup.IsEnabled);
     }
 
     [Fact]
@@ -117,11 +135,11 @@ public sealed class SettingsViewModelTests
         var vm = new SettingsViewModel(runtime, startup, AppSettings.Default) { ColdTemperature = 40, IsAutostartEnabled = true };
         vm.ProfileSaved += (_, _) => recorder.Record("vm.commit");
 
-        await vm.SaveAsync();
+        await vm.SaveCommand.ExecuteAsync();
 
-        var candidate = AppSettings.Default with { IsAutostartEnabled = true, Profile = ThermalProfile.Default with { ColdTemperature = 40 } };
         Assert.Equal(AppSettings.Default, runtime.CurrentSettings);
         Assert.Equal(AppSettings.Default, vm.LiveSettings);
+        Assert.False(startup.IsEnabled);
         Assert.Equal(["startup:true", "runtime.fail", "startup:false"], recorder.Events);
         Assert.Equal("Не удалось сохранить настройки.", vm.ValidationMessage);
     }
@@ -134,11 +152,12 @@ public sealed class SettingsViewModelTests
         var startup = new FakeStartupService(recorder) { FailWhenEnabled = true };
         var vm = new SettingsViewModel(runtime, startup, AppSettings.Default) { IsAutostartEnabled = true };
 
-        await vm.SaveAsync();
+        await vm.SaveCommand.ExecuteAsync();
 
         Assert.Equal(["startup:true"], recorder.Events);
         Assert.Equal(AppSettings.Default, runtime.CurrentSettings);
         Assert.Equal(AppSettings.Default, vm.LiveSettings);
+        Assert.False(startup.IsEnabled);
         Assert.Equal("Не удалось изменить автозапуск.", vm.ValidationMessage);
     }
 
@@ -151,7 +170,7 @@ public sealed class SettingsViewModelTests
         var vm = new SettingsViewModel(runtime, startup, AppSettings.Default) { ColdTemperature = 40 };
         vm.ProfileSaved += (_, _) => throw new InvalidOperationException("view failed");
 
-        await vm.SaveAsync();
+        await vm.SaveCommand.ExecuteAsync();
 
         Assert.Equal(runtime.CurrentSettings, vm.LiveSettings);
         Assert.Equal(40, vm.LiveSettings.Profile.ColdTemperature);
@@ -169,7 +188,7 @@ public sealed class SettingsViewModelTests
         var dashboard = new MainViewModel(runtime, context);
         dashboard.SynchronizeProfile(settings);
 
-        await settings.SaveAsync();
+        await settings.SaveCommand.ExecuteAsync();
         dashboard.Dispose();
         context.Drain();
 
@@ -185,7 +204,7 @@ public sealed class SettingsViewModelTests
         var vm = new SettingsViewModel(runtime, startup, AppSettings.Default) { ColdTemperature = 40 };
 
         var first = vm.SaveCommand.ExecuteAsync();
-        await runtime.UpdateEntered;
+        await runtime.UpdateEntered.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
         var second = vm.SaveCommand.ExecuteAsync();
 
         Assert.True(vm.SaveCommand.IsExecuting);
@@ -193,11 +212,14 @@ public sealed class SettingsViewModelTests
         Assert.Equal(1, runtime.UpdateCalls);
 
         runtime.FailGate(new InvalidOperationException("store unavailable"));
-        await Task.WhenAll(first, second);
+        await Task.WhenAll(first, second)
+            .WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
 
         Assert.False(vm.SaveCommand.IsExecuting);
         Assert.True(vm.SaveCommand.CanExecute(null));
         Assert.Equal(1, runtime.UpdateCalls);
+        Assert.Equal(AppSettings.Default, runtime.CurrentSettings);
+        Assert.Equal(AppSettings.Default, vm.LiveSettings);
         Assert.Equal("Не удалось сохранить настройки.", vm.ValidationMessage);
     }
 
@@ -211,7 +233,7 @@ public sealed class SettingsViewModelTests
         using var dashboard = new MainViewModel(runtime);
         dashboard.SynchronizeProfile(settings);
 
-        await settings.SaveAsync();
+        await settings.SaveCommand.ExecuteAsync();
 
         Assert.Equal(40, dashboard.Profile.ColdTemperature);
     }
@@ -227,7 +249,7 @@ public sealed class SettingsViewModelTests
         dashboard.Dispose();
 
         dashboard.SynchronizeProfile(settings);
-        await settings.SaveAsync();
+        await settings.SaveCommand.ExecuteAsync();
 
         Assert.Equal(ThermalProfile.Default, dashboard.Profile);
     }
@@ -245,6 +267,25 @@ public sealed class SettingsViewModelTests
         Assert.Equal(35, vm.ColdTemperature);
         Assert.False(vm.IsAutostartEnabled);
         Assert.Empty(recorder.Events);
+    }
+
+    [Fact]
+    public async Task SaveCommand_UnexpectedPreCommitFailure_CompensatesStartupAndUsesCommandExceptionHandler()
+    {
+        var recorder = new OperationRecorder();
+        var runtime = new FakeThermalRuntime(recorder) { Failure = new UnexpectedRuntimeException() };
+        var startup = new FakeStartupService(recorder) { FailWhenDisabled = true };
+        var vm = new SettingsViewModel(runtime, startup, AppSettings.Default) { IsAutostartEnabled = true };
+
+        await vm.SaveCommand.ExecuteAsync();
+
+        Assert.Equal(["startup:true", "runtime.fail", "startup:false"], recorder.Events);
+        Assert.Equal(AppSettings.Default, runtime.CurrentSettings);
+        Assert.Equal(AppSettings.Default, vm.LiveSettings);
+        Assert.True(startup.IsEnabled);
+        Assert.Equal("Не удалось сохранить настройки.", vm.ValidationMessage);
+        Assert.False(vm.SaveCommand.IsExecuting);
+        Assert.True(vm.SaveCommand.CanExecute(null));
     }
 
     private sealed class OperationRecorder
@@ -302,15 +343,22 @@ public sealed class SettingsViewModelTests
     {
         public bool FailWhenDisabled { get; init; }
         public bool FailWhenEnabled { get; init; }
-        public Task<bool> GetEnabledAsync(CancellationToken cancellationToken) => Task.FromResult(false);
+        public bool IsEnabled { get; private set; }
+        public Task<bool> GetEnabledAsync(CancellationToken cancellationToken) => Task.FromResult(IsEnabled);
         public Task SetEnabledAsync(bool enabled, CancellationToken cancellationToken)
         {
             recorder.Record($"startup:{enabled.ToString().ToLowerInvariant()}");
-            return (!enabled && FailWhenDisabled) || (enabled && FailWhenEnabled)
-                ? Task.FromException(new InvalidOperationException("rollback denied"))
-                : Task.CompletedTask;
+            if ((!enabled && FailWhenDisabled) || (enabled && FailWhenEnabled))
+            {
+                return Task.FromException(new InvalidOperationException("rollback denied"));
+            }
+
+            IsEnabled = enabled;
+            return Task.CompletedTask;
         }
     }
+
+    private sealed class UnexpectedRuntimeException : Exception;
 
     private sealed class QueuedSynchronizationContext : SynchronizationContext
     {

@@ -141,31 +141,39 @@ public sealed class ThermalRuntime : IThermalRuntime
                 var updated = (_settings with { IsModeEnabled = enabled }).Validate();
                 await _settingsStore.SaveAsync(updated, cancellationToken).ConfigureAwait(false);
                 Volatile.Write(ref _settings, updated);
+                if (!enabled)
+                {
+                    _releasePending = true;
+                }
             }
 
-            if (!enabled)
+            try
             {
-                await StopLoopNoLockAsync().ConfigureAwait(false);
-                await _processGate.WaitAsync(CancellationToken.None).ConfigureAwait(false);
-                try
+                if (!enabled)
                 {
-                    var releaseMessage = await TryReleaseLightingAsync().ConfigureAwait(false);
-                    ResetMonitoringState();
-                    snapshot = CreateSnapshot(RuntimeStatus.Disabled, null, null, null, releaseMessage);
+                    await StopLoopNoLockAsync().ConfigureAwait(false);
+                    await _processGate.WaitAsync(CancellationToken.None).ConfigureAwait(false);
+                    try
+                    {
+                        var releaseMessage = await TryReleaseLightingAsync().ConfigureAwait(false);
+                        ResetMonitoringState();
+                        snapshot = CreateSnapshot(RuntimeStatus.Disabled, null, null, null, releaseMessage);
+                    }
+                    finally { _processGate.Release(); }
                 }
-                finally
+                else if (_suspended)
                 {
-                    _processGate.Release();
+                    snapshot = CreateSnapshot(RuntimeStatus.Suspended, _targetReading, _displayedColor, _targetRange, null);
+                }
+                else
+                {
+                    StartLoopNoLock();
+                    snapshot = CreateSnapshot(RuntimeStatus.Connecting, _targetReading, _displayedColor, _targetRange, null);
                 }
             }
-            else if (_suspended)
+            catch (Exception exception)
             {
-                snapshot = CreateSnapshot(RuntimeStatus.Suspended, _targetReading, _displayedColor, _targetRange, null);
-            }
-            else
-            {
-                StartLoopNoLock();
-                snapshot = CreateSnapshot(RuntimeStatus.Connecting, _targetReading, _displayedColor, _targetRange, null);
+                snapshot = CreateFaultSnapshot(exception);
             }
         }
         finally
@@ -189,11 +197,25 @@ public sealed class ThermalRuntime : IThermalRuntime
         {
             ThrowIfStopped();
             var previousSettings = _settings;
-            await _settingsStore.SaveAsync(validated, cancellationToken).ConfigureAwait(false);
-            Volatile.Write(ref _settings, validated);
+            var settingsChanged = validated != previousSettings;
+            if (!settingsChanged && !_releasePending)
+            {
+                return;
+            }
+
+            var modeChanged = validated.IsModeEnabled != previousSettings.IsModeEnabled;
+            if (settingsChanged)
+            {
+                await _settingsStore.SaveAsync(validated, cancellationToken).ConfigureAwait(false);
+                Volatile.Write(ref _settings, validated);
+                if (modeChanged && !validated.IsModeEnabled)
+                {
+                    _releasePending = true;
+                }
+            }
+
             try
             {
-                var modeChanged = validated.IsModeEnabled != previousSettings.IsModeEnabled;
                 if (modeChanged && !validated.IsModeEnabled)
                 {
                     await StopLoopNoLockAsync().ConfigureAwait(false);
@@ -232,7 +254,7 @@ public sealed class ThermalRuntime : IThermalRuntime
             }
             catch (Exception exception)
             {
-                snapshot = CreateSnapshot(RuntimeStatus.Faulted, _targetReading, _displayedColor, _targetRange, exception.Message);
+                snapshot = CreateFaultSnapshot(exception);
             }
         }
         finally
@@ -726,6 +748,18 @@ public sealed class ThermalRuntime : IThermalRuntime
             message,
             _timeProvider.GetUtcNow(),
             _settings.IsModeEnabled);
+    }
+
+    private RuntimeSnapshot CreateFaultSnapshot(Exception exception)
+    {
+        var previous = CurrentSnapshot;
+        DateTimeOffset timestamp;
+        try { timestamp = _timeProvider.GetUtcNow(); }
+        catch (Exception) { timestamp = previous.Timestamp; }
+        LightingDeviceInfo? device;
+        try { device = _lightingController.ConnectedDevice; }
+        catch (Exception) { device = previous.LightingDevice; }
+        return new RuntimeSnapshot(RuntimeStatus.Faulted, _targetReading, _displayedColor, _targetRange, device, exception.Message, timestamp, CurrentSettings.IsModeEnabled);
     }
 
     private void Publish(RuntimeSnapshot snapshot)

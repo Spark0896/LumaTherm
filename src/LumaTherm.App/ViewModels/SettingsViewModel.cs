@@ -58,7 +58,7 @@ public sealed class SettingsViewModel : ObservableObject
     public AsyncRelayCommand SaveCommand { get; }
     public RelayCommand ResetDefaultsCommand { get; }
 
-    internal async Task SaveAsync()
+    private async Task SaveAsync()
     {
         AppSettings candidate;
         try
@@ -90,10 +90,16 @@ public sealed class SettingsViewModel : ObservableObject
         {
             await _runtime.UpdateSettingsAsync(candidate, CancellationToken.None);
         }
-        catch (Exception)
+        catch (Exception exception)
         {
-            ValidationMessage = await RollBackAutostartIfNeededAsync(autostartChanged);
-            return;
+            var failureMessage = await RollBackAutostartIfNeededAsync(autostartChanged);
+            if (exception is ArgumentException or InvalidOperationException)
+            {
+                ValidationMessage = failureMessage;
+                return;
+            }
+
+            throw;
         }
 
         Commit(candidate, null);

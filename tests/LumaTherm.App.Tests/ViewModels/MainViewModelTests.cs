@@ -152,6 +152,18 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
+    public async Task ToggleMode_FromDisabled_KeepsAuthoritativeFalseWhenEnableRequestDoesNotTakeEffect()
+    {
+        var runtime = new FakeThermalRuntime { ModeSetIsEnabled = false };
+        using var vm = new MainViewModel(runtime);
+
+        await vm.ToggleModeCommand.ExecuteAsync();
+
+        Assert.True(runtime.ModeEnabled);
+        Assert.False(vm.IsModeEnabled);
+    }
+
+    [Fact]
     public async Task ToggleMode_WhileSuspended_UsesEnabledBitPublishedByRuntime()
     {
         var runtime = new FakeThermalRuntime { ModeSetOutcome = RuntimeStatus.Suspended };
@@ -206,6 +218,7 @@ public sealed class MainViewModelTests
         public bool ModeEnabled { get; private set; }
         public AppSettings CurrentSettings { get; private set; } = AppSettings.Default;
         public RuntimeStatus? ModeSetOutcome { get; init; }
+        public bool? ModeSetIsEnabled { get; init; }
 
         public void Publish(RuntimeSnapshot snapshot)
         {
@@ -217,7 +230,11 @@ public sealed class MainViewModelTests
         {
             ModeEnabled = enabled;
             CurrentSettings = CurrentSettings with { IsModeEnabled = enabled };
-            Publish(Snapshot(ModeSetOutcome ?? (enabled ? RuntimeStatus.Connecting : RuntimeStatus.Disabled), null, CurrentSnapshot.Timestamp.AddSeconds(1), isModeEnabled: ModeSetOutcome is not RuntimeStatus.Disabled && enabled));
+            Publish(Snapshot(
+                ModeSetOutcome ?? (enabled ? RuntimeStatus.Connecting : RuntimeStatus.Disabled),
+                null,
+                CurrentSnapshot.Timestamp.AddSeconds(1),
+                isModeEnabled: ModeSetIsEnabled ?? (ModeSetOutcome is not RuntimeStatus.Disabled && enabled)));
             return Task.CompletedTask;
         }
 
