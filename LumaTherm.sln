@@ -1,0 +1,24 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LumaTherm.Core", "src\LumaTherm.Core\LumaTherm.Core.csproj", "{7E0B524A-8B9C-4A7E-B7F4-FB859A5E787B}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LumaTherm.Core.Tests", "tests\LumaTherm.Core.Tests\LumaTherm.Core.Tests.csproj", "{19F6F6AD-7C46-49D1-AE12-5FCA2BDE9D62}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{7E0B524A-8B9C-4A7E-B7F4-FB859A5E787B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{7E0B524A-8B9C-4A7E-B7F4-FB859A5E787B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{7E0B524A-8B9C-4A7E-B7F4-FB859A5E787B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{7E0B524A-8B9C-4A7E-B7F4-FB859A5E787B}.Release|Any CPU.Build.0 = Release|Any CPU
+		{19F6F6AD-7C46-49D1-AE12-5FCA2BDE9D62}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{19F6F6AD-7C46-49D1-AE12-5FCA2BDE9D62}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{19F6F6AD-7C46-49D1-AE12-5FCA2BDE9D62}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{19F6F6AD-7C46-49D1-AE12-5FCA2BDE9D62}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal

@@ -15,3 +15,8 @@ dist/
 
 # Local logs and settings
 *.log
+
+# .NET local tooling and test output
+.dotnet/
+TestResults/
+*.trx
