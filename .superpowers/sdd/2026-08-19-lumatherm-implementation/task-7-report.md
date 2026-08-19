@@ -56,3 +56,40 @@
 ## Concern
 
 The first restore cannot access NuGet's audit feed in this environment. This is environmental only; all final commands completed warning-free with audit disabled.
+
+## Fix round 1 — reviewer blockers
+
+### RED → GREEN evidence
+
+The following test-first changes were made against commit `c147671`:
+
+1. Added direct `RuntimeSnapshot.Range` projection, suspended-state authority, runtime-outcome toggle, queued snapshot disposal, single-persistence/rollback, shared ordering recorder, SaveCommand reentry, and post-dispose profile-wiring tests. The focused RED command failed as expected with missing `MainViewModel.CurrentRange` and the obsolete SettingsViewModel constructor that still required `ISettingsStore`.
+
+   ```powershell
+   & "$PWD\.dotnet\dotnet.exe" test tests\LumaTherm.App.Tests\LumaTherm.App.Tests.csproj --filter FullyQualifiedName~ViewModels --no-restore -p:NuGetAudit=false
+   ```
+
+2. Implemented direct nullable range projection; preserved the last known enabled state for `Suspended`; used `CurrentSnapshot` after a toggle instead of assigning the requested value; removed VM-level `ISettingsStore` persistence; and added startup compensation when the runtime persistence owner fails. GREEN: `27 passed`.
+
+3. Self-review added the missing `ArgumentException` runtime-failure rollback case. Its focused RED showed the rollback call was missing (`startup:true`, `runtime.fail`, expected `startup:false`); removing the post-side-effect validation catch produced GREEN.
+
+### Final verification
+
+```powershell
+& "$PWD\.dotnet\dotnet.exe" test tests\LumaTherm.App.Tests\LumaTherm.App.Tests.csproj --filter FullyQualifiedName~ViewModels --no-restore -p:NuGetAudit=false
+# 28 passed, 0 failed
+
+& "$PWD\.dotnet\dotnet.exe" test LumaTherm.sln --no-restore -p:NuGetAudit=false
+# Core: 61 passed; Infrastructure: 58 passed; App: 28 passed
+
+& "$PWD\.dotnet\dotnet.exe" build LumaTherm.sln --no-restore -p:NuGetAudit=false
+# Build succeeded, 0 warnings, 0 errors
+```
+
+### Self-review
+
+- `CurrentRange` uses the runtime-provided classification without recomputing it.
+- Suspended snapshots retain the explicit saved/requested mode; a differing runtime result wins a completed toggle.
+- `ThermalRuntime.UpdateSettingsAsync` is the sole persistence owner. Shared-recorder tests prove normal ordering and exactly one persistence.
+- Any post-startup runtime failure compensates autostart and leaves live settings/profile events unchanged; rollback failure is visible and user-safe.
+- `SaveCommand` exposes/recovers execution state and contains unexpected errors; queued callbacks and profile synchronization are ignored after disposal.

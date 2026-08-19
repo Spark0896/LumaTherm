@@ -8,7 +8,6 @@ namespace LumaTherm.App.ViewModels;
 public sealed class SettingsViewModel : ObservableObject
 {
     private readonly IThermalRuntime _runtime;
-    private readonly ISettingsStore _settingsStore;
     private readonly IStartupService _startupService;
     private AppSettings _liveSettings;
     private double _coldTemperature;
@@ -26,17 +25,16 @@ public sealed class SettingsViewModel : ObservableObject
     private string _lightingDeviceName = "Подсветка не обнаружена";
     private string? _validationMessage;
 
-    public SettingsViewModel(IThermalRuntime runtime, ISettingsStore settingsStore, IStartupService startupService, AppSettings settings)
+    public SettingsViewModel(IThermalRuntime runtime, IStartupService startupService, AppSettings settings)
     {
         _runtime = runtime ?? throw new ArgumentNullException(nameof(runtime));
-        _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
         _startupService = startupService ?? throw new ArgumentNullException(nameof(startupService));
         _liveSettings = (settings ?? throw new ArgumentNullException(nameof(settings))).Validate();
         LoadEditableValues(_liveSettings);
         var snapshot = runtime.CurrentSnapshot;
         GpuName = snapshot.Temperature?.DeviceName ?? GpuName;
         LightingDeviceName = snapshot.LightingDevice?.Name ?? LightingDeviceName;
-        SaveCommand = new AsyncRelayCommand(SaveAsync);
+        SaveCommand = new AsyncRelayCommand(SaveAsync, onException: _ => ValidationMessage = "Не удалось сохранить настройки.");
         ResetDefaultsCommand = new RelayCommand(ResetDefaults);
     }
 
@@ -74,7 +72,8 @@ public sealed class SettingsViewModel : ObservableObject
             return;
         }
 
-        if (candidate.IsAutostartEnabled != _liveSettings.IsAutostartEnabled)
+        var autostartChanged = candidate.IsAutostartEnabled != _liveSettings.IsAutostartEnabled;
+        if (autostartChanged)
         {
             try
             {
@@ -90,16 +89,10 @@ public sealed class SettingsViewModel : ObservableObject
         try
         {
             await _runtime.UpdateSettingsAsync(candidate, CancellationToken.None);
-            await _settingsStore.SaveAsync(candidate, CancellationToken.None);
-        }
-        catch (ArgumentException exception)
-        {
-            ValidationMessage = TranslateValidationError(exception);
-            return;
         }
         catch (Exception)
         {
-            ValidationMessage = "Не удалось сохранить настройки.";
+            ValidationMessage = await RollBackAutostartIfNeededAsync(autostartChanged);
             return;
         }
 
@@ -137,6 +130,24 @@ public sealed class SettingsViewModel : ObservableObject
         IsAutostartEnabled = settings.IsAutostartEnabled;
         MinimizeToTray = settings.MinimizeToTray;
         NotificationsEnabled = settings.NotificationsEnabled;
+    }
+
+    private async Task<string> RollBackAutostartIfNeededAsync(bool autostartChanged)
+    {
+        if (!autostartChanged)
+        {
+            return "Не удалось сохранить настройки.";
+        }
+
+        try
+        {
+            await _startupService.SetEnabledAsync(_liveSettings.IsAutostartEnabled, CancellationToken.None);
+            return "Не удалось сохранить настройки.";
+        }
+        catch (Exception)
+        {
+            return "Не удалось сохранить настройки. Не удалось вернуть настройку автозапуска.";
+        }
     }
 
     private static string TranslateValidationError(ArgumentException exception) => exception.Message switch

@@ -17,6 +17,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     private bool _disposed;
     private double _currentTemperature = double.NaN;
     private RgbColor _displayColor = ThermalProfile.Default.ColdColor;
+    private ThermalRange? _currentRange;
     private ThermalProfile _profile = ThermalProfile.Default;
     private string _temperatureText = "—°C";
     private string _statusText = "Подключение…";
@@ -38,6 +39,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     public ObservableCollection<TemperaturePoint> History { get; } = [];
     public double CurrentTemperature { get => _currentTemperature; private set => SetProperty(ref _currentTemperature, value); }
     public RgbColor DisplayColor { get => _displayColor; private set => SetProperty(ref _displayColor, value); }
+    public ThermalRange? CurrentRange { get => _currentRange; private set => SetProperty(ref _currentRange, value); }
     public ThermalProfile Profile { get => _profile; private set => SetProperty(ref _profile, value); }
     public string TemperatureText { get => _temperatureText; private set => SetProperty(ref _temperatureText, value); }
     public string StatusText { get => _statusText; private set => SetProperty(ref _statusText, value); }
@@ -48,15 +50,14 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     public bool IsModeEnabled { get => _isModeEnabled; private set => SetProperty(ref _isModeEnabled, value); }
     public AsyncRelayCommand ToggleModeCommand { get; }
 
-    public void UpdateProfile(ThermalProfile profile)
-    {
-        ArgumentNullException.ThrowIfNull(profile);
-        Profile = profile;
-    }
-
     public void SynchronizeProfile(SettingsViewModel settingsViewModel)
     {
         ArgumentNullException.ThrowIfNull(settingsViewModel);
+        if (_disposed)
+        {
+            return;
+        }
+
         if (_settingsViewModel is not null)
         {
             _settingsViewModel.ProfileSaved -= OnProfileSaved;
@@ -64,7 +65,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
 
         _settingsViewModel = settingsViewModel;
         _settingsViewModel.ProfileSaved += OnProfileSaved;
-        UpdateProfile(_settingsViewModel.LiveSettings.Profile);
+        SetProfile(_settingsViewModel.LiveSettings.Profile);
     }
 
     public void Dispose()
@@ -113,12 +114,20 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         TemperatureText = snapshot.Temperature is { } temperature ? $"{temperature.Celsius:0.#}°C" : "—°C";
         DisplayColor = snapshot.Color ?? ThermalProfile.Default.ColdColor;
         CurrentColorHex = DisplayColor.ToHex();
+        CurrentRange = snapshot.Range;
         StatusText = ToStatusText(snapshot.Status);
         GpuName = snapshot.Temperature?.DeviceName ?? "GPU не обнаружен";
         SensorSource = snapshot.Temperature?.SourceName ?? "—";
         LightingDeviceName = snapshot.LightingDevice?.Name ?? "Подсветка не обнаружена";
 
-        IsModeEnabled = snapshot.Status != RuntimeStatus.Disabled;
+        if (snapshot.Status == RuntimeStatus.Disabled)
+        {
+            IsModeEnabled = false;
+        }
+        else if (snapshot.Status != RuntimeStatus.Suspended)
+        {
+            IsModeEnabled = true;
+        }
 
         if (snapshot.Temperature is { } reading && _lastReadingTimestamp != reading.Timestamp)
         {
@@ -133,9 +142,8 @@ public sealed class MainViewModel : ObservableObject, IDisposable
 
     private async Task ToggleModeAsync()
     {
-        var enabled = !IsModeEnabled;
-        await _runtime.SetModeEnabledAsync(enabled, CancellationToken.None);
-        IsModeEnabled = enabled;
+        await _runtime.SetModeEnabledAsync(!IsModeEnabled, CancellationToken.None);
+        ApplyModeState(_runtime.CurrentSnapshot.Status);
     }
 
     private void RouteToggleFailure(Exception _)
@@ -152,7 +160,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
 
         if (_synchronizationContext is null)
         {
-            UpdateProfile(profile);
+            SetProfile(profile);
             return;
         }
 
@@ -161,10 +169,28 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             {
                 if (!_disposed)
                 {
-                    UpdateProfile(profile);
+                    SetProfile(profile);
                 }
             },
             null);
+    }
+
+    private void SetProfile(ThermalProfile profile)
+    {
+        ArgumentNullException.ThrowIfNull(profile);
+        Profile = profile;
+    }
+
+    private void ApplyModeState(RuntimeStatus status)
+    {
+        if (status == RuntimeStatus.Disabled)
+        {
+            IsModeEnabled = false;
+        }
+        else if (status != RuntimeStatus.Suspended)
+        {
+            IsModeEnabled = true;
+        }
     }
 
     private static string ToStatusText(RuntimeStatus status) => status switch

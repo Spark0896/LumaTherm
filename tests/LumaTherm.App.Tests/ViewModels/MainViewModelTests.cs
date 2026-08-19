@@ -24,7 +24,19 @@ public sealed class MainViewModelTests
         Assert.Equal("NVML", vm.SensorSource);
         Assert.Equal("Desk lamp", vm.LightingDeviceName);
         Assert.True(vm.IsModeEnabled);
+        Assert.Equal(ThermalRange.Warm, vm.CurrentRange);
         Assert.Single(vm.History);
+    }
+
+    [Fact]
+    public void SnapshotUpdate_ProjectsSuppliedRangeWithoutReclassification()
+    {
+        var runtime = new FakeThermalRuntime();
+        using var vm = new MainViewModel(runtime);
+
+        runtime.Publish(Snapshot(RuntimeStatus.Active, 68, DateTimeOffset.UnixEpoch, range: ThermalRange.Cold));
+
+        Assert.Equal(ThermalRange.Cold, vm.CurrentRange);
     }
 
     [Fact]
@@ -91,6 +103,56 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
+    public void SuspendedSnapshot_PreservesDisabledModeState()
+    {
+        var runtime = new FakeThermalRuntime();
+        using var vm = new MainViewModel(runtime);
+
+        runtime.Publish(Snapshot(RuntimeStatus.Disabled, null, DateTimeOffset.UnixEpoch));
+        runtime.Publish(Snapshot(RuntimeStatus.Suspended, null, DateTimeOffset.UnixEpoch.AddSeconds(1)));
+
+        Assert.False(vm.IsModeEnabled);
+    }
+
+    [Fact]
+    public void SuspendedSnapshot_PreservesEnabledModeState()
+    {
+        var runtime = new FakeThermalRuntime();
+        using var vm = new MainViewModel(runtime);
+
+        runtime.Publish(Snapshot(RuntimeStatus.Active, 68, DateTimeOffset.UnixEpoch));
+        runtime.Publish(Snapshot(RuntimeStatus.Suspended, null, DateTimeOffset.UnixEpoch.AddSeconds(1)));
+
+        Assert.True(vm.IsModeEnabled);
+    }
+
+    [Fact]
+    public async Task ToggleMode_UsesDifferingRuntimeOutcomePublishedBeforeCompletion()
+    {
+        var runtime = new FakeThermalRuntime { ModeSetOutcome = RuntimeStatus.Disabled };
+        using var vm = new MainViewModel(runtime);
+        runtime.Publish(Snapshot(RuntimeStatus.Active, 68, DateTimeOffset.UnixEpoch));
+
+        await vm.ToggleModeCommand.ExecuteAsync();
+
+        Assert.False(vm.IsModeEnabled);
+    }
+
+    [Fact]
+    public void Dispose_IgnoresSnapshotAlreadyQueuedOnSynchronizationContext()
+    {
+        var runtime = new FakeThermalRuntime();
+        var context = new QueuedSynchronizationContext();
+        var vm = new MainViewModel(runtime, context);
+
+        runtime.Publish(Snapshot(RuntimeStatus.Active, 68, DateTimeOffset.UnixEpoch));
+        vm.Dispose();
+        context.Drain();
+
+        Assert.Empty(vm.History);
+    }
+
+    [Fact]
     public void Dispose_UnsubscribesFromRuntimeSnapshots()
     {
         var runtime = new FakeThermalRuntime();
@@ -102,11 +164,11 @@ public sealed class MainViewModelTests
         Assert.Empty(vm.History);
     }
 
-    private static RuntimeSnapshot Snapshot(RuntimeStatus status, double? temperature, DateTimeOffset timestamp, RgbColor? color = null) => new(
+    private static RuntimeSnapshot Snapshot(RuntimeStatus status, double? temperature, DateTimeOffset timestamp, RgbColor? color = null, ThermalRange? range = ThermalRange.Warm) => new(
         status,
         temperature is { } celsius ? new TemperatureReading(celsius, "NVML", "GPU 0", timestamp) : null,
         color ?? new RgbColor(0xFF, 0xC6, 0x4A),
-        ThermalRange.Warm,
+        range,
         new LightingDeviceInfo("lamp", "Desk lamp", 4, true),
         null,
         timestamp);
@@ -116,6 +178,7 @@ public sealed class MainViewModelTests
         public event EventHandler<RuntimeSnapshot>? SnapshotChanged;
         public RuntimeSnapshot CurrentSnapshot { get; private set; } = Snapshot(RuntimeStatus.Disabled, null, DateTimeOffset.MinValue);
         public bool ModeEnabled { get; private set; }
+        public RuntimeStatus? ModeSetOutcome { get; init; }
 
         public void Publish(RuntimeSnapshot snapshot)
         {
@@ -126,6 +189,7 @@ public sealed class MainViewModelTests
         public Task SetModeEnabledAsync(bool enabled, CancellationToken cancellationToken)
         {
             ModeEnabled = enabled;
+            Publish(Snapshot(ModeSetOutcome ?? (enabled ? RuntimeStatus.Connecting : RuntimeStatus.Disabled), null, CurrentSnapshot.Timestamp.AddSeconds(1)));
             return Task.CompletedTask;
         }
 
@@ -135,5 +199,20 @@ public sealed class MainViewModelTests
         public Task ResumeAsync(CancellationToken cancellationToken) => Task.CompletedTask;
         public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    private sealed class QueuedSynchronizationContext : SynchronizationContext
+    {
+        private readonly Queue<(SendOrPostCallback Callback, object? State)> _work = [];
+
+        public override void Post(SendOrPostCallback d, object? state) => _work.Enqueue((d, state));
+
+        public void Drain()
+        {
+            while (_work.TryDequeue(out var item))
+            {
+                item.Callback(item.State);
+            }
+        }
     }
 }
