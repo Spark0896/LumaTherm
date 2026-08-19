@@ -24,17 +24,18 @@ public sealed class ColorEngineTests
     {
         var oneStep = new ColorEngine(Profile, 35);
         var eightSteps = new ColorEngine(Profile, 35);
+        var expected = new RgbColor(255, 188, 75);
 
-        var expected = oneStep.Step(85, TimeSpan.FromSeconds(0.8));
-        RgbColor actual = default;
+        var oneStepActual = oneStep.Step(85, TimeSpan.FromSeconds(0.8));
+        RgbColor eightStepsActual = default;
         for (var i = 0; i < 8; i++)
         {
-            actual = eightSteps.Step(85, TimeSpan.FromSeconds(0.1));
+            eightStepsActual = eightSteps.Step(85, TimeSpan.FromSeconds(0.1));
         }
 
-        Assert.InRange(Math.Abs(expected.R - actual.R), 0, 1);
-        Assert.InRange(Math.Abs(expected.G - actual.G), 0, 1);
-        Assert.InRange(Math.Abs(expected.B - actual.B), 0, 1);
+        Assert.Equal(expected, oneStepActual);
+        Assert.Equal(expected, eightStepsActual);
+        Assert.Equal(oneStepActual, eightStepsActual);
     }
 
     [Fact]
@@ -87,12 +88,44 @@ public sealed class ColorEngineTests
         Assert.Throws<ArgumentException>(() => invalid.Validate());
     }
 
+    [Fact]
+    public void Validate_RejectsNaNColdTemperature()
+    {
+        var invalid = Profile with { ColdTemperature = double.NaN };
+
+        Assert.Throws<ArgumentException>(() => invalid.Validate());
+    }
+
+    [Fact]
+    public void Validate_RejectsNaNWarmTemperature()
+    {
+        var invalid = Profile with { WarmTemperature = double.NaN };
+
+        Assert.Throws<ArgumentException>(() => invalid.Validate());
+    }
+
+    [Fact]
+    public void Validate_RejectsNaNHotTemperature()
+    {
+        var invalid = Profile with { HotTemperature = double.NaN };
+
+        Assert.Throws<ArgumentException>(() => invalid.Validate());
+    }
+
     [Theory]
     [InlineData(0.09)]
     [InlineData(5.01)]
     public void Validate_RejectsSmoothingOutsideSupportedRange(double smoothingSeconds)
     {
         var invalid = Profile with { SmoothingSeconds = smoothingSeconds };
+
+        Assert.Throws<ArgumentException>(() => invalid.Validate());
+    }
+
+    [Fact]
+    public void Validate_RejectsNaNSmoothingSeconds()
+    {
+        var invalid = Profile with { SmoothingSeconds = double.NaN };
 
         Assert.Throws<ArgumentException>(() => invalid.Validate());
     }

@@ -17,7 +17,8 @@ public sealed record ThermalProfile(
 
     public ThermalProfile Validate()
     {
-        if (ColdTemperature is < 0 or > 120 || WarmTemperature is < 0 or > 120 || HotTemperature is < 0 or > 120)
+        if (!double.IsFinite(ColdTemperature) || !double.IsFinite(WarmTemperature) || !double.IsFinite(HotTemperature)
+            || ColdTemperature is < 0 or > 120 || WarmTemperature is < 0 or > 120 || HotTemperature is < 0 or > 120)
         {
             throw new ArgumentException("Temperatures must be between 0 and 120 °C.");
         }
@@ -27,7 +28,7 @@ public sealed record ThermalProfile(
             throw new ArgumentException("Expected ColdTemperature < WarmTemperature < HotTemperature with at least 1 °C between points.");
         }
 
-        if (SmoothingSeconds is < 0.1 or > 5.0)
+        if (!double.IsFinite(SmoothingSeconds) || SmoothingSeconds is < 0.1 or > 5.0)
         {
             throw new ArgumentException("SmoothingSeconds must be between 0.1 and 5.0.");
         }
