@@ -401,10 +401,17 @@ public sealed class ThermalRuntimeTests
     }
 
     [Fact]
-    public async Task SetModeEnabled_FaultedBackgroundLoopDuringDisable_CommitsFaultAndRetriesReleaseWithoutRepersisting()
+    public async Task SetModeEnabled_FaultedBackgroundLoopDuringDisable_ReleasesOwnedLightingInSameMutation()
     {
         await using var fixture = RuntimeFixture.Create(modeEnabled: true, temperatures: [68]);
-        await fixture.Runtime.StartAsync(TestContext.Current.CancellationToken);
+        await fixture.Runtime.StartAsync(TestContext.Current.CancellationToken)
+            .WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+        var active = await fixture.Runtime.ProcessOnceAsync(TestContext.Current.CancellationToken)
+            .WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+        Assert.Equal(RuntimeStatus.Active, active.Status);
+        Assert.True(fixture.Lighting.IsConnected);
+        Assert.Single(fixture.Lighting.Colors);
+
         fixture.Clock.FailGetUtcNow = true;
         fixture.Advance(TimeSpan.FromMilliseconds(100));
         await fixture.Clock.PersistentFailuresObserved
@@ -412,31 +419,40 @@ public sealed class ThermalRuntimeTests
 
         await fixture.Runtime.SetModeEnabledAsync(false, TestContext.Current.CancellationToken)
             .WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+        fixture.Clock.FailGetUtcNow = false;
 
         Assert.False(fixture.Runtime.CurrentSettings.IsModeEnabled);
         Assert.Equal(RuntimeStatus.Faulted, fixture.Runtime.CurrentSnapshot.Status);
         Assert.False(fixture.Runtime.CurrentSnapshot.IsModeEnabled);
         Assert.Contains("clock failed", fixture.Runtime.CurrentSnapshot.Message);
+        Assert.Equal(fixture.SettingsStore.Initial with { IsModeEnabled = false }, fixture.Runtime.CurrentSettings);
+        Assert.Equal(fixture.Runtime.CurrentSettings, fixture.SettingsStore.Saved);
         Assert.Equal(1, fixture.SettingsStore.SaveCalls);
-        Assert.Equal(0, fixture.Lighting.ReleaseCalls);
+        Assert.Equal(1, fixture.Lighting.ReleaseCalls);
+        Assert.False(fixture.Lighting.IsConnected);
 
-        fixture.Clock.FailGetUtcNow = false;
         await fixture.Runtime.SetModeEnabledAsync(false, TestContext.Current.CancellationToken)
             .WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
 
-        Assert.Equal(RuntimeStatus.Disabled, fixture.Runtime.CurrentSnapshot.Status);
         Assert.Equal(1, fixture.SettingsStore.SaveCalls);
         Assert.Equal(1, fixture.Lighting.ReleaseCalls);
-        await fixture.Runtime.SetModeEnabledAsync(false, TestContext.Current.CancellationToken)
+        var disabled = await fixture.Runtime.ProcessOnceAsync(TestContext.Current.CancellationToken)
             .WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
-        Assert.Equal(1, fixture.Lighting.ReleaseCalls);
+        Assert.Equal(RuntimeStatus.Disabled, disabled.Status);
     }
 
     [Fact]
-    public async Task UpdateSettings_FaultedBackgroundLoopDuringDisable_CommitsFaultAndRetriesReleaseWithoutRepersisting()
+    public async Task UpdateSettings_FaultedBackgroundLoopDuringDisable_ReleasesOwnedLightingInSameMutation()
     {
         await using var fixture = RuntimeFixture.Create(modeEnabled: true, temperatures: [68]);
-        await fixture.Runtime.StartAsync(TestContext.Current.CancellationToken);
+        await fixture.Runtime.StartAsync(TestContext.Current.CancellationToken)
+            .WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+        var active = await fixture.Runtime.ProcessOnceAsync(TestContext.Current.CancellationToken)
+            .WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+        Assert.Equal(RuntimeStatus.Active, active.Status);
+        Assert.True(fixture.Lighting.IsConnected);
+        Assert.Single(fixture.Lighting.Colors);
+
         fixture.Clock.FailGetUtcNow = true;
         fixture.Advance(TimeSpan.FromMilliseconds(100));
         await fixture.Clock.PersistentFailuresObserved
@@ -445,24 +461,69 @@ public sealed class ThermalRuntimeTests
 
         await fixture.Runtime.UpdateSettingsAsync(disabled, TestContext.Current.CancellationToken)
             .WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+        fixture.Clock.FailGetUtcNow = false;
 
         Assert.Equal(disabled, fixture.Runtime.CurrentSettings);
         Assert.Equal(RuntimeStatus.Faulted, fixture.Runtime.CurrentSnapshot.Status);
         Assert.False(fixture.Runtime.CurrentSnapshot.IsModeEnabled);
         Assert.Contains("clock failed", fixture.Runtime.CurrentSnapshot.Message);
         Assert.Equal(1, fixture.SettingsStore.SaveCalls);
-        Assert.Equal(0, fixture.Lighting.ReleaseCalls);
+        Assert.Equal(1, fixture.Lighting.ReleaseCalls);
+        Assert.False(fixture.Lighting.IsConnected);
 
-        fixture.Clock.FailGetUtcNow = false;
         await fixture.Runtime.UpdateSettingsAsync(disabled, TestContext.Current.CancellationToken)
             .WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
 
-        Assert.Equal(RuntimeStatus.Disabled, fixture.Runtime.CurrentSnapshot.Status);
         Assert.Equal(1, fixture.SettingsStore.SaveCalls);
         Assert.Equal(1, fixture.Lighting.ReleaseCalls);
-        await fixture.Runtime.UpdateSettingsAsync(disabled with { NotificationsEnabled = true }, TestContext.Current.CancellationToken)
+        var current = await fixture.Runtime.ProcessOnceAsync(TestContext.Current.CancellationToken)
             .WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
-        Assert.Equal(2, fixture.SettingsStore.SaveCalls);
+        Assert.Equal(RuntimeStatus.Disabled, current.Status);
+    }
+
+    [Fact]
+    public async Task Disable_WhenLoopStopAndReleaseFail_PublishesBothErrorsAndRetriesOnlyRelease()
+    {
+        var fixture = RuntimeFixture.Create(modeEnabled: true, temperatures: [68]);
+        try
+        {
+            await fixture.Runtime.StartAsync(TestContext.Current.CancellationToken)
+                .WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+            await fixture.Runtime.ProcessOnceAsync(TestContext.Current.CancellationToken)
+                .WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+            Assert.True(fixture.Lighting.IsConnected);
+
+            fixture.Lighting.ReleaseFailuresRemaining = 1;
+            fixture.Clock.FailGetUtcNow = true;
+            fixture.Advance(TimeSpan.FromMilliseconds(100));
+            await fixture.Clock.PersistentFailuresObserved
+                .WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+
+            await fixture.Runtime.SetModeEnabledAsync(false, TestContext.Current.CancellationToken)
+                .WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+            fixture.Clock.FailGetUtcNow = false;
+
+            Assert.Equal(RuntimeStatus.Faulted, fixture.Runtime.CurrentSnapshot.Status);
+            Assert.Contains("clock failed", fixture.Runtime.CurrentSnapshot.Message);
+            Assert.Contains("release failed", fixture.Runtime.CurrentSnapshot.Message);
+            Assert.Equal(1, fixture.SettingsStore.SaveCalls);
+            Assert.Equal(1, fixture.Lighting.ReleaseCalls);
+            Assert.True(fixture.Lighting.IsConnected);
+
+            await fixture.Runtime.SetModeEnabledAsync(false, TestContext.Current.CancellationToken)
+                .WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+
+            Assert.Equal(RuntimeStatus.Disabled, fixture.Runtime.CurrentSnapshot.Status);
+            Assert.Equal(1, fixture.SettingsStore.SaveCalls);
+            Assert.Equal(2, fixture.Lighting.ReleaseCalls);
+            Assert.False(fixture.Lighting.IsConnected);
+        }
+        finally
+        {
+            fixture.Clock.FailGetUtcNow = false;
+            fixture.Lighting.ReleaseFailuresRemaining = 0;
+            await fixture.DisposeAsync();
+        }
     }
 
     [Fact]
