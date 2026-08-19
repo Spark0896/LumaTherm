@@ -8,6 +8,8 @@ Implementation commit: `f9c294f07673ed9952bb643833a02549febcaebc` (`feat: build 
 
 Review-hardening commit: `3ce63b8c58203210e7b5e0b708493bc9ec8da749` (`fix: harden Thermal Core dashboard`).
 
+Authoritative-state commit: `35ce59be8d99928dfd43e4834564bdd29b77e86f` (`fix: keep dashboard state authoritative`).
+
 Task 9 Settings UI, production composition/runtime startup, tray behavior, and physical RGB writes were not started.
 
 ## TDD evidence
@@ -27,9 +29,9 @@ No test reads or searches XAML/C# source text. Tests instantiate compiled resour
 ## Fresh verification
 
 - Asset builder: PASS — `dotnet run --project tools\LumaTherm.AssetBuilder -- "$PWD"`.
-- Focused compiled UI tests: PASS — 24 passed, 0 failed, 0 skipped.
-- Full solution tests: PASS — 190 total, 0 failed, 0 skipped:
-  - `LumaTherm.App.Tests`: 61 passed;
+- Focused compiled UI tests: PASS — 28 passed, 0 failed, 0 skipped.
+- Full solution tests: PASS — 194 total, 0 failed, 0 skipped:
+  - `LumaTherm.App.Tests`: 65 passed;
   - `LumaTherm.Core.Tests`: 71 passed;
   - `LumaTherm.Infrastructure.Tests`: 58 passed.
 - Debug solution build: PASS — 7 projects built, 0 warnings, 0 errors.
@@ -49,7 +51,7 @@ Final dimensions and SHA-256 hashes:
 
 Hashing all five files, regenerating with the same source/SDK, and hashing again produced byte-for-byte matches for every output.
 
-The review-hardening round regenerated and rehashed all five assets again; every byte remained unchanged at the hashes above.
+Both review-hardening rounds regenerated and rehashed all five assets again; every byte remained unchanged at the hashes above.
 
 ICO inspection confirmed reserved `0`, type `1`, count `2`; the 44 px entry encodes width/height `44`, and the 256 px entry encodes both as `0`. Both entries have planes `1`, bit depth `32`, and valid payload lengths/offsets. WPF decoded exactly two frames at 44×44 and 256×256.
 
@@ -87,6 +89,15 @@ Five review findings were addressed one RED/GREEN item at a time with compiled r
 - A real `MainViewModel` dispatcher publication now proves rendered gradient-marker and history pixels both change, rather than checking binding identity alone.
 
 No test uses source-text search or test-only production flags. The final hardening verification is the fresh evidence recorded above.
+
+## Review hardening round 2
+
+Two additional review findings were addressed independently:
+
+- `IToggleProvider.Toggle()` originally changed the switch from Off to On before the asynchronous runtime request completed (RED: expected `IsChecked == false`, actual `true`). `AuthoritativeToggleButton` now suppresses local `OnToggle` mutation while retaining ordinary mouse/keyboard command activation. Its production automation peer preserves the UIA Toggle pattern but invokes the same command path without optimistic state. Compiled tests prove delayed success remains Off through request completion and changes to On only after an authoritative runtime snapshot; a failed request remains Off and renders `Не удалось изменить режим.`. While a request is pending, command state disables the control, a second UIA activation produces the standard `ElementNotEnabledException`, and the runtime receives exactly one request.
+- The workspace brush used WPF `(0,0) → (1,1)`, which is a physical 45° diagonal rather than CSS `linear-gradient(145deg, ...)` (RED at both 1104×720 and 884×620). The shell now recomputes the responsive gradient line on workspace size changes using CSS direction `(sin 145°, -cos 145°)` and line length `|width × dx| + |height × dy|`. Compiled tests inspect the physical endpoints and normalized direction at target and minimum layouts while retaining exact `#1B2025`, `#15191D`, and `0.65` stop values.
+
+The round-2 focused toggle cases pass 3/3 and responsive gradient cases pass 2/2. No source-text assertions, test-only production flags, Settings work, or physical RGB writes were introduced.
 
 ## Self-review and remaining concern
 
