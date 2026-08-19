@@ -19,6 +19,14 @@ public abstract class ObservableObject : INotifyPropertyChanged
         return true;
     }
 
-    protected void OnPropertyChanged([CallerMemberName] string? propertyName = null) =>
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+    protected bool OnPropertyChanged([CallerMemberName] string? propertyName = null)
+    {
+        var failed = false;
+        foreach (PropertyChangedEventHandler handler in PropertyChanged?.GetInvocationList() ?? [])
+        {
+            try { handler(this, new PropertyChangedEventArgs(propertyName)); }
+            catch (Exception) { failed = true; }
+        }
+        return failed;
+    }
 }

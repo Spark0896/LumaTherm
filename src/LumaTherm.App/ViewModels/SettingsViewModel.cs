@@ -38,7 +38,7 @@ public sealed class SettingsViewModel : ObservableObject
         ResetDefaultsCommand = new RelayCommand(ResetDefaults);
     }
 
-    public event EventHandler<ThermalProfile>? ProfileSaved;
+    internal event EventHandler<ThermalProfile>? ProfileSaved;
 
     public AppSettings LiveSettings => _liveSettings;
     public double ColdTemperature { get => _coldTemperature; set => SetProperty(ref _coldTemperature, value); }
@@ -58,7 +58,7 @@ public sealed class SettingsViewModel : ObservableObject
     public AsyncRelayCommand SaveCommand { get; }
     public RelayCommand ResetDefaultsCommand { get; }
 
-    public async Task SaveAsync()
+    internal async Task SaveAsync()
     {
         AppSettings candidate;
         try
@@ -92,12 +92,6 @@ public sealed class SettingsViewModel : ObservableObject
         }
         catch (Exception)
         {
-            if (_runtime.CurrentSettings == candidate)
-            {
-                Commit(candidate, "Настройки сохранены, но обновление интерфейса выполнено не полностью.");
-                return;
-            }
-
             ValidationMessage = await RollBackAutostartIfNeededAsync(autostartChanged);
             return;
         }
@@ -156,17 +150,13 @@ public sealed class SettingsViewModel : ObservableObject
     private void Commit(AppSettings candidate, string? warning)
     {
         _liveSettings = candidate;
-        OnPropertyChanged(nameof(LiveSettings));
-        try
+        var observerFailed = OnPropertyChanged(nameof(LiveSettings));
+        foreach (EventHandler<ThermalProfile> handler in ProfileSaved?.GetInvocationList() ?? [])
         {
-            ProfileSaved?.Invoke(this, candidate.Profile);
+            try { handler(this, candidate.Profile); }
+            catch (Exception) { observerFailed = true; }
         }
-        catch (Exception)
-        {
-            warning = "Настройки сохранены, но обновление интерфейса выполнено не полностью.";
-        }
-
-        ValidationMessage = warning;
+        ValidationMessage = observerFailed ? "Настройки сохранены, но обновление интерфейса выполнено не полностью." : warning;
     }
 
     private static string TranslateValidationError(ArgumentException exception) => exception.Message switch

@@ -140,7 +140,7 @@ public sealed class ThermalRuntime : IThermalRuntime
             {
                 var updated = (_settings with { IsModeEnabled = enabled }).Validate();
                 await _settingsStore.SaveAsync(updated, cancellationToken).ConfigureAwait(false);
-                _settings = updated;
+                Volatile.Write(ref _settings, updated);
             }
 
             if (!enabled)
@@ -190,7 +190,7 @@ public sealed class ThermalRuntime : IThermalRuntime
             ThrowIfStopped();
             var previousSettings = _settings;
             await _settingsStore.SaveAsync(validated, cancellationToken).ConfigureAwait(false);
-            _settings = validated;
+            Volatile.Write(ref _settings, validated);
             var modeChanged = validated.IsModeEnabled != previousSettings.IsModeEnabled;
             if (modeChanged && !validated.IsModeEnabled)
             {

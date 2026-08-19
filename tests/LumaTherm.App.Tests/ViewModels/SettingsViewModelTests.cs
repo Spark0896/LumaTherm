@@ -109,10 +109,10 @@ public sealed class SettingsViewModelTests
     }
 
     [Fact]
-    public async Task Save_RuntimeCommitsThenThrows_ReconcilesAuthoritativeSettingsWithoutRollback()
+    public async Task Save_RuntimeFailure_RollsBackAndKeepsLastGoodSettings()
     {
         var recorder = new OperationRecorder();
-        var runtime = new FakeThermalRuntime(recorder) { ThrowAfterCommit = true };
+        var runtime = new FakeThermalRuntime(recorder) { Failure = new InvalidOperationException("write failed") };
         var startup = new FakeStartupService(recorder);
         var vm = new SettingsViewModel(runtime, startup, AppSettings.Default) { ColdTemperature = 40, IsAutostartEnabled = true };
         vm.ProfileSaved += (_, _) => recorder.Record("vm.commit");
@@ -120,10 +120,10 @@ public sealed class SettingsViewModelTests
         await vm.SaveAsync();
 
         var candidate = AppSettings.Default with { IsAutostartEnabled = true, Profile = ThermalProfile.Default with { ColdTemperature = 40 } };
-        Assert.Equal(candidate, runtime.CurrentSettings);
-        Assert.Equal(candidate, vm.LiveSettings);
-        Assert.Equal(["startup:true", "runtime.persist", "vm.commit"], recorder.Events);
-        Assert.Equal("Настройки сохранены, но обновление интерфейса выполнено не полностью.", vm.ValidationMessage);
+        Assert.Equal(AppSettings.Default, runtime.CurrentSettings);
+        Assert.Equal(AppSettings.Default, vm.LiveSettings);
+        Assert.Equal(["startup:true", "runtime.fail", "startup:false"], recorder.Events);
+        Assert.Equal("Не удалось сохранить настройки.", vm.ValidationMessage);
     }
 
     [Fact]
