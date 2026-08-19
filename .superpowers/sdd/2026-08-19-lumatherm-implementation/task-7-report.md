@@ -95,3 +95,34 @@ The following test-first changes were made against commit `c147671`:
 - `SaveCommand` exposes/recovers execution state and contains unexpected errors; queued callbacks and profile synchronization are ignored after disposal.
 
 Fix implementation commit: `ec48693` (`fix: harden view model state and settings saves`).
+
+## Fix round 2 — authoritative runtime state
+
+### RED → GREEN evidence
+
+New Core/App tests first failed to compile because `RuntimeSnapshot` lacked `IsModeEnabled` and `ThermalRuntime` lacked `CurrentSettings`. After adding the additive snapshot bit, committed settings authority, observer isolation, and ViewModel reconciliation, focused Core and App tests passed.
+
+An existing Core background-loop test then correctly failed because its old expectation was that a throwing subscriber produced a faulted snapshot. It was rewritten to assert the new contract: a throwing subscriber does not fault or stop the loop. GREEN focused counts: Core Runtime `25 passed`; App ViewModels `35 passed`.
+
+### Contract changes and self-review
+
+- Every production snapshot carries `_settings.IsModeEnabled`; MainViewModel binds this bit directly, including initial and suspended states.
+- `CurrentSettings` changes immediately after durable save, before post-save work. A committed runtime update that later throws is reconciled as committed by SettingsViewModel without autostart rollback.
+- Snapshot and profile observers are isolated. Committed settings remain committed and expose the precise Russian post-save warning rather than a false save-failure message.
+- Tests cover suspended enabled/disabled and settings changes, opposite toggle outcome, post-commit throwing runtime, startup initial failure, shared state/order behavior, queued disposal, and direct production subscriber isolation.
+
+### Final verification
+
+```powershell
+& "$PWD\.dotnet\dotnet.exe" test tests\LumaTherm.Core.Tests\LumaTherm.Core.Tests.csproj --filter FullyQualifiedName~Runtime --no-restore -p:NuGetAudit=false
+# 25 passed
+
+& "$PWD\.dotnet\dotnet.exe" test tests\LumaTherm.App.Tests\LumaTherm.App.Tests.csproj --filter FullyQualifiedName~ViewModels --no-restore -p:NuGetAudit=false
+# 35 passed
+
+& "$PWD\.dotnet\dotnet.exe" test LumaTherm.sln --no-restore -p:NuGetAudit=false
+# Core: 63 passed; Infrastructure: 58 passed; App: 35 passed
+
+& "$PWD\.dotnet\dotnet.exe" build LumaTherm.sln --no-restore -p:NuGetAudit=false
+# Build succeeded, 0 warnings, 0 errors
+```

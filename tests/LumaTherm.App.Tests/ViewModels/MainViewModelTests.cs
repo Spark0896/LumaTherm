@@ -108,8 +108,8 @@ public sealed class MainViewModelTests
         var runtime = new FakeThermalRuntime();
         using var vm = new MainViewModel(runtime);
 
-        runtime.Publish(Snapshot(RuntimeStatus.Disabled, null, DateTimeOffset.UnixEpoch));
-        runtime.Publish(Snapshot(RuntimeStatus.Suspended, null, DateTimeOffset.UnixEpoch.AddSeconds(1)));
+        runtime.Publish(Snapshot(RuntimeStatus.Disabled, null, DateTimeOffset.UnixEpoch, isModeEnabled: false));
+        runtime.Publish(Snapshot(RuntimeStatus.Suspended, null, DateTimeOffset.UnixEpoch.AddSeconds(1), isModeEnabled: false));
 
         Assert.False(vm.IsModeEnabled);
     }
@@ -126,6 +126,19 @@ public sealed class MainViewModelTests
         Assert.True(vm.IsModeEnabled);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void InitialSuspendedSnapshot_UsesAuthoritativeModeBit(bool enabled)
+    {
+        var runtime = new FakeThermalRuntime();
+        runtime.Publish(Snapshot(RuntimeStatus.Suspended, null, DateTimeOffset.UnixEpoch, isModeEnabled: enabled));
+
+        using var vm = new MainViewModel(runtime);
+
+        Assert.Equal(enabled, vm.IsModeEnabled);
+    }
+
     [Fact]
     public async Task ToggleMode_UsesDifferingRuntimeOutcomePublishedBeforeCompletion()
     {
@@ -136,6 +149,18 @@ public sealed class MainViewModelTests
         await vm.ToggleModeCommand.ExecuteAsync();
 
         Assert.False(vm.IsModeEnabled);
+    }
+
+    [Fact]
+    public async Task ToggleMode_WhileSuspended_UsesEnabledBitPublishedByRuntime()
+    {
+        var runtime = new FakeThermalRuntime { ModeSetOutcome = RuntimeStatus.Suspended };
+        using var vm = new MainViewModel(runtime);
+        runtime.Publish(Snapshot(RuntimeStatus.Suspended, null, DateTimeOffset.UnixEpoch, isModeEnabled: false));
+
+        await vm.ToggleModeCommand.ExecuteAsync();
+
+        Assert.True(vm.IsModeEnabled);
     }
 
     [Fact]
@@ -164,20 +189,22 @@ public sealed class MainViewModelTests
         Assert.Empty(vm.History);
     }
 
-    private static RuntimeSnapshot Snapshot(RuntimeStatus status, double? temperature, DateTimeOffset timestamp, RgbColor? color = null, ThermalRange? range = ThermalRange.Warm) => new(
+    private static RuntimeSnapshot Snapshot(RuntimeStatus status, double? temperature, DateTimeOffset timestamp, RgbColor? color = null, ThermalRange? range = ThermalRange.Warm, bool isModeEnabled = true) => new(
         status,
         temperature is { } celsius ? new TemperatureReading(celsius, "NVML", "GPU 0", timestamp) : null,
         color ?? new RgbColor(0xFF, 0xC6, 0x4A),
         range,
         new LightingDeviceInfo("lamp", "Desk lamp", 4, true),
         null,
-        timestamp);
+        timestamp,
+        isModeEnabled);
 
     private sealed class FakeThermalRuntime : IThermalRuntime
     {
         public event EventHandler<RuntimeSnapshot>? SnapshotChanged;
-        public RuntimeSnapshot CurrentSnapshot { get; private set; } = Snapshot(RuntimeStatus.Disabled, null, DateTimeOffset.MinValue);
+        public RuntimeSnapshot CurrentSnapshot { get; private set; } = Snapshot(RuntimeStatus.Disabled, null, DateTimeOffset.MinValue, isModeEnabled: false);
         public bool ModeEnabled { get; private set; }
+        public AppSettings CurrentSettings { get; private set; } = AppSettings.Default;
         public RuntimeStatus? ModeSetOutcome { get; init; }
 
         public void Publish(RuntimeSnapshot snapshot)
@@ -189,7 +216,8 @@ public sealed class MainViewModelTests
         public Task SetModeEnabledAsync(bool enabled, CancellationToken cancellationToken)
         {
             ModeEnabled = enabled;
-            Publish(Snapshot(ModeSetOutcome ?? (enabled ? RuntimeStatus.Connecting : RuntimeStatus.Disabled), null, CurrentSnapshot.Timestamp.AddSeconds(1)));
+            CurrentSettings = CurrentSettings with { IsModeEnabled = enabled };
+            Publish(Snapshot(ModeSetOutcome ?? (enabled ? RuntimeStatus.Connecting : RuntimeStatus.Disabled), null, CurrentSnapshot.Timestamp.AddSeconds(1), isModeEnabled: ModeSetOutcome is not RuntimeStatus.Disabled && enabled));
             return Task.CompletedTask;
         }
 

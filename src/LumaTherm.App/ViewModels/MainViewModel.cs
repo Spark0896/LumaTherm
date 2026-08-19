@@ -120,14 +120,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         SensorSource = snapshot.Temperature?.SourceName ?? "—";
         LightingDeviceName = snapshot.LightingDevice?.Name ?? "Подсветка не обнаружена";
 
-        if (snapshot.Status == RuntimeStatus.Disabled)
-        {
-            IsModeEnabled = false;
-        }
-        else if (snapshot.Status != RuntimeStatus.Suspended)
-        {
-            IsModeEnabled = true;
-        }
+        IsModeEnabled = snapshot.IsModeEnabled;
 
         if (snapshot.Temperature is { } reading && _lastReadingTimestamp != reading.Timestamp)
         {
@@ -143,7 +136,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     private async Task ToggleModeAsync()
     {
         await _runtime.SetModeEnabledAsync(!IsModeEnabled, CancellationToken.None);
-        ApplyModeState(_runtime.CurrentSnapshot.Status);
+        IsModeEnabled = _runtime.CurrentSnapshot.IsModeEnabled;
     }
 
     private void RouteToggleFailure(Exception _)
@@ -179,18 +172,6 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     {
         ArgumentNullException.ThrowIfNull(profile);
         Profile = profile;
-    }
-
-    private void ApplyModeState(RuntimeStatus status)
-    {
-        if (status == RuntimeStatus.Disabled)
-        {
-            IsModeEnabled = false;
-        }
-        else if (status != RuntimeStatus.Suspended)
-        {
-            IsModeEnabled = true;
-        }
     }
 
     private static string ToStatusText(RuntimeStatus status) => status switch

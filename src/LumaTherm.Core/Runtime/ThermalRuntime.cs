@@ -72,6 +72,7 @@ public sealed class ThermalRuntime : IThermalRuntime
     public event EventHandler<RuntimeSnapshot>? SnapshotChanged;
 
     public RuntimeSnapshot CurrentSnapshot => Volatile.Read(ref _currentSnapshot);
+    public AppSettings CurrentSettings => Volatile.Read(ref _settings);
 
     public async Task<RuntimeSnapshot> ProcessOnceAsync(CancellationToken cancellationToken)
     {
@@ -187,8 +188,10 @@ public sealed class ThermalRuntime : IThermalRuntime
         try
         {
             ThrowIfStopped();
+            var previousSettings = _settings;
             await _settingsStore.SaveAsync(validated, cancellationToken).ConfigureAwait(false);
-            var modeChanged = validated.IsModeEnabled != _settings.IsModeEnabled;
+            _settings = validated;
+            var modeChanged = validated.IsModeEnabled != previousSettings.IsModeEnabled;
             if (modeChanged && !validated.IsModeEnabled)
             {
                 await StopLoopNoLockAsync().ConfigureAwait(false);
@@ -197,8 +200,7 @@ public sealed class ThermalRuntime : IThermalRuntime
             await _processGate.WaitAsync(CancellationToken.None).ConfigureAwait(false);
             try
             {
-                var profileChanged = validated.Profile != _settings.Profile;
-                _settings = validated;
+                var profileChanged = validated.Profile != previousSettings.Profile;
                 if (profileChanged)
                 {
                     _colorEngine.UpdateProfile(validated.Profile);
@@ -715,13 +717,29 @@ public sealed class ThermalRuntime : IThermalRuntime
             range,
             _lightingController.ConnectedDevice,
             message,
-            _timeProvider.GetUtcNow());
+            _timeProvider.GetUtcNow(),
+            _settings.IsModeEnabled);
     }
 
     private void Publish(RuntimeSnapshot snapshot)
     {
         Volatile.Write(ref _currentSnapshot, snapshot);
-        SnapshotChanged?.Invoke(this, snapshot);
+        var handlers = SnapshotChanged;
+        if (handlers is null)
+        {
+            return;
+        }
+
+        foreach (EventHandler<RuntimeSnapshot> handler in handlers.GetInvocationList())
+        {
+            try
+            {
+                handler(this, snapshot);
+            }
+            catch (Exception)
+            {
+            }
+        }
     }
 
     private void ThrowIfStopped()

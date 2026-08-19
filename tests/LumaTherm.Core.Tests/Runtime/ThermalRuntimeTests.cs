@@ -32,6 +32,38 @@ public sealed class ThermalRuntimeTests
         Assert.Equal(fixture.Lighting.Colors[0], snapshot.Color);
         Assert.Equal(68, snapshot.Temperature!.Celsius);
         Assert.Equal(ThermalRange.Warm, snapshot.Range);
+        Assert.True(snapshot.IsModeEnabled);
+    }
+
+    [Fact]
+    public async Task SuspendedSnapshots_ExposeAuthoritativeModeBit()
+    {
+        await using var disabled = RuntimeFixture.Create(modeEnabled: false, temperatures: []);
+        await disabled.Runtime.SuspendAsync(CancellationToken.None);
+        Assert.False(disabled.Runtime.CurrentSnapshot.IsModeEnabled);
+
+        await using var enabled = RuntimeFixture.Create(modeEnabled: true, temperatures: []);
+        await enabled.Runtime.SuspendAsync(CancellationToken.None);
+        Assert.True(enabled.Runtime.CurrentSnapshot.IsModeEnabled);
+
+        await enabled.Runtime.UpdateSettingsAsync(enabled.SettingsStore.Initial with { NotificationsEnabled = false }, CancellationToken.None);
+        Assert.True(enabled.Runtime.CurrentSnapshot.IsModeEnabled);
+
+        await enabled.Runtime.UpdateSettingsAsync(enabled.SettingsStore.Initial with { IsModeEnabled = false }, CancellationToken.None);
+        Assert.False(enabled.Runtime.CurrentSnapshot.IsModeEnabled);
+    }
+
+    [Fact]
+    public async Task UpdateSettings_WhenSnapshotSubscriberThrows_KeepsCommittedSettingsAndDoesNotThrow()
+    {
+        await using var fixture = RuntimeFixture.Create(modeEnabled: false, temperatures: []);
+        fixture.Runtime.SnapshotChanged += (_, _) => throw new InvalidOperationException("subscriber failed");
+        var candidate = fixture.SettingsStore.Initial with { NotificationsEnabled = false };
+
+        await fixture.Runtime.UpdateSettingsAsync(candidate, CancellationToken.None);
+
+        Assert.Equal(candidate, fixture.Runtime.CurrentSettings);
+        Assert.Equal(candidate, fixture.SettingsStore.Saved);
     }
 
     [Fact]
@@ -465,23 +497,18 @@ public sealed class ThermalRuntimeTests
     }
 
     [Fact]
-    public async Task FaultedSnapshot_FromThrowingActiveSubscriber_CanStopBackgroundLoopWithoutSelfDeadlock()
+    public async Task ThrowingActiveSubscriber_DoesNotFaultOrStopBackgroundLoop()
     {
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
         timeout.CancelAfter(TimeSpan.FromSeconds(5));
         var fixture = RuntimeFixture.Create(modeEnabled: true, temperatures: [68]);
-        var stopped = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var active = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         fixture.Runtime.SnapshotChanged += (_, snapshot) =>
         {
             if (snapshot.Status == RuntimeStatus.Active)
             {
+                active.TrySetResult();
                 throw new InvalidOperationException("subscriber failed");
-            }
-
-            if (snapshot.Status == RuntimeStatus.Faulted)
-            {
-                fixture.Runtime.StopAsync(CancellationToken.None).GetAwaiter().GetResult();
-                stopped.TrySetResult();
             }
         };
         await fixture.Runtime.StartAsync(CancellationToken.None);
@@ -489,9 +516,11 @@ public sealed class ThermalRuntimeTests
         var advancingClock = Task.Run(
             () => fixture.Advance(TimeSpan.FromMilliseconds(100)),
             TestContext.Current.CancellationToken);
-        await Task.WhenAll(stopped.Task, advancingClock).WaitAsync(timeout.Token);
+        await Task.WhenAll(active.Task, advancingClock).WaitAsync(timeout.Token);
 
-        Assert.Equal(RuntimeStatus.Disabled, fixture.Runtime.CurrentSnapshot.Status);
+        Assert.Equal(RuntimeStatus.Active, fixture.Runtime.CurrentSnapshot.Status);
+        Assert.Equal(1, fixture.Clock.ActiveTimerCount);
+        await fixture.Runtime.StopAsync(CancellationToken.None);
         Assert.Equal(0, fixture.Clock.ActiveTimerCount);
         await fixture.DisposeAsync();
     }

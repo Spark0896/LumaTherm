@@ -92,14 +92,17 @@ public sealed class SettingsViewModel : ObservableObject
         }
         catch (Exception)
         {
+            if (_runtime.CurrentSettings == candidate)
+            {
+                Commit(candidate, "Настройки сохранены, но обновление интерфейса выполнено не полностью.");
+                return;
+            }
+
             ValidationMessage = await RollBackAutostartIfNeededAsync(autostartChanged);
             return;
         }
 
-        _liveSettings = candidate;
-        OnPropertyChanged(nameof(LiveSettings));
-        ValidationMessage = null;
-        ProfileSaved?.Invoke(this, candidate.Profile);
+        Commit(candidate, null);
     }
 
     private void ResetDefaults()
@@ -148,6 +151,22 @@ public sealed class SettingsViewModel : ObservableObject
         {
             return "Не удалось сохранить настройки. Не удалось вернуть настройку автозапуска.";
         }
+    }
+
+    private void Commit(AppSettings candidate, string? warning)
+    {
+        _liveSettings = candidate;
+        OnPropertyChanged(nameof(LiveSettings));
+        try
+        {
+            ProfileSaved?.Invoke(this, candidate.Profile);
+        }
+        catch (Exception)
+        {
+            warning = "Настройки сохранены, но обновление интерфейса выполнено не полностью.";
+        }
+
+        ValidationMessage = warning;
     }
 
     private static string TranslateValidationError(ArgumentException exception) => exception.Message switch

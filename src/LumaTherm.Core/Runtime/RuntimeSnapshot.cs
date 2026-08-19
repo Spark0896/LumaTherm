@@ -11,4 +11,5 @@ public sealed record RuntimeSnapshot(
     ThermalRange? Range,
     LightingDeviceInfo? LightingDevice,
     string? Message,
-    DateTimeOffset Timestamp);
+    DateTimeOffset Timestamp,
+    bool IsModeEnabled = false);

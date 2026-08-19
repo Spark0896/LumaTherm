@@ -7,6 +7,7 @@ public interface IThermalRuntime : IAsyncDisposable
     event EventHandler<RuntimeSnapshot>? SnapshotChanged;
 
     RuntimeSnapshot CurrentSnapshot { get; }
+    AppSettings CurrentSettings { get; }
 
     Task StartAsync(CancellationToken cancellationToken);
     Task SetModeEnabledAsync(bool enabled, CancellationToken cancellationToken);

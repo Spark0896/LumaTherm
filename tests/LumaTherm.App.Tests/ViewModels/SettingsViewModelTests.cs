@@ -109,12 +109,80 @@ public sealed class SettingsViewModelTests
     }
 
     [Fact]
+    public async Task Save_RuntimeCommitsThenThrows_ReconcilesAuthoritativeSettingsWithoutRollback()
+    {
+        var recorder = new OperationRecorder();
+        var runtime = new FakeThermalRuntime(recorder) { ThrowAfterCommit = true };
+        var startup = new FakeStartupService(recorder);
+        var vm = new SettingsViewModel(runtime, startup, AppSettings.Default) { ColdTemperature = 40, IsAutostartEnabled = true };
+        vm.ProfileSaved += (_, _) => recorder.Record("vm.commit");
+
+        await vm.SaveAsync();
+
+        var candidate = AppSettings.Default with { IsAutostartEnabled = true, Profile = ThermalProfile.Default with { ColdTemperature = 40 } };
+        Assert.Equal(candidate, runtime.CurrentSettings);
+        Assert.Equal(candidate, vm.LiveSettings);
+        Assert.Equal(["startup:true", "runtime.persist", "vm.commit"], recorder.Events);
+        Assert.Equal("Настройки сохранены, но обновление интерфейса выполнено не полностью.", vm.ValidationMessage);
+    }
+
+    [Fact]
+    public async Task Save_StartupFailure_LeavesRuntimeAndLiveSettingsUnchanged()
+    {
+        var recorder = new OperationRecorder();
+        var runtime = new FakeThermalRuntime(recorder);
+        var startup = new FakeStartupService(recorder) { FailWhenEnabled = true };
+        var vm = new SettingsViewModel(runtime, startup, AppSettings.Default) { IsAutostartEnabled = true };
+
+        await vm.SaveAsync();
+
+        Assert.Equal(["startup:true"], recorder.Events);
+        Assert.Equal(AppSettings.Default, runtime.CurrentSettings);
+        Assert.Equal(AppSettings.Default, vm.LiveSettings);
+        Assert.Equal("Не удалось изменить автозапуск.", vm.ValidationMessage);
+    }
+
+    [Fact]
+    public async Task Save_WhenProfileObserverThrows_KeepsCommittedSettingsAndShowsPostSaveWarning()
+    {
+        var recorder = new OperationRecorder();
+        var runtime = new FakeThermalRuntime(recorder);
+        var startup = new FakeStartupService(recorder);
+        var vm = new SettingsViewModel(runtime, startup, AppSettings.Default) { ColdTemperature = 40 };
+        vm.ProfileSaved += (_, _) => throw new InvalidOperationException("view failed");
+
+        await vm.SaveAsync();
+
+        Assert.Equal(runtime.CurrentSettings, vm.LiveSettings);
+        Assert.Equal(40, vm.LiveSettings.Profile.ColdTemperature);
+        Assert.Equal("Настройки сохранены, но обновление интерфейса выполнено не полностью.", vm.ValidationMessage);
+    }
+
+    [Fact]
+    public async Task Dispose_IgnoresQueuedProfileUpdates()
+    {
+        var recorder = new OperationRecorder();
+        var runtime = new FakeThermalRuntime(recorder);
+        var startup = new FakeStartupService(recorder);
+        var settings = new SettingsViewModel(runtime, startup, AppSettings.Default) { ColdTemperature = 40 };
+        var context = new QueuedSynchronizationContext();
+        var dashboard = new MainViewModel(runtime, context);
+        dashboard.SynchronizeProfile(settings);
+
+        await settings.SaveAsync();
+        dashboard.Dispose();
+        context.Drain();
+
+        Assert.Equal(ThermalProfile.Default, dashboard.Profile);
+    }
+
+    [Fact]
     public async Task SaveCommand_PreventsReentryAndShowsRuntimeFailureAfterCompletion()
     {
         var recorder = new OperationRecorder();
         var runtime = new FakeThermalRuntime(recorder) { GateUpdates = true };
         var startup = new FakeStartupService(recorder);
-        var vm = new SettingsViewModel(runtime, startup, AppSettings.Default);
+        var vm = new SettingsViewModel(runtime, startup, AppSettings.Default) { ColdTemperature = 40 };
 
         var first = vm.SaveCommand.ExecuteAsync();
         await runtime.UpdateEntered;
@@ -192,6 +260,8 @@ public sealed class SettingsViewModelTests
         public event EventHandler<RuntimeSnapshot>? SnapshotChanged { add { } remove { } }
         public RuntimeSnapshot CurrentSnapshot { get; } = new(RuntimeStatus.Disabled, null, null, null, null, null, DateTimeOffset.MinValue);
         public Exception? Failure { get; init; }
+        public bool ThrowAfterCommit { get; init; }
+        public AppSettings CurrentSettings { get; private set; } = AppSettings.Default;
         public bool GateUpdates { get; init; }
         public int UpdateCalls { get; private set; }
         public int PersistenceCount { get; private set; }
@@ -215,6 +285,11 @@ public sealed class SettingsViewModelTests
 
             PersistenceCount++;
             recorder.Record("runtime.persist");
+            CurrentSettings = settings;
+            if (ThrowAfterCommit)
+            {
+                throw new InvalidOperationException("subscriber failed");
+            }
         }
         public void FailGate(Exception failure) => _updateGate.TrySetException(failure);
         public Task SuspendAsync(CancellationToken cancellationToken) => Task.CompletedTask;
@@ -226,13 +301,29 @@ public sealed class SettingsViewModelTests
     private sealed class FakeStartupService(OperationRecorder recorder) : IStartupService
     {
         public bool FailWhenDisabled { get; init; }
+        public bool FailWhenEnabled { get; init; }
         public Task<bool> GetEnabledAsync(CancellationToken cancellationToken) => Task.FromResult(false);
         public Task SetEnabledAsync(bool enabled, CancellationToken cancellationToken)
         {
             recorder.Record($"startup:{enabled.ToString().ToLowerInvariant()}");
-            return !enabled && FailWhenDisabled
+            return (!enabled && FailWhenDisabled) || (enabled && FailWhenEnabled)
                 ? Task.FromException(new InvalidOperationException("rollback denied"))
                 : Task.CompletedTask;
+        }
+    }
+
+    private sealed class QueuedSynchronizationContext : SynchronizationContext
+    {
+        private readonly Queue<(SendOrPostCallback Callback, object? State)> _work = [];
+
+        public override void Post(SendOrPostCallback d, object? state) => _work.Enqueue((d, state));
+
+        public void Drain()
+        {
+            while (_work.TryDequeue(out var item))
+            {
+                item.Callback(item.State);
+            }
         }
     }
 }
