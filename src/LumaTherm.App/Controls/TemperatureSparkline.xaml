@@ -1,0 +1,7 @@
+<UserControl x:Class="LumaTherm.App.Controls.TemperatureSparkline"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Background="Transparent"
+             ClipToBounds="True"
+             Focusable="False"
+             AutomationProperties.Name="График температуры GPU за последнюю минуту" />

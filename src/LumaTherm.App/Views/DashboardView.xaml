@@ -1,0 +1,189 @@
+<UserControl x:Class="LumaTherm.App.Views.DashboardView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:automation="clr-namespace:System.Windows.Automation;assembly=PresentationCore"
+             xmlns:controls="clr-namespace:LumaTherm.App.Controls"
+             xmlns:converters="clr-namespace:LumaTherm.App.Converters"
+             Background="Transparent"
+             SizeChanged="OnDashboardSizeChanged">
+    <UserControl.Resources>
+        <converters:RgbColorBrushConverter x:Key="RgbColorBrushConverter" />
+        <converters:RgbColorHexConverter x:Key="RgbColorHexConverter" />
+        <Style x:Key="CaptionStyle" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{StaticResource MutedTextBrush}" />
+            <Setter Property="FontSize" Value="9" />
+            <Setter Property="TextOptions.TextFormattingMode" Value="Display" />
+        </Style>
+        <Style x:Key="BehaviorRowStyle" TargetType="Grid">
+            <Setter Property="MinHeight" Value="45" />
+        </Style>
+    </UserControl.Resources>
+
+    <ScrollViewer x:Name="DashboardScroller" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <Grid x:Name="LayoutRoot" Margin="25,22,25,26">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="15" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="15" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+
+            <Grid Grid.Row="0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <StackPanel VerticalAlignment="Bottom">
+                    <TextBlock Text="Термосинхронизация" FontSize="21" FontWeight="SemiBold" />
+                    <TextBlock Text="Цвет подсветки следует за температурой GPU" Margin="0,5,0,0" Foreground="{StaticResource MutedTextBrush}" FontSize="11" />
+                </StackPanel>
+                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                    <TextBlock x:Name="ModeStatusText" Text="{Binding StatusText}" Foreground="#B9C2C9" FontSize="11" VerticalAlignment="Center" Margin="0,0,10,0" />
+                    <Button x:Name="ModeToggle"
+                            Width="44" Height="24" Padding="3" BorderThickness="0"
+                            Command="{Binding ToggleModeCommand}"
+                            automation:AutomationProperties.Name="Включить или выключить термосинхронизацию"
+                            KeyboardNavigation.IsTabStop="True">
+                        <Button.Style>
+                            <Style TargetType="Button">
+                                <Setter Property="Background" Value="#343B42" />
+                                <Setter Property="FocusVisualStyle">
+                                    <Setter.Value>
+                                        <Style>
+                                            <Setter Property="Control.Template">
+                                                <Setter.Value><ControlTemplate><Border BorderBrush="{StaticResource ColdColorBrush}" BorderThickness="2" CornerRadius="13" Margin="-3" /></ControlTemplate></Setter.Value>
+                                            </Setter>
+                                        </Style>
+                                    </Setter.Value>
+                                </Setter>
+                                <Setter Property="Template">
+                                    <Setter.Value>
+                                        <ControlTemplate TargetType="Button">
+                                            <Border x:Name="SwitchTrack" Background="{TemplateBinding Background}" CornerRadius="13" Padding="3">
+                                                <Ellipse x:Name="SwitchThumb" Width="18" Height="18" Fill="#7A858E" HorizontalAlignment="Left" />
+                                            </Border>
+                                            <ControlTemplate.Triggers>
+                                                <DataTrigger Binding="{Binding IsModeEnabled}" Value="True">
+                                                    <Setter TargetName="SwitchTrack" Property="Background" Value="{StaticResource ColdColorBrush}" />
+                                                    <Setter TargetName="SwitchThumb" Property="Fill" Value="#081116" />
+                                                    <Setter TargetName="SwitchThumb" Property="HorizontalAlignment" Value="Right" />
+                                                </DataTrigger>
+                                                <Trigger Property="IsMouseOver" Value="True"><Setter Property="Opacity" Value="0.9" /></Trigger>
+                                                <Trigger Property="IsPressed" Value="True"><Setter Property="Opacity" Value="0.72" /></Trigger>
+                                                <Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.35" /></Trigger>
+                                            </ControlTemplate.Triggers>
+                                        </ControlTemplate>
+                                    </Setter.Value>
+                                </Setter>
+                            </Style>
+                        </Button.Style>
+                    </Button>
+                </StackPanel>
+            </Grid>
+
+            <Grid x:Name="TopGrid" Grid.Row="2">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition x:Name="TopRingColumn" Width="230" />
+                    <ColumnDefinition x:Name="TopGapColumn" Width="15" />
+                    <ColumnDefinition x:Name="TopProfileColumn" Width="*" />
+                </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                    <RowDefinition x:Name="TopFirstRow" Height="236" />
+                    <RowDefinition x:Name="TopCompactGapRow" Height="0" />
+                    <RowDefinition x:Name="TopSecondRow" Height="0" />
+                </Grid.RowDefinitions>
+
+                <Border x:Name="RingPanel" Style="{StaticResource PanelStyle}" ClipToBounds="False">
+                    <controls:TemperatureRing x:Name="TemperatureRing" Width="164" Height="164"
+                                              HorizontalAlignment="Center" VerticalAlignment="Center"
+                                              Temperature="{Binding CurrentTemperature}"
+                                              DisplayColor="{Binding DisplayColor}" />
+                </Border>
+
+                <Border x:Name="ProfilePanel" Grid.Column="2" Style="{StaticResource PanelStyle}" Padding="20,18">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <Grid>
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                            <StackPanel>
+                                <TextBlock Text="Профиль «Спектр»" FontSize="12" FontWeight="SemiBold" />
+                                <TextBlock Text="Плавная интерполяция цвета" Style="{StaticResource CaptionStyle}" Margin="0,4,0,0" />
+                            </StackPanel>
+                            <TextBlock x:Name="CurrentColorText" Grid.Column="1" Text="{Binding CurrentColorHex}" FontSize="9" Foreground="{StaticResource MutedTextBrush}" VerticalAlignment="Center" Margin="0,0,8,0" />
+                            <Border Grid.Column="2" Width="15" Height="15" CornerRadius="4"
+                                    Background="{Binding DisplayColor, Converter={StaticResource RgbColorBrushConverter}}" />
+                        </Grid>
+                        <controls:ThermalGradientBar Grid.Row="1" Height="76" VerticalAlignment="Center"
+                                                     ColdTemperature="{Binding Profile.ColdTemperature}"
+                                                     WarmTemperature="{Binding Profile.WarmTemperature}"
+                                                     HotTemperature="{Binding Profile.HotTemperature}"
+                                                     ColdColor="{Binding Profile.ColdColor}"
+                                                     WarmColor="{Binding Profile.WarmColor}"
+                                                     HotColor="{Binding Profile.HotColor}"
+                                                     CurrentTemperature="{Binding CurrentTemperature}" />
+                        <Grid Grid.Row="2">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                            <StackPanel Margin="0,0,8,0"><TextBlock Text="НИЗКАЯ" Style="{StaticResource CaptionStyle}" /><TextBlock x:Name="ColdColorText" Text="{Binding Profile.ColdColor, Converter={StaticResource RgbColorHexConverter}}" FontSize="10" Margin="0,3,0,0" /></StackPanel>
+                            <StackPanel Grid.Column="1" Margin="8,0"><TextBlock Text="СРЕДНЯЯ" Style="{StaticResource CaptionStyle}" /><TextBlock x:Name="WarmColorText" Text="{Binding Profile.WarmColor, Converter={StaticResource RgbColorHexConverter}}" FontSize="10" Margin="0,3,0,0" /></StackPanel>
+                            <StackPanel Grid.Column="2" Margin="8,0,0,0"><TextBlock Text="ВЫСОКАЯ" Style="{StaticResource CaptionStyle}" /><TextBlock x:Name="HotColorText" Text="{Binding Profile.HotColor, Converter={StaticResource RgbColorHexConverter}}" FontSize="10" Margin="0,3,0,0" /></StackPanel>
+                        </Grid>
+                    </Grid>
+                </Border>
+            </Grid>
+
+            <Grid x:Name="BottomGrid" Grid.Row="4">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition x:Name="MonitorColumn" Width="1.35*" />
+                    <ColumnDefinition x:Name="BottomGapColumn" Width="15" />
+                    <ColumnDefinition x:Name="BehaviorColumn" Width="0.65*" />
+                </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                    <RowDefinition x:Name="BottomFirstRow" Height="250" />
+                    <RowDefinition x:Name="BottomCompactGapRow" Height="0" />
+                    <RowDefinition x:Name="BottomSecondRow" Height="0" />
+                </Grid.RowDefinitions>
+
+                <Border x:Name="MonitorPanel" Style="{StaticResource PanelStyle}" Padding="19,17">
+                    <Grid>
+                        <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+                        <TextBlock Text="МОНИТОРИНГ" Style="{StaticResource CaptionStyle}" />
+                        <Grid Grid.Row="1" Margin="0,17,0,0">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                            <StackPanel>
+                                <TextBlock Text="{Binding GpuName}" FontSize="12" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                <TextBlock FontSize="9" Foreground="{StaticResource MutedTextBrush}" Margin="0,3,0,0">
+                                    <Run Text="Источник: " /><Run Text="{Binding SensorSource, Mode=OneWay}" /><Run Text=" · обновлено сейчас" />
+                                </TextBlock>
+                            </StackPanel>
+                            <TextBlock x:Name="CurrentTemperatureText" Grid.Column="1" Text="{Binding TemperatureText}"
+                                       FontSize="24" FontWeight="Medium" Foreground="{Binding DisplayColor, Converter={StaticResource RgbColorBrushConverter}}" />
+                        </Grid>
+                        <controls:TemperatureSparkline x:Name="HistorySparkline" Grid.Row="2" MinHeight="82" Margin="0,10,0,0"
+                                                       ItemsSource="{Binding History}"
+                                                       automation:AutomationProperties.Name="График температуры GPU за последнюю минуту" />
+                        <Grid Grid.Row="3" Margin="0,4,0,0">
+                            <TextBlock Text="60 секунд назад" Style="{StaticResource CaptionStyle}" FontSize="8" />
+                            <TextBlock Text="Сейчас" Style="{StaticResource CaptionStyle}" FontSize="8" HorizontalAlignment="Right" />
+                        </Grid>
+                    </Grid>
+                </Border>
+
+                <Border x:Name="BehaviorPanel" Grid.Column="2" Style="{StaticResource PanelStyle}" Padding="19,17">
+                    <Grid>
+                        <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /><RowDefinition Height="*" /><RowDefinition Height="*" /><RowDefinition Height="*" /></Grid.RowDefinitions>
+                        <TextBlock Text="ПОВЕДЕНИЕ" Style="{StaticResource CaptionStyle}" />
+                        <Grid Grid.Row="1" Style="{StaticResource BehaviorRowStyle}" Margin="0,5,0,0"><TextBlock Text="Плавность перехода" FontSize="10" VerticalAlignment="Center" Foreground="#B9C2C9" /><TextBlock Text="0,8 с" HorizontalAlignment="Right" VerticalAlignment="Center" FontSize="10" Foreground="{StaticResource ColdColorBrush}" /></Grid>
+                        <Grid Grid.Row="2" Style="{StaticResource BehaviorRowStyle}"><Border BorderBrush="{StaticResource SubtleLineBrush}" BorderThickness="0,1,0,0" /><TextBlock Text="Автозапуск" FontSize="10" VerticalAlignment="Center" Foreground="#B9C2C9" /><TextBlock Text="Выкл." HorizontalAlignment="Right" VerticalAlignment="Center" FontSize="10" Foreground="{StaticResource ColdColorBrush}" /></Grid>
+                        <Grid Grid.Row="3" Style="{StaticResource BehaviorRowStyle}"><Border BorderBrush="{StaticResource SubtleLineBrush}" BorderThickness="0,1,0,0" /><TextBlock Text="Сворачивать в трей" FontSize="10" VerticalAlignment="Center" Foreground="#B9C2C9" /><TextBlock Text="Вкл." HorizontalAlignment="Right" VerticalAlignment="Center" FontSize="10" Foreground="{StaticResource ColdColorBrush}" /></Grid>
+                        <Grid Grid.Row="4" Style="{StaticResource BehaviorRowStyle}"><Border BorderBrush="{StaticResource SubtleLineBrush}" BorderThickness="0,1,0,0" /><TextBlock Text="Управление LampArray" FontSize="10" VerticalAlignment="Center" Foreground="#B9C2C9" /><TextBlock Text="{Binding StatusText}" MaxWidth="120" TextTrimming="CharacterEllipsis" HorizontalAlignment="Right" VerticalAlignment="Center" FontSize="10" Foreground="{StaticResource ColdColorBrush}" /></Grid>
+                    </Grid>
+                </Border>
+            </Grid>
+        </Grid>
+    </ScrollViewer>
+</UserControl>

@@ -5,6 +5,8 @@
     <UseWPF>true</UseWPF>
     <UseWindowsForms>true</UseWindowsForms>
     <OutputType>WinExe</OutputType>
+    <StartupObject>LumaTherm.App.Program</StartupObject>
+    <ApplicationIcon>Assets\LumaTherm.ico</ApplicationIcon>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\LumaTherm.Core\LumaTherm.Core.csproj" />
@@ -12,5 +14,8 @@
   </ItemGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="LumaTherm.App.Tests" />
+  </ItemGroup>
+  <ItemGroup>
+    <Resource Include="Assets\LumaTherm.ico" />
   </ItemGroup>
 </Project>

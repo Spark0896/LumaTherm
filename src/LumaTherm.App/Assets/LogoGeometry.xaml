@@ -1,0 +1,31 @@
+<ResourceDictionary
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <LinearGradientBrush x:Key="LogoGradientBrush" StartPoint="0,1" EndPoint="1,0">
+        <GradientStop Color="#50C8FF" Offset="0" />
+        <GradientStop Color="#FFC64A" Offset="0.52" />
+        <GradientStop Color="#FF565D" Offset="1" />
+    </LinearGradientBrush>
+    <PathGeometry x:Key="LogoBladeOneGeometry" Figures="M24,21 C19,19 15,15 16,11 C17,7 22,6 25,9 C27,11 27,16 26,21 Z" />
+    <PathGeometry x:Key="LogoBladeTwoGeometry" Figures="M27,25 C31,21 36,20 39,23 C42,26 40,31 36,33 C33,34 29,31 26,28 Z" />
+    <PathGeometry x:Key="LogoBladeThreeGeometry" Figures="M21,26 C22,31 21,36 17,37 C13,38 10,34 10,30 C11,27 15,25 20,24 Z" />
+    <DrawingGroup x:Key="LogoDrawing">
+        <GeometryDrawing>
+            <GeometryDrawing.Geometry>
+                <EllipseGeometry Center="24,24" RadiusX="20" RadiusY="20" />
+            </GeometryDrawing.Geometry>
+            <GeometryDrawing.Pen>
+                <Pen Brush="{StaticResource LogoGradientBrush}" Thickness="3" />
+            </GeometryDrawing.Pen>
+        </GeometryDrawing>
+        <GeometryDrawing Brush="{StaticResource LogoGradientBrush}" Geometry="{StaticResource LogoBladeOneGeometry}" />
+        <GeometryDrawing Brush="{StaticResource LogoGradientBrush}" Geometry="{StaticResource LogoBladeTwoGeometry}" />
+        <GeometryDrawing Brush="{StaticResource LogoGradientBrush}" Geometry="{StaticResource LogoBladeThreeGeometry}" />
+        <GeometryDrawing Brush="#EEF7FA">
+            <GeometryDrawing.Geometry>
+                <EllipseGeometry Center="24,24" RadiusX="3.5" RadiusY="3.5" />
+            </GeometryDrawing.Geometry>
+        </GeometryDrawing>
+    </DrawingGroup>
+    <DrawingImage x:Key="LogoDrawingImage" Drawing="{StaticResource LogoDrawing}" />
+</ResourceDictionary>
