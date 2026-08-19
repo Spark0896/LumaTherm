@@ -136,3 +136,51 @@ An existing Core background-loop test then correctly failed because its old expe
 & "$PWD\.dotnet\dotnet.exe" build LumaTherm.sln --no-restore -p:NuGetAudit=false
 # Build succeeded, 0 warnings, 0 errors
 ```
+
+## Fix round 4 — complete atomic mutations and command proof
+
+### RED → GREEN evidence
+
+1. Added production `ThermalRuntime` regressions for persistent post-commit clock/device getter failures, exact pre-commit store failure state in both mutation APIs, and faulted-background-loop disable/retry behavior in both APIs. The valid focused RED run compiled and executed 7 tests: 3 failed and 4 passed. It exposed an escaping persistent `ConnectedDevice` failure and duplicate persistence on both identical `UpdateSettingsAsync` release retries (`expected 1`, `actual 2`). After moving every `SetModeEnabledAsync` post-commit branch behind the non-throwing fault snapshot path and skipping identical settings persistence while a release is pending, the focused set passed 7/7.
+
+2. The first faulted-loop test mechanism threw from `TimeProvider.CreateTimer`. Full-Core verification revealed this left `PeriodicTimer` partially constructed and its finalizer crashed in `PeriodicTimer.Dispose`. The test was corrected to use the real injected timer, trigger a bounded tick, and fault the loop through persistent clock failures. The two corrected faulted-loop tests passed 2/2, and full Core then passed 70/70 with a clean process exit.
+
+3. Converted every Settings test from direct `SaveAsync` invocation to the real `SaveCommand`, made `SaveAsync` private, and made `FakeStartupService.IsEnabled` stateful. App RED was the unexpected pre-commit runtime exception case: the old catch-all swallowed it and left the rollback-detail message, while the required command-handler message was the generic save failure. After compensating autostart and rethrowing only unexpected runtime exceptions to `AsyncRelayCommand`, focused App tests passed 37/37. Expected `ArgumentException` and `InvalidOperationException` service failures remain handled inside the ViewModel.
+
+4. The true opposite toggle outcome was already implemented by the preceding round, so its new test initially passed. A mutation check temporarily assigned the requested value after completion; the focused test failed with `expected false`, `actual true`. Restoring reconciliation from `runtime.CurrentSnapshot.IsModeEnabled` returned the final App suite to GREEN.
+
+### Contract and self-review
+
+- Both mutation APIs publish durable settings with `Volatile.Write` before post-commit work. A committed disable sets `_releasePending = true` immediately, before loop shutdown, process-gate acquisition, release, reset, or snapshot construction.
+- Persistent `TimeProvider.GetUtcNow` and `ConnectedDevice` failures are independently contained by `CreateFaultSnapshot`, which falls back to the last published timestamp/device and always uses the committed mode bit.
+- Pre-commit store failures throw and preserve the exact prior `CurrentSettings` and `CurrentSnapshot`. Post-commit ordinary failures publish `Faulted` and do not escape.
+- A faulted loop during disable leaves release pending; an identical disable retries release once without a second settings save, clears pending on success, and subsequent identical disables are no-ops. Release failures retain pending state for the next retry.
+- All new concurrency waits are bounded. The final timer-based loop-fault tests use injected `TimeProvider`/`ITimer` behavior without reflection or production test hooks.
+- The 40/67/88 save asserts the exact runtime candidate. Every failure path asserts exact last-good runtime and live settings. Startup state is proven as success `true`, rollback success `false`, rollback failure still `true`, and initial failure `false`.
+- `MainViewModel.SynchronizeProfile`, `SettingsViewModel.ProfileSaved`, and `SaveAsync` remain non-public; queued-disposal and observer-isolation coverage remains intact.
+
+### Final verification
+
+```powershell
+& "$PWD\.dotnet\dotnet.exe" test tests\LumaTherm.Core.Tests\LumaTherm.Core.Tests.csproj --filter FullyQualifiedName~Runtime --no-restore -p:NuGetAudit=false
+# 32 passed, 0 failed
+
+& "$PWD\.dotnet\dotnet.exe" test tests\LumaTherm.Core.Tests\LumaTherm.Core.Tests.csproj --no-restore -p:NuGetAudit=false
+# 70 passed, 0 failed
+
+& "$PWD\.dotnet\dotnet.exe" test tests\LumaTherm.App.Tests\LumaTherm.App.Tests.csproj --filter FullyQualifiedName~ViewModels --no-restore -p:NuGetAudit=false
+# 37 passed, 0 failed
+
+& "$PWD\.dotnet\dotnet.exe" test LumaTherm.sln --no-restore -p:NuGetAudit=false
+# Core: 70 passed; Infrastructure: 58 passed; App: 37 passed
+
+& "$PWD\.dotnet\dotnet.exe" build LumaTherm.sln -c Debug --no-restore -p:NuGetAudit=false
+# Build succeeded, 0 warnings, 0 errors
+
+git diff --check
+# exit 0
+```
+
+Implementation commit: `51dd438` (`fix: complete atomic view model mutations`).
+
+Concern: NuGet audit remains unavailable in this environment, so verification used the repository's existing restored packages with `--no-restore -p:NuGetAudit=false`. No implementation concern remains for Task 7.
