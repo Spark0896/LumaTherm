@@ -67,6 +67,22 @@ public sealed class ThermalRuntimeTests
     }
 
     [Fact]
+    public async Task UpdateSettings_PostCommitSnapshotFailure_IsContainedAndPublishesCommittedFault()
+    {
+        await using var fixture = RuntimeFixture.Create(modeEnabled: false, temperatures: []);
+        var candidate = fixture.SettingsStore.Initial with { NotificationsEnabled = false };
+        fixture.Clock.GetUtcNowFailuresRemaining = 1;
+
+        await fixture.Runtime.UpdateSettingsAsync(candidate, CancellationToken.None);
+
+        Assert.Equal(candidate, fixture.Runtime.CurrentSettings);
+        Assert.Equal(candidate, fixture.SettingsStore.Saved);
+        Assert.False(fixture.Runtime.CurrentSnapshot.IsModeEnabled);
+        Assert.Equal(RuntimeStatus.Faulted, fixture.Runtime.CurrentSnapshot.Status);
+        Assert.Contains("clock failed", fixture.Runtime.CurrentSnapshot.Message);
+    }
+
+    [Fact]
     public async Task OneSecondRamp_ProducesTenGradualWritesBetweenSamples()
     {
         await using var fixture = RuntimeFixture.Create(modeEnabled: true, temperatures: [35, 85, 85]);
@@ -565,6 +581,7 @@ public sealed class ThermalRuntimeTests
         private readonly object _sync = new();
         private readonly List<FakeTimer> _timers = [];
         private DateTimeOffset _utcNow;
+        public int GetUtcNowFailuresRemaining { get; set; }
 
         public FakeTimeProvider(DateTimeOffset utcNow)
         {
@@ -584,6 +601,11 @@ public sealed class ThermalRuntimeTests
 
         public override DateTimeOffset GetUtcNow()
         {
+            if (GetUtcNowFailuresRemaining > 0)
+            {
+                GetUtcNowFailuresRemaining--;
+                throw new InvalidOperationException("clock failed");
+            }
             lock (_sync)
             {
                 return _utcNow;

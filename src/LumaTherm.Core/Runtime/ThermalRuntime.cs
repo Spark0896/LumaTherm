@@ -191,41 +191,48 @@ public sealed class ThermalRuntime : IThermalRuntime
             var previousSettings = _settings;
             await _settingsStore.SaveAsync(validated, cancellationToken).ConfigureAwait(false);
             Volatile.Write(ref _settings, validated);
-            var modeChanged = validated.IsModeEnabled != previousSettings.IsModeEnabled;
-            if (modeChanged && !validated.IsModeEnabled)
-            {
-                await StopLoopNoLockAsync().ConfigureAwait(false);
-            }
-
-            await _processGate.WaitAsync(CancellationToken.None).ConfigureAwait(false);
             try
             {
-                var profileChanged = validated.Profile != previousSettings.Profile;
-                if (profileChanged)
+                var modeChanged = validated.IsModeEnabled != previousSettings.IsModeEnabled;
+                if (modeChanged && !validated.IsModeEnabled)
                 {
-                    _colorEngine.UpdateProfile(validated.Profile);
-                    _targetRange = _targetReading is null ? null : _colorEngine.Classify(_targetReading.Celsius);
+                    await StopLoopNoLockAsync().ConfigureAwait(false);
                 }
 
-                if (!validated.IsModeEnabled && (modeChanged || _releasePending))
+                await _processGate.WaitAsync(CancellationToken.None).ConfigureAwait(false);
+                try
                 {
-                    var releaseMessage = await TryReleaseLightingAsync().ConfigureAwait(false);
-                    ResetMonitoringState();
-                    snapshot = CreateSnapshot(RuntimeStatus.Disabled, null, null, null, releaseMessage);
+                    var profileChanged = validated.Profile != previousSettings.Profile;
+                    if (profileChanged)
+                    {
+                        _colorEngine.UpdateProfile(validated.Profile);
+                        _targetRange = _targetReading is null ? null : _colorEngine.Classify(_targetReading.Celsius);
+                    }
+
+                    if (!validated.IsModeEnabled && (modeChanged || _releasePending))
+                    {
+                        var releaseMessage = await TryReleaseLightingAsync().ConfigureAwait(false);
+                        ResetMonitoringState();
+                        snapshot = CreateSnapshot(RuntimeStatus.Disabled, null, null, null, releaseMessage);
+                    }
+                    else if (modeChanged && !_suspended)
+                    {
+                        StartLoopNoLock();
+                        snapshot = CreateSnapshot(RuntimeStatus.Connecting, _targetReading, _displayedColor, _targetRange, null);
+                    }
+                    else
+                    {
+                        snapshot = CreateSnapshot(StatusForCurrentState(), _targetReading, _displayedColor, _targetRange, null);
+                    }
                 }
-                else if (modeChanged && !_suspended)
+                finally
                 {
-                    StartLoopNoLock();
-                    snapshot = CreateSnapshot(RuntimeStatus.Connecting, _targetReading, _displayedColor, _targetRange, null);
-                }
-                else
-                {
-                    snapshot = CreateSnapshot(StatusForCurrentState(), _targetReading, _displayedColor, _targetRange, null);
+                    _processGate.Release();
                 }
             }
-            finally
+            catch (Exception exception)
             {
-                _processGate.Release();
+                snapshot = CreateSnapshot(RuntimeStatus.Faulted, _targetReading, _displayedColor, _targetRange, exception.Message);
             }
         }
         finally
