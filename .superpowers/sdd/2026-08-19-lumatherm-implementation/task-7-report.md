@@ -46,6 +46,14 @@
 
 Fix round 2 implementation commit: `7f79a1d` (`fix: reconcile view models with runtime commits`).
 
+## Fix round 3 — atomic update and observer containment
+
+RED exposed missing post-commit containment. A deterministic one-shot failure in the existing injected test clock now proves `UpdateSettingsAsync` contains a post-save snapshot failure, retains the exact committed `CurrentSettings`, and publishes a faulted snapshot with the committed mode bit/message. Durable-store failures remain pre-commit throws with last-good settings. ObservableObject and SettingsViewModel observers are invoked individually and contained; Settings update exceptions now always compensate autostart as pre-commit failures.
+
+GREEN verification: App ViewModels `35 passed`; full solution Core `64`, Infrastructure `58`, App `35` passed; build succeeded with 0 warnings/errors; `git diff --check` passed.
+
+Partial observer/API commit: `5f59fcd`; final post-commit containment commit: `bea71bc`.
+
 `git diff --check` also passed.
 
 ## Self-review
