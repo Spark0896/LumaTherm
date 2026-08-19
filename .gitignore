@@ -1,0 +1,17 @@
+# Local visual-brainstorming sessions
+.superpowers/
+
+# Build output
+bin/
+obj/
+artifacts/
+dist/
+
+# User and IDE state
+.vs/
+*.user
+*.suo
+
+# Local logs and settings
+*.log
+
