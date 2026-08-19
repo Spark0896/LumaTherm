@@ -6,6 +6,8 @@ Implemented the approved native WPF Thermal Core dashboard, reusable theme, supp
 
 Implementation commit: `f9c294f07673ed9952bb643833a02549febcaebc` (`feat: build Thermal Core dashboard`).
 
+Review-hardening commit: `3ce63b8c58203210e7b5e0b708493bc9ec8da749` (`fix: harden Thermal Core dashboard`).
+
 Task 9 Settings UI, production composition/runtime startup, tray behavior, and physical RGB writes were not started.
 
 ## TDD evidence
@@ -25,9 +27,9 @@ No test reads or searches XAML/C# source text. Tests instantiate compiled resour
 ## Fresh verification
 
 - Asset builder: PASS — `dotnet run --project tools\LumaTherm.AssetBuilder -- "$PWD"`.
-- Focused compiled UI tests: PASS — 16 passed, 0 failed, 0 skipped.
-- Full solution tests: PASS — 182 total, 0 failed, 0 skipped:
-  - `LumaTherm.App.Tests`: 53 passed;
+- Focused compiled UI tests: PASS — 24 passed, 0 failed, 0 skipped.
+- Full solution tests: PASS — 190 total, 0 failed, 0 skipped:
+  - `LumaTherm.App.Tests`: 61 passed;
   - `LumaTherm.Core.Tests`: 71 passed;
   - `LumaTherm.Infrastructure.Tests`: 58 passed.
 - Debug solution build: PASS — 7 projects built, 0 warnings, 0 errors.
@@ -46,6 +48,8 @@ Final dimensions and SHA-256 hashes:
 | `src/LumaTherm.App/Assets/LumaTherm.ico` | 44×44 + 256×256 | `17ADA513048C7CD0F9AFC0137C8B6AC481376A7CCD7915D45D8B6553D351B5AD` |
 
 Hashing all five files, regenerating with the same source/SDK, and hashing again produced byte-for-byte matches for every output.
+
+The review-hardening round regenerated and rehashed all five assets again; every byte remained unchanged at the hashes above.
 
 ICO inspection confirmed reserved `0`, type `1`, count `2`; the 44 px entry encodes width/height `44`, and the 256 px entry encodes both as `0`. Both entries have planes `1`, bit depth `32`, and valid payload lengths/offsets. WPF decoded exactly two frames at 44×44 and 256×256.
 
@@ -71,6 +75,18 @@ All four PNGs and both decoded ICO payloads were inspected locally. Results:
 - `TemperatureRing` renders cold/warm/hot and below/above-limit values while preserving the raw accessible reading.
 - `ThermalGradientBar` renders three continuous bound stops, temperature labels, and a current-temperature marker.
 - `TemperatureSparkline` detaches stale collections, tracks current collection changes, redraws additions, handles empty/one-point/flat histories, and exposes the approved screen-reader label.
+
+## Review hardening round 1
+
+Five review findings were addressed one RED/GREEN item at a time with compiled runtime tests:
+
+- A subscriber-counting `IEnumerable`/`INotifyCollectionChanged` fixture proved the sparkline originally remained subscribed after `Unloaded` (RED). The control now detaches on `Unloaded`, reattaches idempotently on `Loaded`, and does not invalidate from a stale collection. Removing the previous test seam exposed a second real defect: detaching an unobserved collection could issue an unmatched unsubscribe. Identity-guarding the observed collection fixed it; the focused sparkline suite passes 3/3.
+- The mode switch was a plain `Button` (RED). It is now a styled `ToggleButton` with one-way `IsChecked` projection from `IsModeEnabled`, the original command and accessible name, and verified `IToggleProvider` Off/On state. Keyboard focusability and command preservation remain covered.
+- Compiled-resource and rendered-pixel tests initially found no approved workspace gradient, navigation rail, temperature glow, or closed sparkline fill (RED). The WPF tree now contains the `#1B2025` → `#15191D` workspace gradient at offset `0.65`, a 3×24 cyan navigation rail with glow, an amber temperature-card radial glow, and an amber sparkline area fill fading from opacity `0.17` to zero below the line.
+- Responsive tests cover 979, 980, and 981 px plus the 884 px minimum client width. A deliberate breakpoint mutation from 980 to 979 made only the 979 case fail (RED); restoring 980 passes all 4/4 cases with all four panels and the toggle in visible bounds and compact scrolling available.
+- A real `MainViewModel` dispatcher publication now proves rendered gradient-marker and history pixels both change, rather than checking binding identity alone.
+
+No test uses source-text search or test-only production flags. The final hardening verification is the fresh evidence recorded above.
 
 ## Self-review and remaining concern
 
