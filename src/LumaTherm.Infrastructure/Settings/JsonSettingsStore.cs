@@ -74,8 +74,26 @@ public sealed class JsonSettingsStore(string path, TimeProvider timeProvider) : 
         {
             var timestamp = _timeProvider.GetUtcNow().ToString("yyyyMMdd-HHmmss", System.Globalization.CultureInfo.InvariantCulture);
             var directory = Path.GetDirectoryName(_path) ?? string.Empty;
-            var quarantinePath = Path.Combine(directory, $"{Path.GetFileNameWithoutExtension(_path)}.corrupt-{timestamp}{Path.GetExtension(_path)}");
-            File.Move(_path, quarantinePath);
+            var namePrefix = $"{Path.GetFileNameWithoutExtension(_path)}.corrupt-{timestamp}";
+            var extension = Path.GetExtension(_path);
+            for (var suffix = 0; ; suffix++)
+            {
+                var fileName = suffix == 0 ? $"{namePrefix}{extension}" : $"{namePrefix}-{suffix}{extension}";
+                var quarantinePath = Path.Combine(directory, fileName);
+                if (File.Exists(quarantinePath))
+                {
+                    continue;
+                }
+
+                try
+                {
+                    File.Move(_path, quarantinePath);
+                    break;
+                }
+                catch (IOException) when (File.Exists(_path) && File.Exists(quarantinePath))
+                {
+                }
+            }
         }
 
         return new SettingsLoadResult(AppSettings.Default, RecoveryMessage);

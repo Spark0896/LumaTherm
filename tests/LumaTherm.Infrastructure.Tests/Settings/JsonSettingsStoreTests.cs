@@ -39,6 +39,28 @@ public sealed class JsonSettingsStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task SavingExistingFile_ReplacesStoredValuesWithoutLeavingTemporaryFile()
+    {
+        var path = Path.Combine(_directory, "settings.json");
+        var store = new JsonSettingsStore(path, TimeProvider.System);
+        var replacement = AppSettings.Default with
+        {
+            IsModeEnabled = true,
+            IsAutostartEnabled = true,
+            MinimizeToTray = false,
+            NotificationsEnabled = false,
+            PreferredLightingDeviceId = "replacement-device"
+        };
+
+        await store.SaveAsync(AppSettings.Default, TestContext.Current.CancellationToken);
+        await store.SaveAsync(replacement, TestContext.Current.CancellationToken);
+        var actual = (await store.LoadAsync(TestContext.Current.CancellationToken)).Settings;
+
+        Assert.Equal(replacement, actual);
+        Assert.False(File.Exists(path + ".tmp"));
+    }
+
+    [Fact]
     public async Task InvalidJson_IsQuarantinedAndDefaultsAreReturned()
     {
         Directory.CreateDirectory(_directory);
@@ -53,6 +75,27 @@ public sealed class JsonSettingsStoreTests : IDisposable
         Assert.Equal(AppSettings.Default, settings);
         Assert.True(File.Exists(Path.Combine(_directory, "settings.corrupt-20260819-120000.json")));
         Assert.Equal("Настройки были повреждены и сброшены", result.RecoveryMessage);
+    }
+
+    [Fact]
+    public async Task CorruptFilesWithSameTimestamp_AreQuarantinedWithoutOverwritingDiagnostics()
+    {
+        Directory.CreateDirectory(_directory);
+        var path = Path.Combine(_directory, "settings.json");
+        var clock = new FakeTimeProvider(new DateTimeOffset(2026, 8, 19, 12, 0, 0, TimeSpan.Zero));
+        var store = new JsonSettingsStore(path, clock);
+
+        await File.WriteAllTextAsync(path, "{first", TestContext.Current.CancellationToken);
+        var first = await store.LoadAsync(TestContext.Current.CancellationToken);
+        await File.WriteAllTextAsync(path, "{second", TestContext.Current.CancellationToken);
+        var second = await store.LoadAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(AppSettings.Default, first.Settings);
+        Assert.Equal(AppSettings.Default, second.Settings);
+        Assert.Equal("Настройки были повреждены и сброшены", first.RecoveryMessage);
+        Assert.Equal("Настройки были повреждены и сброшены", second.RecoveryMessage);
+        Assert.Equal("{first", await File.ReadAllTextAsync(Path.Combine(_directory, "settings.corrupt-20260819-120000.json"), TestContext.Current.CancellationToken));
+        Assert.Equal("{second", await File.ReadAllTextAsync(Path.Combine(_directory, "settings.corrupt-20260819-120000-1.json"), TestContext.Current.CancellationToken));
     }
 
     [Fact]
