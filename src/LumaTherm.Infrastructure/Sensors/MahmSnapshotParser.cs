@@ -77,7 +77,7 @@ public static class MahmSnapshotParser
     {
         monitoringEntriesOffset = 0;
         gpuEntriesOffset = 0;
-        if (headerSize < HeaderLength || entrySize < MinimumMonitoringEntrySize || gpuEntrySize < MinimumGpuEntrySize || gpuEntryCount == 0)
+        if (headerSize != HeaderLength || entrySize < MinimumMonitoringEntrySize || gpuEntrySize < MinimumGpuEntrySize || gpuEntryCount == 0)
         {
             return false;
         }

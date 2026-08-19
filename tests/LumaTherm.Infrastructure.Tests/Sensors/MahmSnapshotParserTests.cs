@@ -46,6 +46,24 @@ public sealed class MahmSnapshotParserTests
         Assert.False(MahmSnapshotParser.TryParseGpuTemperature(buffer, out _, out _));
     }
 
+    [Fact]
+    public void Parse_RejectsNonV2HeaderSizeEvenWhenShiftedEntriesAreOtherwiseValid()
+    {
+        var buffer = new byte[33 + 1324 + 1304];
+        BinaryPrimitives.WriteUInt32LittleEndian(buffer.AsSpan(0), 0x4D48414D);
+        BinaryPrimitives.WriteUInt32LittleEndian(buffer.AsSpan(4), 0x00020000);
+        BinaryPrimitives.WriteUInt32LittleEndian(buffer.AsSpan(8), 33);
+        BinaryPrimitives.WriteUInt32LittleEndian(buffer.AsSpan(12), 1);
+        BinaryPrimitives.WriteUInt32LittleEndian(buffer.AsSpan(16), 1324);
+        BinaryPrimitives.WriteUInt32LittleEndian(buffer.AsSpan(24), 1);
+        BinaryPrimitives.WriteUInt32LittleEndian(buffer.AsSpan(28), 1304);
+        WriteSingle(buffer, 33 + 1300, 68f);
+        BinaryPrimitives.WriteUInt32LittleEndian(buffer.AsSpan(33 + 1316), 0);
+        BinaryPrimitives.WriteUInt32LittleEndian(buffer.AsSpan(33 + 1320), 0);
+
+        Assert.False(MahmSnapshotParser.TryParseGpuTemperature(buffer, out _, out _));
+    }
+
     [Theory]
     [InlineData(1323, 1304)]
     [InlineData(1324, 1303)]
