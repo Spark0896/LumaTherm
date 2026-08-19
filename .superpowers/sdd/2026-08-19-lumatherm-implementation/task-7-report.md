@@ -184,3 +184,47 @@ git diff --check
 Implementation commit: `51dd438` (`fix: complete atomic view model mutations`).
 
 Concern: NuGet audit remains unavailable in this environment, so verification used the repository's existing restored packages with `--no-restore -p:NuGetAudit=false`. No implementation concern remains for Task 7.
+
+## Fix round 5 — release owned lighting after loop faults
+
+### RED → GREEN evidence
+
+The two faulted-loop tests were replaced so each starts the runtime, drives a real `ProcessOnceAsync` reading until the fake lighting controller is connected and has received a color, faults the actual background loop through the injected clock/timer, and performs one committed disable mutation. A third test covers simultaneous loop-stop and release failures.
+
+Focused RED executed all three new proofs. Both API tests failed with `expected ReleaseCalls = 1`, `actual = 0`, demonstrating that `StopLoopNoLockAsync` failure skipped release. The combined-error case also showed the release path had not run.
+
+`DisableCommittedModeAsync` now captures loop-stop failure, always acquires the process gate and attempts release/reset, preserves pending only when release fails, then publishes either Disabled or a non-throwing Faulted fallback. When loop stop and release both fail, the snapshot message carries both errors. Focused GREEN: 3/3 passed.
+
+### Self-review
+
+- Both `SetModeEnabledAsync` and `UpdateSettingsAsync` set the release obligation immediately after the durable disabled settings publication and delegate to the same cleanup path.
+- A loop-stop exception is retained while release, monitoring reset, optional committed profile update, and process-gate release continue in the same mutation.
+- Successful release disconnects the owned fake controller, clears pending, and makes a repeated identical disable a no-op with no extra save or release. A disabled `ProcessOnceAsync` after the repeat proves both gates remain usable.
+- Failed release keeps ownership/pending; the next identical disable retries only release, performs no second settings save, disconnects on success, and then clears the obligation.
+- All new timer, mutation, process, and cleanup waits are bounded. No reflection or production debug hook is used.
+
+### Final verification
+
+```powershell
+& "$PWD\.dotnet\dotnet.exe" test tests\LumaTherm.Core.Tests\LumaTherm.Core.Tests.csproj --filter FullyQualifiedName~Runtime --no-restore -p:NuGetAudit=false
+# 33 passed, 0 failed
+
+& "$PWD\.dotnet\dotnet.exe" test tests\LumaTherm.Core.Tests\LumaTherm.Core.Tests.csproj --no-restore -p:NuGetAudit=false
+# 71 passed, 0 failed
+
+& "$PWD\.dotnet\dotnet.exe" test tests\LumaTherm.App.Tests\LumaTherm.App.Tests.csproj --filter FullyQualifiedName~ViewModels --no-restore -p:NuGetAudit=false
+# 37 passed, 0 failed
+
+& "$PWD\.dotnet\dotnet.exe" test LumaTherm.sln --no-restore -p:NuGetAudit=false
+# Core: 71 passed; Infrastructure: 58 passed; App: 37 passed
+
+& "$PWD\.dotnet\dotnet.exe" build LumaTherm.sln -c Debug --no-restore -p:NuGetAudit=false
+# Build succeeded, 0 warnings, 0 errors
+
+git diff --check
+# exit 0
+```
+
+Implementation commit: `9fd628f` (`fix: release lighting after loop faults`).
+
+Concern: no implementation concern remains. NuGet audit is still unavailable in the environment, so verification used the already restored packages with audit disabled.
