@@ -1,5 +1,6 @@
 # Local visual-brainstorming sessions
 .superpowers/
+.worktrees/
 
 # Build output
 bin/
@@ -14,4 +15,3 @@ dist/
 
 # Local logs and settings
 *.log
-
