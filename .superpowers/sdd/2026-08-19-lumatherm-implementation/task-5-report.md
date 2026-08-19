@@ -188,3 +188,51 @@ Exit code `0`: warnings `0`, errors `0`.
 - A missing barrier entry, non-returning controller operation, or non-returning disposal now fails within five seconds instead of hanging indefinitely.
 - Production diff is empty for this round; physical-lighting safety and prior behavior are unchanged.
 - Remaining concern remains the intentional manual hardware validation for the physical HID target.
+
+## Fix Round 3/5 — Bounded blocked-enable cleanup
+
+### Finding and test-only fix
+
+`ConnectAsync_RejectsADeviceThatBecomesUnavailableWhileEnableIsBlocked` still declared the controller with `await using`. Its explicit barrier and worker waits were bounded, but compiler-generated cleanup awaited `DisposeAsync` without the five-second deadline. A gate/disposal regression could therefore hang the test on either its normal exit or an assertion-failure path.
+
+Only `tests/LumaTherm.Infrastructure.Tests/Lighting/LampArrayLightingControllerTests.cs` changed. The test now:
+
+1. owns the controller without implicit async cleanup;
+2. releases `continueEnable` in the inner and outer `finally` paths before disposal;
+3. bounds barrier entry, enable continuation, and connection completion with the same five-second token;
+4. explicitly calls `DisposeAsync().AsTask().WaitAsync(timeout.Token)` in the outer `finally`.
+
+No implicit await or unbounded cleanup await remains in this concurrency test. Production files were not changed.
+
+### Exact verification
+
+```powershell
+& "$PWD\.dotnet\dotnet.exe" test LumaTherm.sln --no-restore --filter "FullyQualifiedName~LampArrayLightingControllerTests"
+```
+
+Exit code `0`: controller tests `15/15`.
+
+```powershell
+& "$PWD\.dotnet\dotnet.exe" test LumaTherm.sln --no-restore --filter "FullyQualifiedName~Lighting"
+```
+
+Exit code `0`: Core Lighting `2/2`; Infrastructure Lighting `17/17`; total `19/19`.
+
+```powershell
+& "$PWD\.dotnet\dotnet.exe" test LumaTherm.sln --no-restore
+```
+
+Exit code `0`: Core `36/36`; Infrastructure `58/58`; total `94/94`, no failures or skips.
+
+```powershell
+& "$PWD\.dotnet\dotnet.exe" build LumaTherm.sln --no-restore
+```
+
+Exit code `0`: warnings `0`, errors `0`.
+
+### Self-review and concerns
+
+- Audited every asynchronous or blocking edge in the test: `continueEnable`, `enableEntered`, the connection task, and controller disposal all use the finite token.
+- The blocked worker is signaled before disposal on success, timeout, cancellation, and assertion-failure paths.
+- This round changes no production behavior and does not broaden hardware access.
+- Remaining concern remains the intentional manual validation of the physical HID target.

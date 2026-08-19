@@ -145,25 +145,33 @@ public sealed class LampArrayLightingControllerTests
             },
         };
         var platform = new InMemoryLampArrayPlatform(handle);
-        await using var controller = new LampArrayLightingController(platform);
-        var connection = Task.Run(
-            () => controller.ConnectAsync(null, timeout.Token),
-            timeout.Token);
+        var controller = new LampArrayLightingController(platform);
         try
         {
-            await enableEntered.Task.WaitAsync(timeout.Token);
+            var connection = Task.Run(
+                () => controller.ConnectAsync(null, timeout.Token),
+                timeout.Token);
+            try
+            {
+                await enableEntered.Task.WaitAsync(timeout.Token);
 
-            handle.IsAvailable = false;
+                handle.IsAvailable = false;
+            }
+            finally
+            {
+                continueEnable.TrySetResult();
+            }
+
+            Assert.False(await connection.WaitAsync(timeout.Token));
+            Assert.False(controller.IsConnected);
+            Assert.Null(controller.ConnectedDevice);
+            Assert.Equal(1, handle.DisableCount);
         }
         finally
         {
             continueEnable.TrySetResult();
+            await controller.DisposeAsync().AsTask().WaitAsync(timeout.Token);
         }
-
-        Assert.False(await connection.WaitAsync(timeout.Token));
-        Assert.False(controller.IsConnected);
-        Assert.Null(controller.ConnectedDevice);
-        Assert.Equal(1, handle.DisableCount);
     }
 
     [Fact]
