@@ -29,16 +29,17 @@ public sealed class LampArrayLightingControllerTests
     [Fact]
     public async Task DiscoverAsync_CompletesBeforeAConcurrentDisposalReleasesThePlatform()
     {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
         var handle = new InMemoryLampArrayHandle("device-1", "Other Device", 8, true);
         var platform = new InMemoryLampArrayPlatform(handle);
         platform.BlockFindAll();
         var controller = new LampArrayLightingController(platform);
-        var discovery = controller.DiscoverAsync(TestContext.Current.CancellationToken);
-        await platform.FindAllStarted;
-
-        var disposal = controller.DisposeAsync().AsTask();
+        var discovery = controller.DiscoverAsync(timeout.Token);
+        Task disposal;
         try
         {
+            await platform.FindAllStarted.WaitAsync(timeout.Token);
+            disposal = controller.DisposeAsync().AsTask();
             Assert.False(disposal.IsCompleted);
             Assert.Equal(0, platform.DisposeCount);
         }
@@ -47,8 +48,8 @@ public sealed class LampArrayLightingControllerTests
             platform.ReleaseFindAll();
         }
 
-        var devices = await discovery;
-        await disposal;
+        var devices = await discovery.WaitAsync(timeout.Token);
+        await disposal.WaitAsync(timeout.Token);
         Assert.Equal([new LightingDeviceInfo("device-1", "Other Device", 8, true)], devices);
         Assert.Equal(1, platform.DisposeCount);
     }
@@ -132,6 +133,7 @@ public sealed class LampArrayLightingControllerTests
     [Fact]
     public async Task ConnectAsync_RejectsADeviceThatBecomesUnavailableWhileEnableIsBlocked()
     {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
         var enableEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var continueEnable = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var handle = new InMemoryLampArrayHandle("selected", "GIGABYTE Device", 8, true)
@@ -139,20 +141,26 @@ public sealed class LampArrayLightingControllerTests
             OnEnable = () =>
             {
                 enableEntered.TrySetResult();
-                continueEnable.Task.GetAwaiter().GetResult();
+                continueEnable.Task.WaitAsync(timeout.Token).GetAwaiter().GetResult();
             },
         };
         var platform = new InMemoryLampArrayPlatform(handle);
         await using var controller = new LampArrayLightingController(platform);
         var connection = Task.Run(
-            () => controller.ConnectAsync(null, TestContext.Current.CancellationToken),
-            TestContext.Current.CancellationToken);
-        await enableEntered.Task.WaitAsync(TestContext.Current.CancellationToken);
+            () => controller.ConnectAsync(null, timeout.Token),
+            timeout.Token);
+        try
+        {
+            await enableEntered.Task.WaitAsync(timeout.Token);
 
-        handle.IsAvailable = false;
-        continueEnable.TrySetResult();
+            handle.IsAvailable = false;
+        }
+        finally
+        {
+            continueEnable.TrySetResult();
+        }
 
-        Assert.False(await connection);
+        Assert.False(await connection.WaitAsync(timeout.Token));
         Assert.False(controller.IsConnected);
         Assert.Null(controller.ConnectedDevice);
         Assert.Equal(1, handle.DisableCount);

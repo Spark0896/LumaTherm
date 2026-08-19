@@ -137,3 +137,54 @@ Exit code `0`: warnings `0`, errors `0`; the real Windows adapter compiled at `n
 - Controller policy, pure availability state, and WinRT adapter responsibilities remain separate. Core remains BCL-only.
 - The two deferred minor findings were not changed.
 - Remaining concern is unchanged: runtime HID behavior requires a deliberate manual hardware validation; automated tests never write physical lighting.
+
+## Fix Round 2/5 — Bounded concurrency-test barriers
+
+### Finding and test-only fix
+
+The discovery concurrency test awaited `FindAllStarted` directly, and the blocked-enable test relied on the overall test-run cancellation token. Neither supplied a finite per-test deadline, so a regression that stopped either operation from reaching its barrier could hang the test process.
+
+Only `tests/LumaTherm.Infrastructure.Tests/Lighting/LampArrayLightingControllerTests.cs` changed. Each concurrency test now owns a five-second `CancellationTokenSource`. That deadline is applied to:
+
+- discovery barrier entry;
+- blocked `FindAllAsync` continuation through the controller operation token;
+- discovery operation completion;
+- disposal completion;
+- enable barrier entry;
+- blocked enable continuation;
+- connection operation completion.
+
+The blocked-enable continuation remains in `finally`, so an assertion/cancellation path releases the worker while the worker's own wait is also independently bounded. No production file changed.
+
+### Exact verification
+
+```powershell
+& "$PWD\.dotnet\dotnet.exe" test LumaTherm.sln --no-restore --filter "FullyQualifiedName~LampArrayLightingControllerTests"
+```
+
+Exit code `0`: controller tests `15/15`.
+
+```powershell
+& "$PWD\.dotnet\dotnet.exe" test LumaTherm.sln --no-restore --filter "FullyQualifiedName~Lighting"
+```
+
+Exit code `0`: Core Lighting `2/2`; Infrastructure Lighting `17/17`; total `19/19`.
+
+```powershell
+& "$PWD\.dotnet\dotnet.exe" test LumaTherm.sln --no-restore
+```
+
+Exit code `0`: Core `36/36`; Infrastructure `58/58`; total `94/94`, no failures or skips.
+
+```powershell
+& "$PWD\.dotnet\dotnet.exe" build LumaTherm.sln --no-restore
+```
+
+Exit code `0`: warnings `0`, errors `0`.
+
+### Self-review and concerns
+
+- Audited every wait in both barrier tests, including waits inside the in-memory fake callbacks, not only the test-method awaits.
+- A missing barrier entry, non-returning controller operation, or non-returning disposal now fails within five seconds instead of hanging indefinitely.
+- Production diff is empty for this round; physical-lighting safety and prior behavior are unchanged.
+- Remaining concern remains the intentional manual hardware validation for the physical HID target.
