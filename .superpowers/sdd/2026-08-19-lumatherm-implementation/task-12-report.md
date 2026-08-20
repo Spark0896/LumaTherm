@@ -4,7 +4,7 @@
 
 Implemented the x64 MSIX manifest/package project, deterministic approved assets contract, repeatable self-contained release pipeline, and reversible per-user install/uninstall scripts. Implementation commit: `2f562de` (`build: add signed MSIX and portable release`). Safe tool-resolution fix: `f2858be` (`fix: resolve pinned packaging tools safely`). Signing-security review fixes: `8ebaff3` and `c9e1ca1` (`fix: use machine trust for package verification`).
 
-The first controller-gated real `build-release.ps1` invocation ran against round 2 and stopped at SignTool `/pa` verification after restore, tests, publish, MakeAppx packing, and signing succeeded. The generated certificate was trusted in CurrentUser/TrustedPeople, but Windows still reported an untrusted root. A separately authorized elevated diagnostic proved the same exact public signer certificate in LocalMachine/TrustedPeople makes both Get-AuthenticodeSignature and SignTool `/pa` succeed. The corrected Full rerun, final complete artifact set, and final hashes remain pending; this report does not claim the signed release is complete.
+The corrected controller-gated Full run completed successfully under visible UAC elevation on reviewed HEAD `744c53f`. Restore/tests/publish, MakeAppx packing, SHA-256 signing, SignTool `/pa /v` verification, exact artifact/checksum validation, and independent certificate/signing-directory cleanup all passed. Task 12 is complete; package installation, retention of machine trust for an installed package, launch/visual/hardware acceptance, and uninstall remain explicit Task 13 gates.
 
 ## Witnessed RED -> GREEN evidence
 
@@ -56,7 +56,7 @@ git diff --check
 PASS before source commit; no whitespace errors.
 ```
 
-## Controller-gated real release checkpoint
+## Completed controller-gated real release checkpoint
 
 From a non-elevated PowerShell in the worktree root, the precise UAC checkpoint command is:
 
@@ -64,14 +64,28 @@ From a non-elevated PowerShell in the worktree root, the precise UAC checkpoint 
 Start-Process -FilePath "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -Verb RunAs -Wait -ArgumentList '-NoLogo -NoProfile -ExecutionPolicy Bypass -File "C:\Users\User\Documents\project\monitoring_color\.worktrees\lumatherm-v1\scripts\build-release.ps1"'
 ```
 
-Expected certificate-store delta: one transient code-signing certificate with subject `CN=LumaTherm Local` is created under `Cert:\CurrentUser\My` and exported only to a unique ignored `packaging/local-signing/run-<guid>/` directory. After signing, the exact public certificate is imported temporarily into `Cert:\LocalMachine\TrustedPeople` only when that thumbprint was not already present, so SignTool `/pa` can verify the package. The nested cleanup independently removes and verifies absence of the invocation-owned LocalMachine/TrustedPeople entry and the generated CurrentUser/My entry, never removes a pre-existing machine-trust certificate, then removes only the owned run directory. The final report must record the transient thumbprint only after verified cleanup. The expected outputs are `dist/LumaTherm-1.0.0-win-x64.msix`, `dist/LumaTherm-1.0.0-portable-win-x64.zip`, `dist/LumaTherm.cer`, `dist/SHA256SUMS.txt`, `dist/install.ps1`, and `dist/uninstall.ps1`; corrected Full SignTool verification, exact final sizes, and SHA-256 values must be appended after the approved rerun.
+Observed certificate-store delta: transient code-signing certificate `62C4375C8812693D1C6F5F6CE969F526AB70B5A7`, subject `CN=LumaTherm Local`, was created in `Cert:\CurrentUser\My`; its exact public certificate was temporarily owned in `Cert:\LocalMachine\TrustedPeople` for `/pa`. The build independently removed both invocation-owned entries and verified cleanup. Independent post-checks found the exact thumbprint absent and subject counts zero in both stores; before/after snapshots were empty, and no `packaging/local-signing/run-*` directory remained.
 
-## Self-review and pending evidence
+## Final artifact evidence
+
+| File | Bytes | SHA-256 |
+|---|---:|---|
+| `install.ps1` | 10,658 | `1BF3D2453A1FA59A0BC3784F40325948BFA7F617E63DA38AF0AD80A15A2F2252` |
+| `LumaTherm.cer` | 776 | `87CB158CFCD83C84EBF83E9ADA391273589EFBD163BCA0F983FB6F1362DE27C2` |
+| `LumaTherm-1.0.0-portable-win-x64.zip` | 72,372,049 | `6A808960A63C6DD4A624C16E7443DEC377874674A5014EEF45371EC35F32B4AF` |
+| `LumaTherm-1.0.0-win-x64.msix` | 73,982,114 | `2A212CC063C114A197315FCC0089FB8E956C2F2EB98C3DD2B293BDEA19F51EFA` |
+| `SHA256SUMS.txt` | 441 | `48BEC09393924B9995FF0D68382E8077D96C518F828B3AF9C53E6CE0D8D59BAA` |
+| `uninstall.ps1` | 7,055 | `7BC50B968D0619EC418DF812F6269A11068C887E0A8B19D05443B5BF960B48F6` |
+
+The distribution contained exactly these six names. `SHA256SUMS.txt` covered the exact five distributable artifacts and produced zero mismatches.
+
+## Self-review and completed evidence
 
 - Installer/uninstaller verification and Administrator-status overrides require both `-AuditOnly` and `LUMATHERM_PACKAGING_TEST=1`; those audit paths cannot reach package, registry, certificate, or filesystem mutation. The release tool-path override is separately restricted to `-Mode Plan` plus `LUMATHERM_PACKAGING_TEST=1`; Full mode always resolves and validates the pinned BuildTools package. Its Administrator test seam can only force `NonAdmin` rejection and cannot bypass elevation.
 - Tests exercise real XML parsing, PNG headers/hashes/regeneration, SHA-256, fixture certificates, sibling resolution, and executable PowerShell plans. No broad script source-grep test substitutes for behavior.
 - Password values are absent from stdout/stderr and are cleared from release variables in `finally`; generated passwords are cryptographically random per run.
-- Observed in the first real checkpoint: MakeAppx packing and SHA-256 signing succeeded; the remaining failure was specifically `/pa` trust validation. Pending by instruction: the corrected elevated Full rerun, final SignTool verification, complete artifact sizes/hashes, and corrected machine-store cleanup evidence. No install/uninstall is authorized at this checkpoint.
+- Corrected Full ran from `2026-08-20T16:20:26Z` through `16:21:11Z` with `elevatedAdministrator=true`. Its transcript records Core 71/71, Infrastructure 91/91, App 138/138, Packaging 40/40; successful MakeAppx creation and signing; and SignTool `/pa /v` with 1 file verified, 0 warnings, and 0 errors.
+- Ignored evidence is preserved at `artifacts/signing-diagnostics/full-checkpoint-transcript.txt` and `full-checkpoint-result.json`. The package was not installed, no certificate was retained, autostart was not enabled, and no production app or hardware operation ran.
 
 ## Safe fix round — restored BuildTools property fallback
 
@@ -118,3 +132,7 @@ Source fix: `22c389c` (`fix: close packaging mutation safety gaps`).
 - The regression launches a real parent/child PowerShell tree whose child holds an exclusive file lock. At the three-second deadline the helper terminates the complete tree, returns within eight seconds, and the test immediately reacquires the lock, proving no child process retained it.
 - Fresh verification: affected junction/timeout tests 5/5; Packaging 40/40; Core 71 + Infrastructure 91 + App 138 + Packaging 40 = 340/340; Release build 0 warnings and 0 errors; `git diff --check` clean apart from checkout line-ending notices.
 - No production script changed, and Full/install/uninstall were not run. The controller-approved UAC checkpoint remains unchanged.
+
+## Task 12 completion
+
+The final review is clean and the corrected real signed-MSIX checkpoint passed on `744c53f`. Task 12 is complete. Task 13 must separately authorize and verify installation, retained LocalMachine trust for the installed self-signed package, launch/UI/tray behavior, read-only temperature acquisition, any explicitly gated lighting write, and reversible uninstall; none of those acceptance side effects are implied by this completion.
