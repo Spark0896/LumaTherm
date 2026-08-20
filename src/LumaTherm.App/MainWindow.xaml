@@ -26,12 +26,14 @@
                     <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="38" /><RowDefinition Height="Auto" /><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
                     <Image Width="40" Height="40" Source="{StaticResource LogoDrawingImage}" automation:AutomationProperties.Name="Логотип LumaTherm" />
                     <StackPanel Grid.Row="2">
-                        <Button x:Name="HomeButton" Style="{StaticResource IconButtonStyle}" Click="HomeButton_Click"
+                        <Button x:Name="HomeButton" Style="{StaticResource IconButtonStyle}"
+                                Command="{Binding ShowDashboardCommand, RelativeSource={RelativeSource AncestorType={x:Type Window}}}"
                                 Foreground="{StaticResource ColdColorBrush}" Background="#20272D"
-                                automation:AutomationProperties.Name="Главная">
+                                automation:AutomationProperties.Name="Главная" automation:AutomationProperties.ItemStatus="Выбрано">
                             <TextBlock Text="&#xE80F;" FontFamily="Segoe Fluent Icons" FontSize="19" Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" />
                         </Button>
-                        <Button x:Name="SettingsButton" Style="{StaticResource IconButtonStyle}" Click="SettingsButton_Click" Margin="0,7,0,0"
+                        <Button x:Name="SettingsButton" Style="{StaticResource IconButtonStyle}" Margin="0,7,0,0"
+                                Command="{Binding ShowSettingsCommand, RelativeSource={RelativeSource AncestorType={x:Type Window}}}"
                                 automation:AutomationProperties.Name="Настройки">
                             <TextBlock Text="&#xE713;" FontFamily="Segoe Fluent Icons" FontSize="19" Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" />
                         </Button>
@@ -100,13 +102,8 @@
 
                 <Grid Grid.Row="1">
                     <views:DashboardView x:Name="DashboardContent" />
-                    <Border x:Name="SettingsPlaceholder" Visibility="Collapsed" Margin="25,22,25,26" Style="{StaticResource PanelStyle}" Padding="24">
-                        <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
-                            <TextBlock Text="&#xE713;" FontFamily="Segoe Fluent Icons" FontSize="34" Foreground="{StaticResource ColdColorBrush}" HorizontalAlignment="Center" />
-                            <TextBlock Text="Настройки" Margin="0,14,0,0" FontSize="21" FontWeight="SemiBold" HorizontalAlignment="Center" />
-                            <TextBlock Text="Экран настроек появится на следующем этапе" Margin="0,6,0,0" FontSize="11" Foreground="{StaticResource MutedTextBrush}" />
-                        </StackPanel>
-                    </Border>
+                    <views:SettingsView x:Name="SettingsContent" Visibility="Collapsed"
+                                        DataContext="{Binding SettingsDataContext, RelativeSource={RelativeSource AncestorType={x:Type Window}}}" />
                 </Grid>
             </Grid>
         </Grid>

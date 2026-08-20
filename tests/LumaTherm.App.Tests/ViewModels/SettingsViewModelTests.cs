@@ -1,5 +1,7 @@
 using LumaTherm.App.ViewModels;
+using LumaTherm.App.Services;
 using LumaTherm.Core.Colors;
+using LumaTherm.Core.Lighting;
 using LumaTherm.Core.Runtime;
 using LumaTherm.Core.Settings;
 using LumaTherm.Core.System;
@@ -9,12 +11,242 @@ namespace LumaTherm.App.Tests.ViewModels;
 public sealed class SettingsViewModelTests
 {
     [Fact]
+    public async Task PickColdColor_SelectedColorChangesOnlyColdStopAndUsesRuntimeSaveOnce()
+    {
+        var recorder = new OperationRecorder();
+        var runtime = new FakeThermalRuntime(recorder);
+        var startup = new FakeStartupService(recorder);
+        var picker = new FakeColorPicker(new RgbColor(1, 2, 3));
+        var vm = new SettingsViewModel(runtime, startup, AppSettings.Default, picker);
+
+        await vm.PickColdColorCommand.ExecuteAsync();
+
+        Assert.Equal(new RgbColor(1, 2, 3), vm.ColdColor);
+        Assert.Equal("#010203", vm.ColdColorHex);
+        Assert.Equal(ThermalProfile.Default.WarmColor, vm.WarmColor);
+        Assert.Equal(ThermalProfile.Default.HotColor, vm.HotColor);
+        Assert.Equal(ThermalProfile.Default.ColdColor, picker.CurrentColor);
+        Assert.Equal(1, runtime.UpdateCalls);
+        Assert.Equal(vm.LiveSettings, runtime.CurrentSettings);
+        Assert.Equal(new RgbColor(1, 2, 3), runtime.CurrentSettings.Profile.ColdColor);
+    }
+
+    [Fact]
+    public async Task PickWarmColor_SelectedColorChangesOnlyWarmStopAndUsesRuntimeSaveOnce()
+    {
+        var recorder = new OperationRecorder();
+        var runtime = new FakeThermalRuntime(recorder);
+        var startup = new FakeStartupService(recorder);
+        var picker = new FakeColorPicker(new RgbColor(4, 5, 6));
+        var vm = new SettingsViewModel(runtime, startup, AppSettings.Default, picker);
+
+        await vm.PickWarmColorCommand.ExecuteAsync();
+
+        Assert.Equal(ThermalProfile.Default.ColdColor, vm.ColdColor);
+        Assert.Equal(new RgbColor(4, 5, 6), vm.WarmColor);
+        Assert.Equal("#040506", vm.WarmColorHex);
+        Assert.Equal(ThermalProfile.Default.HotColor, vm.HotColor);
+        Assert.Equal(ThermalProfile.Default.WarmColor, picker.CurrentColor);
+        Assert.Equal(1, runtime.UpdateCalls);
+    }
+
+    [Fact]
+    public async Task PickHotColor_SelectedColorChangesOnlyHotStopAndUsesRuntimeSaveOnce()
+    {
+        var recorder = new OperationRecorder();
+        var runtime = new FakeThermalRuntime(recorder);
+        var startup = new FakeStartupService(recorder);
+        var picker = new FakeColorPicker(new RgbColor(7, 8, 9));
+        var vm = new SettingsViewModel(runtime, startup, AppSettings.Default, picker);
+
+        await vm.PickHotColorCommand.ExecuteAsync();
+
+        Assert.Equal(ThermalProfile.Default.ColdColor, vm.ColdColor);
+        Assert.Equal(ThermalProfile.Default.WarmColor, vm.WarmColor);
+        Assert.Equal(new RgbColor(7, 8, 9), vm.HotColor);
+        Assert.Equal("#070809", vm.HotColorHex);
+        Assert.Equal(ThermalProfile.Default.HotColor, picker.CurrentColor);
+        Assert.Equal(1, runtime.UpdateCalls);
+    }
+
+    [Fact]
+    public async Task PickColdColor_CancelChangesNothingAndDoesNotSave()
+    {
+        var recorder = new OperationRecorder();
+        var runtime = new FakeThermalRuntime(recorder);
+        var picker = new FakeColorPicker(null);
+        var vm = new SettingsViewModel(runtime, new FakeStartupService(recorder), AppSettings.Default, picker);
+
+        await vm.PickColdColorCommand.ExecuteAsync();
+
+        Assert.Equal(ThermalProfile.Default.ColdColor, vm.ColdColor);
+        Assert.Equal(ThermalProfile.Default.ColdColor, picker.CurrentColor);
+        Assert.Equal(0, runtime.UpdateCalls);
+        Assert.Empty(recorder.Events);
+    }
+
+    [Fact]
+    public async Task DiscoverLighting_MultipleDevicesShowsSelectorAndSavesSelectedStableId()
+    {
+        var recorder = new OperationRecorder();
+        var runtime = new FakeThermalRuntime(recorder);
+        var startup = new FakeStartupService(recorder);
+        var discovery = new FakeLightingDeviceDiscovery(
+            new LightingDeviceInfo("lamp-a", "GIGABYTE Device", 4, true),
+            new LightingDeviceInfo("lamp-b", "Desk Lamp", 8, true));
+        var saved = AppSettings.Default with { PreferredLightingDeviceId = "lamp-b" };
+        var vm = new SettingsViewModel(runtime, startup, saved, new FakeColorPicker(null), discovery);
+
+        await vm.DiscoverLightingDevicesCommand.ExecuteAsync();
+
+        Assert.True(vm.IsLightingDeviceSelectorVisible);
+        Assert.Equal(["lamp-a", "lamp-b"], vm.LightingDevices.Select(device => device.Id));
+        Assert.Equal("lamp-b", vm.SelectedLightingDeviceId);
+
+        vm.SelectedLightingDeviceId = "lamp-a";
+        await vm.SaveCommand.ExecuteAsync();
+
+        Assert.Equal("lamp-a", runtime.CurrentSettings.PreferredLightingDeviceId);
+        Assert.Equal(1, runtime.UpdateCalls);
+    }
+
+    [Fact]
+    public async Task DiscoverLighting_NoDevicesShowsNonFatalDirectLampArrayStatus()
+    {
+        var recorder = new OperationRecorder();
+        var runtime = new FakeThermalRuntime(recorder);
+        var startup = new FakeStartupService(recorder);
+        var vm = new SettingsViewModel(
+            runtime,
+            startup,
+            AppSettings.Default,
+            new FakeColorPicker(null),
+            new FakeLightingDeviceDiscovery());
+
+        await vm.DiscoverLightingDevicesCommand.ExecuteAsync();
+
+        Assert.Empty(vm.LightingDevices);
+        Assert.False(vm.IsLightingDeviceSelectorVisible);
+        Assert.Null(vm.SelectedLightingDeviceId);
+        Assert.Equal("Устройства Windows LampArray не найдены.", vm.LightingHardwareStatus);
+        Assert.Null(vm.ValidationMessage);
+        Assert.Empty(recorder.Events);
+    }
+
+    [Fact]
+    public async Task DiscoverLighting_OneAvailableDeviceKeepsCompactDirectLampArrayPresentation()
+    {
+        var recorder = new OperationRecorder();
+        var vm = new SettingsViewModel(
+            new FakeThermalRuntime(recorder),
+            new FakeStartupService(recorder),
+            AppSettings.Default,
+            new FakeColorPicker(null),
+            new FakeLightingDeviceDiscovery(new LightingDeviceInfo("lamp-a", "GIGABYTE Device", 4, true)));
+
+        await vm.DiscoverLightingDevicesCommand.ExecuteAsync();
+
+        Assert.False(vm.IsLightingDeviceSelectorVisible);
+        Assert.Equal("lamp-a", vm.SelectedLightingDeviceId);
+        Assert.Equal("GIGABYTE Device", vm.LightingDeviceName);
+        Assert.Equal("Подключено напрямую через Windows LampArray.", vm.LightingHardwareStatus);
+    }
+
+    [Fact]
+    public async Task DiscoverLighting_UnavailableSavedIdRemainsSelectableUntilUserChoosesAnotherDevice()
+    {
+        var recorder = new OperationRecorder();
+        var saved = AppSettings.Default with { PreferredLightingDeviceId = "lamp-missing" };
+        var vm = new SettingsViewModel(
+            new FakeThermalRuntime(recorder),
+            new FakeStartupService(recorder),
+            saved,
+            new FakeColorPicker(null),
+            new FakeLightingDeviceDiscovery(new LightingDeviceInfo("lamp-a", "Desk Lamp", 8, true)));
+
+        await vm.DiscoverLightingDevicesCommand.ExecuteAsync();
+
+        Assert.True(vm.IsLightingDeviceSelectorVisible);
+        var unavailable = Assert.Single(vm.LightingDevices, device => device.Id == "lamp-missing");
+        Assert.False(unavailable.IsAvailable);
+        Assert.Contains("недоступно", unavailable.Name, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("lamp-missing", vm.SelectedLightingDeviceId);
+        Assert.Equal("Сохранённое устройство недоступно или занято другим контроллером.", vm.LightingHardwareStatus);
+    }
+
+    [Fact]
+    public async Task SelectLighting_AvailableDeviceRemovesStaleUnavailableChoiceAndUpdatesDirectStatus()
+    {
+        var recorder = new OperationRecorder();
+        var saved = AppSettings.Default with { PreferredLightingDeviceId = "lamp-missing" };
+        var vm = new SettingsViewModel(
+            new FakeThermalRuntime(recorder),
+            new FakeStartupService(recorder),
+            saved,
+            new FakeColorPicker(null),
+            new FakeLightingDeviceDiscovery(new LightingDeviceInfo("lamp-a", "Desk Lamp", 8, true)));
+        await vm.DiscoverLightingDevicesCommand.ExecuteAsync();
+
+        vm.SelectedLightingDeviceId = "lamp-a";
+
+        Assert.DoesNotContain(vm.LightingDevices, device => device.Id == "lamp-missing");
+        Assert.False(vm.IsLightingDeviceSelectorVisible);
+        Assert.Equal("Desk Lamp", vm.LightingDeviceName);
+        Assert.Equal("Подключено напрямую через Windows LampArray.", vm.LightingHardwareStatus);
+    }
+
+    [Fact]
+    public async Task DiscoverLighting_UnavailableSavedIdStaysVisibleWhenNoDevicesAreDiscovered()
+    {
+        var recorder = new OperationRecorder();
+        var saved = AppSettings.Default with { PreferredLightingDeviceId = "lamp-missing" };
+        var vm = new SettingsViewModel(
+            new FakeThermalRuntime(recorder),
+            new FakeStartupService(recorder),
+            saved,
+            new FakeColorPicker(null),
+            new FakeLightingDeviceDiscovery());
+
+        await vm.DiscoverLightingDevicesCommand.ExecuteAsync();
+
+        var unavailable = Assert.Single(vm.LightingDevices);
+        Assert.Equal("lamp-missing", unavailable.Id);
+        Assert.False(unavailable.IsAvailable);
+        Assert.True(vm.IsLightingDeviceSelectorVisible);
+        Assert.Equal("lamp-missing", vm.SelectedLightingDeviceId);
+        Assert.Equal("Сохранённое устройство недоступно или занято другим контроллером.", vm.LightingHardwareStatus);
+    }
+
+    [Fact]
+    public async Task DiscoverLighting_FailureIsNonFatalAndKeepsEditableSettings()
+    {
+        var recorder = new OperationRecorder();
+        var vm = new SettingsViewModel(
+            new FakeThermalRuntime(recorder),
+            new FakeStartupService(recorder),
+            AppSettings.Default,
+            new FakeColorPicker(null),
+            new ThrowingLightingDeviceDiscovery());
+        vm.ColdTemperature = 40;
+
+        await vm.DiscoverLightingDevicesCommand.ExecuteAsync();
+
+        Assert.Equal(40, vm.ColdTemperature);
+        Assert.Equal(AppSettings.Default, vm.LiveSettings);
+        Assert.Equal("Не удалось получить устройства Windows LampArray. Подсветка может быть занята другим контроллером.", vm.LightingHardwareStatus);
+        Assert.Null(vm.ValidationMessage);
+        Assert.Empty(recorder.Events);
+    }
+
+    [Fact]
     public async Task Save_InvalidCrossedTemperatures_ShowsValidationAndDoesNotChangeLiveSettings()
     {
         var recorder = new OperationRecorder();
         var runtime = new FakeThermalRuntime(recorder);
         var startup = new FakeStartupService(recorder);
         var vm = new SettingsViewModel(runtime, startup, AppSettings.Default) { ColdTemperature = 65 };
+        using var dashboard = new MainViewModel(runtime);
+        dashboard.SynchronizeProfile(vm);
 
         await vm.SaveCommand.ExecuteAsync();
 
@@ -22,6 +254,7 @@ public sealed class SettingsViewModelTests
         Assert.Empty(recorder.Events);
         Assert.Equal(AppSettings.Default, runtime.CurrentSettings);
         Assert.Equal(AppSettings.Default, vm.LiveSettings);
+        Assert.Equal(ThermalProfile.Default, dashboard.Profile);
     }
 
     [Fact]
@@ -270,6 +503,32 @@ public sealed class SettingsViewModelTests
     }
 
     [Fact]
+    public async Task ResetDefaults_AppliesOnlyAfterExplicitSave()
+    {
+        var recorder = new OperationRecorder();
+        var runtime = new FakeThermalRuntime(recorder);
+        var startup = new FakeStartupService(recorder);
+        var saved = AppSettings.Default with
+        {
+            Profile = ThermalProfile.Default with { ColdTemperature = 40 },
+            NotificationsEnabled = false,
+        };
+        var vm = new SettingsViewModel(runtime, startup, saved);
+
+        vm.ResetDefaultsCommand.Execute(null);
+
+        Assert.Equal(ThermalProfile.Default, new ThermalProfile(vm.ColdTemperature, vm.ColdColor, vm.WarmTemperature, vm.WarmColor, vm.HotTemperature, vm.HotColor, vm.SmoothingSeconds));
+        Assert.True(vm.NotificationsEnabled);
+        Assert.Equal(0, runtime.UpdateCalls);
+
+        await vm.SaveCommand.ExecuteAsync();
+
+        Assert.Equal(1, runtime.UpdateCalls);
+        Assert.Equal(AppSettings.Default, runtime.CurrentSettings);
+        Assert.Equal(AppSettings.Default, vm.LiveSettings);
+    }
+
+    [Fact]
     public async Task SaveCommand_UnexpectedPreCommitFailure_CompensatesStartupAndUsesCommandExceptionHandler()
     {
         var recorder = new OperationRecorder();
@@ -359,6 +618,29 @@ public sealed class SettingsViewModelTests
     }
 
     private sealed class UnexpectedRuntimeException : Exception;
+
+    private sealed class FakeColorPicker(RgbColor? result) : IColorPickerService
+    {
+        public RgbColor CurrentColor { get; private set; }
+
+        public RgbColor? Pick(RgbColor current)
+        {
+            CurrentColor = current;
+            return result;
+        }
+    }
+
+    private sealed class FakeLightingDeviceDiscovery(params LightingDeviceInfo[] devices) : ILightingDeviceDiscovery
+    {
+        public Task<IReadOnlyList<LightingDeviceInfo>> DiscoverAsync(CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyList<LightingDeviceInfo>>(devices);
+    }
+
+    private sealed class ThrowingLightingDeviceDiscovery : ILightingDeviceDiscovery
+    {
+        public Task<IReadOnlyList<LightingDeviceInfo>> DiscoverAsync(CancellationToken cancellationToken) =>
+            Task.FromException<IReadOnlyList<LightingDeviceInfo>>(new InvalidOperationException("device occupied"));
+    }
 
     private sealed class QueuedSynchronizationContext : SynchronizationContext
     {

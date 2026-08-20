@@ -6,6 +6,7 @@ using Application = System.Windows.Application;
 using Brush = System.Windows.Media.Brush;
 using Button = System.Windows.Controls.Button;
 using Color = System.Windows.Media.Color;
+using LumaTherm.App.ViewModels;
 
 namespace LumaTherm.App;
 
@@ -13,23 +14,42 @@ public partial class MainWindow : System.Windows.Window
 {
     private const double WorkspaceGradientAngleDegrees = 145;
 
-    public MainWindow() => InitializeComponent();
+    public static readonly DependencyProperty SettingsDataContextProperty = DependencyProperty.Register(
+        nameof(SettingsDataContext),
+        typeof(SettingsViewModel),
+        typeof(MainWindow));
+
+    public MainWindow()
+    {
+        ShowDashboardCommand = new RelayCommand(ShowDashboard);
+        ShowSettingsCommand = new RelayCommand(ShowSettings);
+        InitializeComponent();
+    }
+
+    public SettingsViewModel? SettingsDataContext
+    {
+        get => (SettingsViewModel?)GetValue(SettingsDataContextProperty);
+        set => SetValue(SettingsDataContextProperty, value);
+    }
+
+    public RelayCommand ShowDashboardCommand { get; }
+    public RelayCommand ShowSettingsCommand { get; }
 
     internal IReadOnlyList<Button> IconOnlyButtons => [HomeButton, SettingsButton, AboutButton, MinimizeButton, MaximizeButton, CloseButton];
 
-    private void HomeButton_Click(object sender, RoutedEventArgs e)
+    private void ShowDashboard()
     {
         DashboardContent.Visibility = Visibility.Visible;
-        SettingsPlaceholder.Visibility = Visibility.Collapsed;
+        SettingsContent.Visibility = Visibility.Collapsed;
         HomeSelectionIndicator.Visibility = Visibility.Visible;
         SettingsSelectionIndicator.Visibility = Visibility.Collapsed;
         SetNavigationState(HomeButton, SettingsButton);
     }
 
-    private void SettingsButton_Click(object sender, RoutedEventArgs e)
+    private void ShowSettings()
     {
         DashboardContent.Visibility = Visibility.Collapsed;
-        SettingsPlaceholder.Visibility = Visibility.Visible;
+        SettingsContent.Visibility = Visibility.Visible;
         HomeSelectionIndicator.Visibility = Visibility.Collapsed;
         SettingsSelectionIndicator.Visibility = Visibility.Visible;
         SetNavigationState(SettingsButton, HomeButton);
@@ -41,6 +61,8 @@ public partial class MainWindow : System.Windows.Window
         active.Background = new SolidColorBrush(Color.FromRgb(0x20, 0x27, 0x2D));
         inactive.ClearValue(ForegroundProperty);
         inactive.ClearValue(BackgroundProperty);
+        System.Windows.Automation.AutomationProperties.SetItemStatus(active, "Выбрано");
+        System.Windows.Automation.AutomationProperties.SetItemStatus(inactive, string.Empty);
     }
 
     private void MinimizeButton_Click(object sender, RoutedEventArgs e) => WindowState = WindowState.Minimized;

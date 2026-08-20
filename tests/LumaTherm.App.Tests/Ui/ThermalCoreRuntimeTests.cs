@@ -428,7 +428,7 @@ public sealed class ThermalCoreRuntimeTests
             Assert.Equal(12, glow.BlurRadius);
             var settingsIndicator = Assert.IsType<Border>(shell.FindName("SettingsSelectionIndicator"));
             Assert.Equal(Visibility.Collapsed, settingsIndicator.Visibility);
-            Assert.IsType<Button>(shell.FindName("SettingsButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Assert.IsType<Button>(shell.FindName("SettingsButton")).Command.Execute(null);
             Assert.Equal(Visibility.Collapsed, indicator.Visibility);
             Assert.Equal(Visibility.Visible, settingsIndicator.Visibility);
 
