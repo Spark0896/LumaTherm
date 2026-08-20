@@ -6,7 +6,7 @@ Timestamp: `2026-08-20T19:40:47.5837960+03:00`.
 
 | Check | Status | Evidence |
 | --- | --- | --- |
-| Windows version | Not collected | The authorized probe set was limited to the three smoke commands below. |
+| Windows version | PASS | `Microsoft Windows NT 10.0.26200.0`, collected read-only with `[Environment]::OSVersion.VersionString`. |
 | NVML GPU temperature | PASS | NVIDIA GeForce RTX 5070, 71°C, exit 0. |
 | Forced MSI Afterburner fallback | FAIL (actionable) | MAHM provided no temperature; verify that MSI Afterburner is running and shared memory is enabled; exit 1. |
 | Dynamic Lighting LampArray | PASS | `GIGABYTE Device`, `\\?\HID#VID_048D&PID_5702&MI_00#a&30f63cd2&0&0000#{4d1e55b2-f16f-11cf-88cb-001111000030}`, available, 1 lamp, exit 0. |

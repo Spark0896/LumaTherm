@@ -83,7 +83,7 @@ Timestamp for the recorded read-only evidence: `2026-08-20T19:40:47.5837960+03:0
 
 - `sensor` constructs no LampArray adapter and uses the production NVML-first/MAHM-fallback source arrangement; `--skip-nvml` constructs MAHM-only provider wiring.
 - `lights` calls only `DiscoverAsync`; it does not call `ConnectAsync`, `SetColorAsync`, `Enable`, or `Disable`.
-- `cycle`/`simulate` require the explicit flag and interactive `YES`, except the test-only non-interactive branch. They register Ctrl+C cancellation through `Program` and release in `finally` using a finite two-second cleanup token.
+- `cycle`/`simulate` require the explicit flag and exact interactive `YES`; `--non-interactive` was removed after review. Prompts use stderr and JSON stdout has one terminal result. Ctrl+C cancellation reaches `ReadLineAsync(CancellationToken)`. Release/dispose calls are isolated behind a finite two-second deadline; success is emitted only after cleanup.
 - Simulation uses the existing `ColorEngine` and `ThermalProfile.Default`; there is no duplicate interpolation/smoothing implementation.
 - The forced MAHM failure and the uncollected Windows version are reported as such. Documentation marks all physical/install acceptance checks pending.
 
@@ -94,3 +94,21 @@ Timestamp for the recorded read-only evidence: `2026-08-20T19:40:47.5837960+03:0
 3. Installed-app first-run/dashboard/settings/tray/single-instance/autostart/sign-out checks.
 4. Sensor-loss/recovery, suspend/resume, five-minute tray soak/log bound, uninstall, and final visual comparison.
 5. Diagnose the optional MAHM fallback only after the controller permits external application-state checks; rerun forced fallback then record its actual result.
+
+## Review fix round 1/5
+
+Witnessed RED added to the initial record: `--non-interactive` produced exit `0` where rejection exit `2` was required; prompt-aware tests also failed because the dedicated prompt-writer overload did not exist. A prior RED test-host process did not terminate and held the Debug copy of the smoke DLL; it was inspected read-only and not terminated. Release isolation avoided that stale Debug lock.
+
+The fix removes the public bypass, routes prompts to stderr, makes `ReadLineAsync` cancellation-aware, validates the 0.1-second minimum duration, uses literal independently derived smoothing frames `#50C8FF`, `#50DFFF`, `#4FFFF2`, and emits one JSON result after bounded release/dispose. Non-cooperative synchronous cleanup is run on a background task with a two-second deadline; timeout gives a single error and skips concurrent lighting disposal. This cannot force a stuck platform call to stop in-process, but it avoids any foreground-process orphan or false PASS.
+
+Fresh review verification:
+
+```powershell
+& "$PWD\.dotnet\dotnet.exe" test tests\LumaTherm.Smoke.Tests\LumaTherm.Smoke.Tests.csproj -c Release -p:NuGetAudit=false
+& "$PWD\.dotnet\dotnet.exe" build LumaTherm.sln -c Release -p:NuGetAudit=false
+& "$PWD\.dotnet\dotnet.exe" test LumaTherm.sln -c Release -p:NuGetAudit=false
+```
+
+Results: Smoke `17/17`; build exit `0`, warnings `0`, errors `0`; full Release Core 71 + Infrastructure 91 + App 138 + Packaging 40 + Smoke 17 = `357/357`. `[Environment]::OSVersion.VersionString` observed `Microsoft Windows NT 10.0.26200.0`. No physical write, signing, install, UAC, or external app control occurred.
+
+Controller-authorized stale test cleanup: following read-only verification of path, start time, parent and command line, only stale RED-run Debug VSTest trees were terminated. Root `23820` (created 19:56:14) contained testhost `8920`, test exe `17888`, and conhost `6468`; root `16772` (created 19:56:46) contained testhost `10512`, test exe `24704`, and conhost `9132`. All command lines were under `tests\LumaTherm.Smoke.Tests\bin\Debug`. `taskkill /PID 23820 /T /F` and `taskkill /PID 16772 /T /F` succeeded; a one-second bounded post-kill process check found none of those PIDs. No unrelated dotnet process was touched. The harness had abandoned active child test trees after a timeout; the revised test fakes block only five seconds and command cleanup returns a two-second timeout error rather than waiting indefinitely.
