@@ -6,6 +6,17 @@ namespace LumaTherm.Packaging.Tests;
 public sealed class ReleaseScriptTests
 {
     [Fact]
+    public void PlanResolvesPinnedSdkFromTheRestoredPackagingProject()
+    {
+        var result = PowerShellTestHost.Run(Path.Combine(RepositoryLayout.Root, "scripts", "build-release.ps1"), new[] { "-Mode", "Plan" });
+
+        Assert.True(result.ExitCode == 0, result.StandardError + result.StandardOutput);
+        using var json = JsonDocument.Parse(result.StandardOutput);
+        Assert.Contains("10.0.26100.8249", json.RootElement.GetProperty("makeAppxPath").GetString(), StringComparison.Ordinal);
+        Assert.Contains($"{Path.DirectorySeparatorChar}x64{Path.DirectorySeparatorChar}", json.RootElement.GetProperty("signToolPath").GetString(), StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void PlanRejectsPublisherThatDoesNotMatchCertificateBeforeToolExecution()
     {
         using var fixture = ReleaseFixture.Create();

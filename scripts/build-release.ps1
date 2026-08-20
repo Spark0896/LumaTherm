@@ -60,8 +60,13 @@ function Resolve-SdkTools {
         }
         $project = Join-Path $repositoryRoot 'packaging\LumaTherm.Packaging.csproj'
         $propertyOutput = & $dotnet msbuild $project '-getProperty:PkgMicrosoft_Windows_SDK_BuildTools' '-p:NuGetAudit=false' $safeDotnetOutputArguments[0] $safeDotnetOutputArguments[1]
-        if ($LASTEXITCODE -ne 0) { throw 'Unable to resolve pinned Microsoft.Windows.SDK.BuildTools package.' }
-        $PackageRoot = ($propertyOutput | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Last 1).Trim()
+        $resolvedLine = $propertyOutput | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Last 1
+        if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($resolvedLine)) {
+            $propertyOutput = & $dotnet msbuild $project '-getProperty:PkgMicrosoft_Windows_SDK_BuildTools' '-p:NuGetAudit=false'
+            $resolvedLine = $propertyOutput | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Last 1
+        }
+        if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($resolvedLine)) { throw 'Unable to resolve pinned Microsoft.Windows.SDK.BuildTools package. Restore the packaging project first.' }
+        $PackageRoot = $resolvedLine.Trim()
     }
     $PackageRoot = [System.IO.Path]::GetFullPath($PackageRoot)
     $makeAppx = Get-ChildItem -LiteralPath (Join-Path $PackageRoot 'bin') -Filter 'MakeAppx.exe' -File -Recurse |
