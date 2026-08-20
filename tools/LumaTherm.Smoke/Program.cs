@@ -16,22 +16,22 @@ public static class Program
             cancellation.Cancel();
         };
 
-        await using var normal = new TemperatureProvider(
+        var normal = new TemperatureProvider(
         [
             new NvmlTemperatureSource(new NvmlApi(), TimeProvider.System),
             new AfterburnerTemperatureSource(new MahmMemoryReader(), TimeProvider.System),
         ]);
-        await using var fallback = new TemperatureProvider(
+        var fallback = new TemperatureProvider(
         [new AfterburnerTemperatureSource(new MahmMemoryReader(), TimeProvider.System)]);
 
         if (args.FirstOrDefault() is "lights" or "cycle" or "simulate")
         {
-            await using var lights = new LampArrayLightingController(new WindowsLampArrayPlatform());
-            return await SmokeCommand.RunAsync(args, normal, fallback, lights, Console.Out, Console.In, cancellation.Token).ConfigureAwait(false);
+            var lights = new LampArrayLightingController(new WindowsLampArrayPlatform());
+            return await SmokeCommand.RunAsync(args, normal, fallback, lights, Console.Out, Console.Error, Console.In, cancellation.Token).ConfigureAwait(false);
         }
 
-        await using var noLights = new NoLightingController();
-        return await SmokeCommand.RunAsync(args, normal, fallback, noLights, Console.Out, Console.In, cancellation.Token).ConfigureAwait(false);
+        var noLights = new NoLightingController();
+        return await SmokeCommand.RunAsync(args, normal, fallback, noLights, Console.Out, Console.Error, Console.In, cancellation.Token).ConfigureAwait(false);
     }
 
     private sealed class NoLightingController : ILightingController

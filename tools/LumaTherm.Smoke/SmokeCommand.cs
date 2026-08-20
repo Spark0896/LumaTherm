@@ -7,196 +7,200 @@ namespace LumaTherm.Smoke;
 
 public static class SmokeCommand
 {
-    private static readonly RgbColor[] CycleColors =
-    [
-        new(0x50, 0xC8, 0xFF),
-        new(0xFF, 0xC6, 0x4A),
-        new(0xFF, 0x56, 0x5D),
-    ];
+    private static readonly TimeSpan CleanupTimeout = TimeSpan.FromSeconds(2);
+    private static readonly RgbColor[] CycleColors = [new(0x50, 0xC8, 0xFF), new(0xFF, 0xC6, 0x4A), new(0xFF, 0x56, 0x5D)];
 
-    public static async Task<int> RunAsync(
-        string[] arguments,
-        ITemperatureProvider normalTemperatureProvider,
-        ITemperatureProvider fallbackTemperatureProvider,
-        ILightingController lightingController,
-        TextWriter output,
-        TextReader input,
-        CancellationToken cancellationToken)
+    public static Task<int> RunAsync(string[] arguments, ITemperatureProvider normal, ITemperatureProvider fallback, ILightingController lights, TextWriter output, TextReader input, CancellationToken cancellationToken) =>
+        RunAsync(arguments, normal, fallback, lights, output, TextWriter.Null, input, cancellationToken);
+
+    public static async Task<int> RunAsync(string[] arguments, ITemperatureProvider normal, ITemperatureProvider fallback, ILightingController lights, TextWriter output, TextWriter prompt, TextReader input, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(arguments);
-        ArgumentNullException.ThrowIfNull(normalTemperatureProvider);
-        ArgumentNullException.ThrowIfNull(fallbackTemperatureProvider);
-        ArgumentNullException.ThrowIfNull(lightingController);
+        ArgumentNullException.ThrowIfNull(normal);
+        ArgumentNullException.ThrowIfNull(fallback);
+        ArgumentNullException.ThrowIfNull(lights);
         ArgumentNullException.ThrowIfNull(output);
+        ArgumentNullException.ThrowIfNull(prompt);
         ArgumentNullException.ThrowIfNull(input);
 
         var options = SmokeOptions.Parse(arguments);
-        if (options.Error is not null)
+        var result = options.Error is not null
+            ? SmokeResult.Error(options.Error, 2)
+            : await ExecuteAsync(options, normal, fallback, lights, prompt, input, cancellationToken).ConfigureAwait(false);
+        var disposalFailure = await DisposeResourcesAsync(normal, fallback, lights, result.SkipLightingDispose).ConfigureAwait(false);
+        if (disposalFailure is not null)
         {
-            await WriteAsync(output, options.Json, new { status = "error", message = options.Error }, options.Error).ConfigureAwait(false);
-            return 2;
+            result = result.WithCleanupFailure(disposalFailure);
         }
 
+        await output.WriteLineAsync(options.Json ? JsonSerializer.Serialize(result.Json) : result.Text).ConfigureAwait(false);
+        return result.ExitCode;
+    }
+
+    private static async Task<SmokeResult> ExecuteAsync(SmokeOptions options, ITemperatureProvider normal, ITemperatureProvider fallback, ILightingController lights, TextWriter prompt, TextReader input, CancellationToken token)
+    {
         try
         {
             return options.Command switch
             {
-                "sensor" => await RunSensorAsync(options, normalTemperatureProvider, fallbackTemperatureProvider, output, cancellationToken).ConfigureAwait(false),
-                "lights" => await RunLightsAsync(options, lightingController, output, cancellationToken).ConfigureAwait(false),
-                "cycle" => await RunCycleAsync(options, lightingController, output, input, cancellationToken).ConfigureAwait(false),
-                "simulate" => await RunSimulationAsync(options, lightingController, output, input, cancellationToken).ConfigureAwait(false),
-                _ => await WriteUsageAsync(options.Json, output).ConfigureAwait(false),
+                "sensor" => await SensorAsync(options, normal, fallback, token).ConfigureAwait(false),
+                "lights" => await LightsAsync(lights, token).ConfigureAwait(false),
+                "cycle" => await CycleAsync(options, lights, prompt, input, token).ConfigureAwait(false),
+                "simulate" => await SimulateAsync(options, lights, prompt, input, token).ConfigureAwait(false),
+                _ => SmokeResult.Error("Неизвестная команда.", 2),
             };
         }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
         {
-            await WriteAsync(output, options.Json, new { status = "cancelled" }, "Операция отменена.").ConfigureAwait(false);
-            return 3;
+            return SmokeResult.Cancelled();
         }
         catch (Exception exception)
         {
-            await WriteAsync(output, options.Json, new { status = "error", message = exception.Message }, $"Ошибка: {exception.Message}").ConfigureAwait(false);
-            return 1;
+            return SmokeResult.Error($"Ошибка: {exception.Message}", 1);
         }
     }
 
-    private static async Task<int> RunSensorAsync(
-        SmokeOptions options,
-        ITemperatureProvider normalTemperatureProvider,
-        ITemperatureProvider fallbackTemperatureProvider,
-        TextWriter output,
-        CancellationToken cancellationToken)
+    private static async Task<SmokeResult> SensorAsync(SmokeOptions options, ITemperatureProvider normal, ITemperatureProvider fallback, CancellationToken token)
     {
-        var provider = options.SkipNvml ? fallbackTemperatureProvider : normalTemperatureProvider;
-        var reading = await provider.TryReadAsync(cancellationToken).ConfigureAwait(false);
+        var reading = await (options.SkipNvml ? fallback : normal).TryReadAsync(token).ConfigureAwait(false);
         if (reading is null)
         {
-            var message = options.SkipNvml
+            return SmokeResult.Error(options.SkipNvml
                 ? "MSI Afterburner не предоставил температуру GPU. Убедитесь, что Afterburner запущен и shared memory включена."
-                : "NVML и MSI Afterburner не предоставили температуру GPU. Проверьте драйвер NVIDIA или shared memory Afterburner.";
-            await WriteAsync(output, options.Json, new { status = "error", message }, message).ConfigureAwait(false);
-            return 1;
+                : "NVML и MSI Afterburner не предоставили температуру GPU. Проверьте драйвер NVIDIA или shared memory Afterburner.", 1);
         }
 
-        var text = $"Провайдер: {reading.SourceName}; GPU: {reading.DeviceName}; Температура: {reading.Celsius.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture)} °C";
-        await WriteAsync(output, options.Json, new { status = "pass", provider = reading.SourceName, gpu = reading.DeviceName, temperatureC = reading.Celsius }, text).ConfigureAwait(false);
-        return 0;
+        return SmokeResult.Pass(
+            new { status = "pass", provider = reading.SourceName, gpu = reading.DeviceName, temperatureC = reading.Celsius },
+            $"Провайдер: {reading.SourceName}; GPU: {reading.DeviceName}; Температура: {reading.Celsius.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture)} °C");
     }
 
-    private static async Task<int> RunLightsAsync(SmokeOptions options, ILightingController lightingController, TextWriter output, CancellationToken cancellationToken)
+    private static async Task<SmokeResult> LightsAsync(ILightingController lights, CancellationToken token)
     {
-        var devices = await lightingController.DiscoverAsync(cancellationToken).ConfigureAwait(false);
-        var text = devices.Count == 0
-            ? "Windows Dynamic Lighting не обнаружил LampArray. Включите Dynamic Lighting и проверьте конфликтующие контроллеры."
-            : string.Join(Environment.NewLine, devices.Select(device => $"{device.Name}; id: {device.Id}; lamps: {device.LampCount}; available: {device.IsAvailable}"));
-        await WriteAsync(output, options.Json, new
+        var devices = await lights.DiscoverAsync(token).ConfigureAwait(false);
+        if (devices.Count == 0)
         {
-            status = devices.Count == 0 ? "error" : "pass",
-            devices = devices.Select(device => new { id = device.Id, name = device.Name, lampCount = device.LampCount, available = device.IsAvailable }),
-        }, text).ConfigureAwait(false);
-        return devices.Count == 0 ? 1 : 0;
-    }
-
-    private static async Task<int> RunCycleAsync(SmokeOptions options, ILightingController lightingController, TextWriter output, TextReader input, CancellationToken cancellationToken)
-    {
-        if (!await ConfirmWriteAsync(options, output, input).ConfigureAwait(false))
-        {
-            return 2;
+            return SmokeResult.Error("Windows Dynamic Lighting не обнаружил LampArray. Включите Dynamic Lighting и проверьте конфликтующие контроллеры.", 1);
         }
 
-        return await UseLightsAsync(options, lightingController, output, cancellationToken, async token =>
+        return SmokeResult.Pass(
+            new { status = "pass", devices = devices.Select(device => new { id = device.Id, name = device.Name, lampCount = device.LampCount, available = device.IsAvailable }) },
+            string.Join(Environment.NewLine, devices.Select(device => $"{device.Name}; id: {device.Id}; lamps: {device.LampCount}; available: {device.IsAvailable}")));
+    }
+
+    private static async Task<SmokeResult> CycleAsync(SmokeOptions options, ILightingController lights, TextWriter prompt, TextReader input, CancellationToken token)
+    {
+        var confirmation = await ConfirmAsync(options, prompt, input, token).ConfigureAwait(false);
+        if (confirmation is not null) return confirmation;
+        return await UseLightsAsync(lights, async workToken =>
         {
             for (var index = 0; index < CycleColors.Length; index++)
             {
-                await lightingController.SetColorAsync(CycleColors[index], token).ConfigureAwait(false);
-                if (index < CycleColors.Length - 1)
-                {
-                    await Task.Delay(TimeSpan.FromMilliseconds(750), token).ConfigureAwait(false);
-                }
+                await lights.SetColorAsync(CycleColors[index], workToken).ConfigureAwait(false);
+                if (index < CycleColors.Length - 1) await Task.Delay(TimeSpan.FromMilliseconds(750), workToken).ConfigureAwait(false);
             }
-        }).ConfigureAwait(false);
+        }, token).ConfigureAwait(false);
     }
 
-    private static async Task<int> RunSimulationAsync(SmokeOptions options, ILightingController lightingController, TextWriter output, TextReader input, CancellationToken cancellationToken)
+    private static async Task<SmokeResult> SimulateAsync(SmokeOptions options, ILightingController lights, TextWriter prompt, TextReader input, CancellationToken token)
     {
-        if (!await ConfirmWriteAsync(options, output, input).ConfigureAwait(false))
-        {
-            return 2;
-        }
-
-        if (!options.TryGetSimulation(out var from, out var to, out var seconds, out var error))
-        {
-            await WriteAsync(output, options.Json, new { status = "error", message = error }, error).ConfigureAwait(false);
-            return 2;
-        }
-
-        return await UseLightsAsync(options, lightingController, output, cancellationToken, async token =>
+        if (!options.TryGetSimulation(out var from, out var to, out var seconds, out var error)) return SmokeResult.Error(error, 2);
+        var confirmation = await ConfirmAsync(options, prompt, input, token).ConfigureAwait(false);
+        if (confirmation is not null) return confirmation;
+        return await UseLightsAsync(lights, async workToken =>
         {
             var steps = Math.Max(2, checked((int)Math.Ceiling(seconds * 10)));
             var elapsed = TimeSpan.FromSeconds(seconds / steps);
             var engine = new ColorEngine(ThermalProfile.Default, from);
             for (var index = 0; index <= steps; index++)
             {
-                var temperature = from + ((to - from) * index / steps);
-                await lightingController.SetColorAsync(engine.Step(temperature, elapsed), token).ConfigureAwait(false);
-                if (index < steps)
-                {
-                    await Task.Delay(elapsed, token).ConfigureAwait(false);
-                }
+                await lights.SetColorAsync(engine.Step(from + ((to - from) * index / steps), elapsed), workToken).ConfigureAwait(false);
+                if (index < steps) await Task.Delay(elapsed, workToken).ConfigureAwait(false);
             }
-        }).ConfigureAwait(false);
+        }, token).ConfigureAwait(false);
     }
 
-    private static async Task<int> UseLightsAsync(SmokeOptions options, ILightingController lightingController, TextWriter output, CancellationToken cancellationToken, Func<CancellationToken, Task> work)
+    private static async Task<SmokeResult?> ConfirmAsync(SmokeOptions options, TextWriter prompt, TextReader input, CancellationToken token)
     {
+        if (!options.ConfirmLightWrite) return SmokeResult.Error("Требуется --confirm-light-write.", 2);
+        await prompt.WriteAsync("LumaTherm временно возьмёт управление Windows Dynamic Lighting и освободит его после проверки. Введите YES для продолжения: ").ConfigureAwait(false);
+        return string.Equals(await input.ReadLineAsync(token).ConfigureAwait(false), "YES", StringComparison.Ordinal)
+            ? null
+            : SmokeResult.Error("Подтверждение отклонено. Для записи подсветки введите точное YES.", 2);
+    }
+
+    private static async Task<SmokeResult> UseLightsAsync(ILightingController lights, Func<CancellationToken, Task> work, CancellationToken token)
+    {
+        Exception? operationFailure = null;
+        var connected = false;
         try
         {
-            if (!await lightingController.ConnectAsync(null, cancellationToken).ConfigureAwait(false))
-            {
-                await WriteAsync(output, options.Json, new { status = "error", message = "LampArray недоступен." }, "LampArray недоступен. Выполните `lights` для безопасной диагностики.").ConfigureAwait(false);
-                return 1;
-            }
-
-            await work(cancellationToken).ConfigureAwait(false);
-            await WriteAsync(output, options.Json, new { status = "pass" }, "Подсветка освобождена.").ConfigureAwait(false);
-            return 0;
+            connected = await lights.ConnectAsync(null, token).ConfigureAwait(false);
+            if (!connected) return SmokeResult.Error("LampArray недоступен. Выполните `lights` для безопасной диагностики.", 1);
+            await work(token).ConfigureAwait(false);
         }
-        finally
+        catch (Exception exception)
         {
-            using var releaseTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(2));
-            await lightingController.ReleaseAsync(releaseTimeout.Token).ConfigureAwait(false);
+            operationFailure = exception;
         }
+
+        var releaseFailure = connected ? await RunBoundedAsync(cleanupToken => lights.ReleaseAsync(cleanupToken)).ConfigureAwait(false) : null;
+        if (operationFailure is not null || releaseFailure is not null)
+        {
+            var message = operationFailure is null
+                ? $"Не удалось освободить Dynamic Lighting: {releaseFailure!.Message}"
+                : releaseFailure is null
+                    ? $"Проверка подсветки не завершилась: {operationFailure.Message}"
+                    : $"Проверка подсветки не завершилась: {operationFailure.Message}; освобождение Dynamic Lighting также не удалось: {releaseFailure.Message}";
+            return SmokeResult.Error(message, 1, releaseFailure is TimeoutException);
+        }
+
+        return SmokeResult.Pass(new { status = "pass" }, "Подсветка освобождена.");
     }
 
-    private static async Task<bool> ConfirmWriteAsync(SmokeOptions options, TextWriter output, TextReader input)
+    private static async Task<Exception?> DisposeResourcesAsync(ITemperatureProvider normal, ITemperatureProvider fallback, ILightingController lights, bool skipLighting)
     {
-        if (!options.ConfirmLightWrite)
+        var failures = new List<Exception>();
+        foreach (var resource in new IAsyncDisposable[] { normal, fallback })
         {
-            await WriteAsync(output, options.Json, new { status = "error", message = "Требуется --confirm-light-write." }, "Для записи подсветки требуется --confirm-light-write.").ConfigureAwait(false);
-            return false;
+            var failure = await RunBoundedAsync(_ => resource.DisposeAsync().AsTask()).ConfigureAwait(false);
+            if (failure is not null) failures.Add(failure);
         }
 
-        if (options.NonInteractive)
+        if (!skipLighting)
         {
-            return true;
+            var failure = await RunBoundedAsync(_ => lights.DisposeAsync().AsTask()).ConfigureAwait(false);
+            if (failure is not null) failures.Add(failure);
         }
 
-        await output.WriteAsync("LumaTherm временно возьмёт управление Windows Dynamic Lighting и освободит его после проверки. Введите YES для продолжения: ").ConfigureAwait(false);
-        return string.Equals(await input.ReadLineAsync().ConfigureAwait(false), "YES", StringComparison.Ordinal);
+        return failures.Count switch { 0 => null, 1 => failures[0], _ => new AggregateException(failures) };
     }
 
-    private static async Task<int> WriteUsageAsync(bool json, TextWriter output)
+    private static async Task<Exception?> RunBoundedAsync(Func<CancellationToken, Task> action)
     {
-        await WriteAsync(
-            output,
-            json,
-            new { status = "error", message = "Неизвестная команда." },
-            "Использование: sensor [--skip-nvml] [--json] | lights [--json] | cycle --confirm-light-write [--non-interactive] [--json] | simulate --from 35 --to 85 --seconds 10 --confirm-light-write [--non-interactive] [--json]").ConfigureAwait(false);
-        return 2;
+        using var timeout = new CancellationTokenSource(CleanupTimeout);
+        try
+        {
+            await Task.Run(() => action(timeout.Token)).WaitAsync(timeout.Token).ConfigureAwait(false);
+            return null;
+        }
+        catch (OperationCanceledException) when (timeout.IsCancellationRequested)
+        {
+            return new TimeoutException("Очистка не завершилась за 2 секунды; результат PASS не будет выдан.");
+        }
+        catch (Exception exception)
+        {
+            return exception;
+        }
     }
 
-    private static Task WriteAsync(TextWriter output, bool json, object result, string text) =>
-        output.WriteLineAsync(json ? JsonSerializer.Serialize(result) : text);
+    private sealed record SmokeResult(int ExitCode, object Json, string Text, bool SkipLightingDispose)
+    {
+        public static SmokeResult Pass(object json, string text) => new(0, json, text, false);
+        public static SmokeResult Error(string message, int exitCode, bool skipLightingDispose = false) => new(exitCode, new { status = "error", message }, message, skipLightingDispose);
+        public static SmokeResult Cancelled() => new(3, new { status = "cancelled", message = "Операция отменена." }, "Операция отменена.", false);
+        public SmokeResult WithCleanupFailure(Exception exception) => Error($"{Text}; очистка ресурсов не завершилась: {exception.Message}", 1, SkipLightingDispose);
+    }
 
     private sealed record SmokeOptions
     {
@@ -204,7 +208,6 @@ public static class SmokeCommand
         public bool Json { get; private init; }
         public bool SkipNvml { get; private init; }
         public bool ConfirmLightWrite { get; private init; }
-        public bool NonInteractive { get; private init; }
         public string? From { get; private init; }
         public string? To { get; private init; }
         public string? Seconds { get; private init; }
@@ -212,11 +215,7 @@ public static class SmokeCommand
 
         public static SmokeOptions Parse(IReadOnlyList<string> arguments)
         {
-            if (arguments.Count == 0)
-            {
-                return new SmokeOptions { Error = "Команда не указана." };
-            }
-
+            if (arguments.Count == 0) return new SmokeOptions { Error = "Команда не указана." };
             var options = new SmokeOptions { Command = arguments[0] };
             for (var index = 1; index < arguments.Count; index++)
             {
@@ -226,14 +225,10 @@ public static class SmokeCommand
                     "--json" => options with { Json = true },
                     "--skip-nvml" => options with { SkipNvml = true },
                     "--confirm-light-write" => options with { ConfirmLightWrite = true },
-                    "--non-interactive" => options with { NonInteractive = true },
                     "--from" or "--to" or "--seconds" when index + 1 < arguments.Count => options.SetValue(argument, arguments[++index]),
                     _ => options with { Error = $"Неизвестный или неполный аргумент: {argument}" },
                 };
-                if (options.Error is not null)
-                {
-                    return options;
-                }
+                if (options.Error is not null) return options;
             }
 
             return options;
@@ -241,18 +236,16 @@ public static class SmokeCommand
 
         public bool TryGetSimulation(out double from, out double to, out double seconds, out string error)
         {
-            from = 0;
-            to = 0;
-            seconds = 0;
+            from = to = seconds = 0;
             if (!double.TryParse(From, System.Globalization.CultureInfo.InvariantCulture, out from) || !double.TryParse(To, System.Globalization.CultureInfo.InvariantCulture, out to) || !double.TryParse(Seconds, System.Globalization.CultureInfo.InvariantCulture, out seconds))
             {
                 error = "Для simulate укажите --from, --to и --seconds с числами.";
                 return false;
             }
 
-            if (!double.IsFinite(from) || !double.IsFinite(to) || from is < 0 or > 120 || to is < 0 or > 120 || seconds is <= 0 or > 60)
+            if (!double.IsFinite(from) || !double.IsFinite(to) || from is < 0 or > 120 || to is < 0 or > 120 || seconds is < 0.1 or > 60)
             {
-                error = "simulate принимает температуру от 0 до 120 °C и длительность от 0 до 60 секунд.";
+                error = "simulate принимает температуру от 0 до 120 °C и длительность от 0.1 до 60 секунд.";
                 return false;
             }
 
@@ -260,13 +253,6 @@ public static class SmokeCommand
             return true;
         }
 
-        private SmokeOptions SetValue(string name, string value) => name switch
-        {
-            "--from" => this with { From = value },
-            "--to" => this with { To = value },
-            "--seconds" => this with { Seconds = value },
-            _ => this,
-        };
-
+        private SmokeOptions SetValue(string name, string value) => name switch { "--from" => this with { From = value }, "--to" => this with { To = value }, "--seconds" => this with { Seconds = value }, _ => this };
     }
 }
