@@ -86,6 +86,38 @@ public sealed class SettingsViewModelTests
     }
 
     [Fact]
+    public async Task SaveAndPicker_ShareOneSerializedMutationPipelineWithoutOverlappingPersistence()
+    {
+        var recorder = new OperationRecorder();
+        var runtime = new BlockingThermalRuntime();
+        var picker = new FakeColorPicker(new RgbColor(1, 2, 3));
+        var vm = new SettingsViewModel(runtime, new FakeStartupService(recorder), AppSettings.Default, picker)
+        {
+            ColdTemperature = 40,
+        };
+
+        var save = vm.SaveCommand.ExecuteAsync();
+        await runtime.FirstUpdateEntered.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+        var pick = vm.PickColdColorCommand.ExecuteAsync();
+
+        Assert.Equal(0, picker.PickCalls);
+        Assert.Equal(1, runtime.UpdateCalls);
+        Assert.Equal(1, runtime.MaxConcurrentUpdates);
+
+        runtime.ReleaseFirstUpdate();
+        await Task.WhenAll(save, pick).WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+
+        Assert.Equal(1, picker.PickCalls);
+        Assert.Equal(2, runtime.UpdateCalls);
+        Assert.Equal(1, runtime.MaxConcurrentUpdates);
+        Assert.Equal(2, runtime.PersistedCandidates.Count);
+        Assert.Equal(40, runtime.PersistedCandidates[0].Profile.ColdTemperature);
+        Assert.Equal(ThermalProfile.Default.ColdColor, runtime.PersistedCandidates[0].Profile.ColdColor);
+        Assert.Equal(new RgbColor(1, 2, 3), runtime.PersistedCandidates[1].Profile.ColdColor);
+        Assert.Equal(runtime.PersistedCandidates[1], vm.LiveSettings);
+    }
+
+    [Fact]
     public async Task DiscoverLighting_MultipleDevicesShowsSelectorAndSavesSelectedStableId()
     {
         var recorder = new OperationRecorder();
@@ -258,6 +290,31 @@ public sealed class SettingsViewModelTests
     }
 
     [Fact]
+    public async Task Save_InvalidCandidate_IsRejectedByRuntimeBeforeAnyStartupSideEffect()
+    {
+        var recorder = new OperationRecorder();
+        var runtime = new FakeThermalRuntime(recorder);
+        var startup = new FakeStartupService(recorder);
+        var vm = new SettingsViewModel(runtime, startup, AppSettings.Default)
+        {
+            ColdTemperature = 65,
+            IsAutostartEnabled = true,
+        };
+        using var dashboard = new MainViewModel(runtime);
+        dashboard.SynchronizeProfile(vm);
+
+        await vm.SaveCommand.ExecuteAsync();
+
+        Assert.Equal(1, runtime.UpdateCalls);
+        Assert.Empty(recorder.Events);
+        Assert.Equal("Температуры должны возрастать с шагом не менее 1 °C.", vm.ValidationMessage);
+        Assert.Equal(AppSettings.Default, runtime.CurrentSettings);
+        Assert.Equal(AppSettings.Default, vm.LiveSettings);
+        Assert.Equal(ThermalProfile.Default, dashboard.Profile);
+        Assert.False(startup.IsEnabled);
+    }
+
+    [Fact]
     public async Task Save_ValidProfile_PersistsExactlyOnceAndCommitsAfterRuntime()
     {
         var recorder = new OperationRecorder();
@@ -302,13 +359,13 @@ public sealed class SettingsViewModelTests
 
         await vm.SaveCommand.ExecuteAsync();
 
-        Assert.Equal(["startup:true", "runtime.persist", "vm.commit"], recorder.Events);
+        Assert.Equal(["runtime.persist", "startup:true", "vm.commit"], recorder.Events);
         Assert.True(startup.IsEnabled);
         Assert.True(vm.LiveSettings.IsAutostartEnabled);
     }
 
     [Fact]
-    public async Task Save_RuntimeFailure_RollsAutostartBackAndKeepsLiveSettings()
+    public async Task Save_RuntimeFailure_DoesNotTouchStartupAndKeepsLiveSettings()
     {
         var recorder = new OperationRecorder();
         var runtime = new FakeThermalRuntime(recorder) { Failure = new InvalidOperationException("store unavailable") };
@@ -317,7 +374,7 @@ public sealed class SettingsViewModelTests
 
         await vm.SaveCommand.ExecuteAsync();
 
-        Assert.Equal(["startup:true", "runtime.fail", "startup:false"], recorder.Events);
+        Assert.Equal(["runtime.fail"], recorder.Events);
         Assert.Equal(0, runtime.PersistenceCount);
         Assert.Equal(AppSettings.Default, runtime.CurrentSettings);
         Assert.Equal(AppSettings.Default, vm.LiveSettings);
@@ -326,7 +383,7 @@ public sealed class SettingsViewModelTests
     }
 
     [Fact]
-    public async Task Save_RuntimeArgumentFailure_AlsoRollsAutostartBack()
+    public async Task Save_RuntimeArgumentFailure_IsTranslatedWithoutTouchingStartup()
     {
         var recorder = new OperationRecorder();
         var runtime = new FakeThermalRuntime(recorder) { Failure = new ArgumentException("write rejected") };
@@ -335,28 +392,28 @@ public sealed class SettingsViewModelTests
 
         await vm.SaveCommand.ExecuteAsync();
 
-        Assert.Equal(["startup:true", "runtime.fail", "startup:false"], recorder.Events);
+        Assert.Equal(["runtime.fail"], recorder.Events);
         Assert.Equal(AppSettings.Default, runtime.CurrentSettings);
         Assert.Equal(AppSettings.Default, vm.LiveSettings);
         Assert.False(startup.IsEnabled);
-        Assert.Equal("Не удалось сохранить настройки.", vm.ValidationMessage);
+        Assert.Equal("Проверьте параметры температурного профиля.", vm.ValidationMessage);
     }
 
     [Fact]
-    public async Task Save_RuntimeAndRollbackFailure_ShowsSafeRollbackError()
+    public async Task Save_StartupAndRuntimeCompensationFailure_ShowsSafeRollbackError()
     {
         var recorder = new OperationRecorder();
-        var runtime = new FakeThermalRuntime(recorder) { Failure = new InvalidOperationException("store unavailable") };
-        var startup = new FakeStartupService(recorder) { FailWhenDisabled = true };
+        var runtime = new FakeThermalRuntime(recorder) { Failure = new InvalidOperationException("rollback unavailable"), FailOnUpdateCall = 2 };
+        var startup = new FakeStartupService(recorder) { FailWhenEnabled = true };
         var vm = new SettingsViewModel(runtime, startup, AppSettings.Default) { IsAutostartEnabled = true };
 
         await vm.SaveCommand.ExecuteAsync();
 
-        Assert.Equal(["startup:true", "runtime.fail", "startup:false"], recorder.Events);
-        Assert.Equal("Не удалось сохранить настройки. Не удалось вернуть настройку автозапуска.", vm.ValidationMessage);
-        Assert.Equal(AppSettings.Default, runtime.CurrentSettings);
+        Assert.Equal(["runtime.persist", "startup:true", "runtime.fail"], recorder.Events);
+        Assert.Equal("Не удалось изменить автозапуск. Не удалось вернуть настройки.", vm.ValidationMessage);
+        Assert.True(runtime.CurrentSettings.IsAutostartEnabled);
         Assert.Equal(AppSettings.Default, vm.LiveSettings);
-        Assert.True(startup.IsEnabled);
+        Assert.False(startup.IsEnabled);
     }
 
     [Fact]
@@ -373,7 +430,7 @@ public sealed class SettingsViewModelTests
         Assert.Equal(AppSettings.Default, runtime.CurrentSettings);
         Assert.Equal(AppSettings.Default, vm.LiveSettings);
         Assert.False(startup.IsEnabled);
-        Assert.Equal(["startup:true", "runtime.fail", "startup:false"], recorder.Events);
+        Assert.Equal(["runtime.fail"], recorder.Events);
         Assert.Equal("Не удалось сохранить настройки.", vm.ValidationMessage);
     }
 
@@ -387,7 +444,7 @@ public sealed class SettingsViewModelTests
 
         await vm.SaveCommand.ExecuteAsync();
 
-        Assert.Equal(["startup:true"], recorder.Events);
+        Assert.Equal(["runtime.persist", "startup:true", "runtime.persist"], recorder.Events);
         Assert.Equal(AppSettings.Default, runtime.CurrentSettings);
         Assert.Equal(AppSettings.Default, vm.LiveSettings);
         Assert.False(startup.IsEnabled);
@@ -529,7 +586,7 @@ public sealed class SettingsViewModelTests
     }
 
     [Fact]
-    public async Task SaveCommand_UnexpectedPreCommitFailure_CompensatesStartupAndUsesCommandExceptionHandler()
+    public async Task SaveCommand_UnexpectedPreCommitFailure_DoesNotTouchStartupAndUsesCommandExceptionHandler()
     {
         var recorder = new OperationRecorder();
         var runtime = new FakeThermalRuntime(recorder) { Failure = new UnexpectedRuntimeException() };
@@ -538,10 +595,10 @@ public sealed class SettingsViewModelTests
 
         await vm.SaveCommand.ExecuteAsync();
 
-        Assert.Equal(["startup:true", "runtime.fail", "startup:false"], recorder.Events);
+        Assert.Equal(["runtime.fail"], recorder.Events);
         Assert.Equal(AppSettings.Default, runtime.CurrentSettings);
         Assert.Equal(AppSettings.Default, vm.LiveSettings);
-        Assert.True(startup.IsEnabled);
+        Assert.False(startup.IsEnabled);
         Assert.Equal("Не удалось сохранить настройки.", vm.ValidationMessage);
         Assert.False(vm.SaveCommand.IsExecuting);
         Assert.True(vm.SaveCommand.CanExecute(null));
@@ -560,6 +617,7 @@ public sealed class SettingsViewModelTests
         public event EventHandler<RuntimeSnapshot>? SnapshotChanged { add { } remove { } }
         public RuntimeSnapshot CurrentSnapshot { get; } = new(RuntimeStatus.Disabled, null, null, null, null, null, DateTimeOffset.MinValue);
         public Exception? Failure { get; init; }
+        public int? FailOnUpdateCall { get; init; }
         public bool ThrowAfterCommit { get; init; }
         public AppSettings CurrentSettings { get; private set; } = AppSettings.Default;
         public bool GateUpdates { get; init; }
@@ -571,13 +629,14 @@ public sealed class SettingsViewModelTests
         public async Task UpdateSettingsAsync(AppSettings settings, CancellationToken cancellationToken)
         {
             UpdateCalls++;
+            settings.Validate();
             if (GateUpdates)
             {
                 _updateEntered.TrySetResult();
                 await _updateGate.Task;
             }
 
-            if (Failure is { } failure)
+            if (Failure is { } failure && (FailOnUpdateCall is null || FailOnUpdateCall == UpdateCalls))
             {
                 recorder.Record("runtime.fail");
                 throw failure;
@@ -592,6 +651,49 @@ public sealed class SettingsViewModelTests
             }
         }
         public void FailGate(Exception failure) => _updateGate.TrySetException(failure);
+        public Task SuspendAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+        public Task ResumeAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+        public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    private sealed class BlockingThermalRuntime : IThermalRuntime
+    {
+        private readonly TaskCompletionSource _firstEntered = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource _firstGate = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private int _activeUpdates;
+        public event EventHandler<RuntimeSnapshot>? SnapshotChanged { add { } remove { } }
+        public RuntimeSnapshot CurrentSnapshot { get; } = new(RuntimeStatus.Disabled, null, null, null, null, null, DateTimeOffset.MinValue);
+        public AppSettings CurrentSettings { get; private set; } = AppSettings.Default;
+        public List<AppSettings> PersistedCandidates { get; } = [];
+        public int UpdateCalls { get; private set; }
+        public int MaxConcurrentUpdates { get; private set; }
+        public Task FirstUpdateEntered => _firstEntered.Task;
+        public void ReleaseFirstUpdate() => _firstGate.TrySetResult();
+        public Task StartAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+        public Task SetModeEnabledAsync(bool enabled, CancellationToken cancellationToken) => Task.CompletedTask;
+        public async Task UpdateSettingsAsync(AppSettings settings, CancellationToken cancellationToken)
+        {
+            var call = ++UpdateCalls;
+            var active = Interlocked.Increment(ref _activeUpdates);
+            MaxConcurrentUpdates = Math.Max(MaxConcurrentUpdates, active);
+            try
+            {
+                settings.Validate();
+                if (call == 1)
+                {
+                    _firstEntered.TrySetResult();
+                    await _firstGate.Task;
+                }
+
+                PersistedCandidates.Add(settings);
+                CurrentSettings = settings;
+            }
+            finally
+            {
+                Interlocked.Decrement(ref _activeUpdates);
+            }
+        }
         public Task SuspendAsync(CancellationToken cancellationToken) => Task.CompletedTask;
         public Task ResumeAsync(CancellationToken cancellationToken) => Task.CompletedTask;
         public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
@@ -622,9 +724,11 @@ public sealed class SettingsViewModelTests
     private sealed class FakeColorPicker(RgbColor? result) : IColorPickerService
     {
         public RgbColor CurrentColor { get; private set; }
+        public int PickCalls { get; private set; }
 
         public RgbColor? Pick(RgbColor current)
         {
+            PickCalls++;
             CurrentColor = current;
             return result;
         }

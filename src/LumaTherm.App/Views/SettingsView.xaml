@@ -29,6 +29,24 @@
             <Setter Property="Background" Value="{StaticResource PanelSecondaryBrush}" />
             <Setter Property="BorderBrush" Value="#22FFFFFF" />
             <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="ActionChrome" CornerRadius="8" Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="ActionChrome" Property="Opacity" Value="0.88" /></Trigger>
+                            <Trigger Property="IsPressed" Value="True"><Setter TargetName="ActionChrome" Property="Opacity" Value="0.68" /></Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="ActionChrome" Property="BorderBrush" Value="{StaticResource ColdColorBrush}" /><Setter TargetName="ActionChrome" Property="BorderThickness" Value="2" /></Trigger>
+                            <Trigger Property="IsEnabled" Value="False"><Setter TargetName="ActionChrome" Property="Opacity" Value="0.35" /></Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
         </Style>
         <Style x:Key="PrimaryButtonStyle" TargetType="Button" BasedOn="{StaticResource SecondaryButtonStyle}">
             <Setter Property="Foreground" Value="#FF111419" />
@@ -44,6 +62,65 @@
             <Setter Property="Background" Value="{StaticResource PanelSecondaryBrush}" />
             <Setter Property="BorderBrush" Value="#18FFFFFF" />
             <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="CardChrome" CornerRadius="9" Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="CardChrome" Property="Background" Value="#242C32" /><Setter TargetName="CardChrome" Property="BorderBrush" Value="#4050C8FF" /></Trigger>
+                            <Trigger Property="IsPressed" Value="True"><Setter TargetName="CardChrome" Property="Background" Value="#15191D" /></Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="CardChrome" Property="BorderBrush" Value="{StaticResource ColdColorBrush}" /><Setter TargetName="CardChrome" Property="BorderThickness" Value="2" /></Trigger>
+                            <Trigger Property="IsEnabled" Value="False"><Setter TargetName="CardChrome" Property="Opacity" Value="0.35" /></Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style TargetType="Slider">
+            <Setter Property="Height" Value="20" />
+            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Slider">
+                        <Grid x:Name="SliderRoot" Background="Transparent">
+                            <Border x:Name="ThermalSliderTrack" Height="5" CornerRadius="4" Background="#FF363D43" VerticalAlignment="Center" />
+                            <Track x:Name="PART_Track" VerticalAlignment="Center">
+                                <Track.DecreaseRepeatButton>
+                                    <RepeatButton Command="{x:Static Slider.DecreaseLarge}" Focusable="False">
+                                        <RepeatButton.Template><ControlTemplate TargetType="RepeatButton"><Border Height="5" CornerRadius="4" Background="{StaticResource ColdColorBrush}" /></ControlTemplate></RepeatButton.Template>
+                                    </RepeatButton>
+                                </Track.DecreaseRepeatButton>
+                                <Track.IncreaseRepeatButton>
+                                    <RepeatButton Command="{x:Static Slider.IncreaseLarge}" Focusable="False" Background="Transparent" Opacity="0" />
+                                </Track.IncreaseRepeatButton>
+                                <Track.Thumb>
+                                    <Thumb Width="14" Height="14">
+                                        <Thumb.Template>
+                                            <ControlTemplate TargetType="Thumb">
+                                                <Ellipse Fill="{StaticResource ColdColorBrush}" Stroke="#FFDAE4E9" StrokeThickness="2" />
+                                                <ControlTemplate.Triggers>
+                                                    <Trigger Property="IsMouseOver" Value="True"><Setter Property="Effect"><Setter.Value><DropShadowEffect Color="#50C8FF" BlurRadius="9" ShadowDepth="0" /></Setter.Value></Setter></Trigger>
+                                                    <Trigger Property="IsDragging" Value="True"><Setter Property="Opacity" Value="0.72" /></Trigger>
+                                                </ControlTemplate.Triggers>
+                                            </ControlTemplate>
+                                        </Thumb.Template>
+                                    </Thumb>
+                                </Track.Thumb>
+                            </Track>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="ThermalSliderTrack" Property="Background" Value="#FF424B52" /></Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="ThermalSliderTrack" Property="BorderBrush" Value="{StaticResource ColdColorBrush}" /><Setter TargetName="ThermalSliderTrack" Property="BorderThickness" Value="1" /></Trigger>
+                            <Trigger Property="IsEnabled" Value="False"><Setter TargetName="SliderRoot" Property="Opacity" Value="0.35" /></Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
         </Style>
         <Style x:Key="TemperatureEditorStyle" TargetType="TextBox">
             <Setter Property="Width" Value="64" />
@@ -52,13 +129,49 @@
             <Setter Property="Padding" Value="7,4" />
             <Setter Property="TextAlignment" Value="Right" />
             <Setter Property="Foreground" Value="{StaticResource PrimaryTextBrush}" />
-            <Setter Property="Background" Value="{StaticResource PanelSecondaryBrush}" />
+            <Setter Property="Background" Value="#FF171B20" />
             <Setter Property="BorderBrush" Value="#22FFFFFF" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TextBox">
+                        <Border x:Name="EditorChrome" CornerRadius="6" Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}">
+                            <ScrollViewer x:Name="PART_ContentHost" Margin="{TemplateBinding Padding}" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="EditorChrome" Property="BorderBrush" Value="#557E8994" /></Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="EditorChrome" Property="BorderBrush" Value="{StaticResource ColdColorBrush}" /><Setter TargetName="EditorChrome" Property="BorderThickness" Value="2" /></Trigger>
+                            <Trigger Property="IsEnabled" Value="False"><Setter TargetName="EditorChrome" Property="Opacity" Value="0.35" /></Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
         </Style>
         <Style x:Key="ApplicationToggleStyle" TargetType="CheckBox">
             <Setter Property="VerticalAlignment" Value="Center" />
             <Setter Property="HorizontalAlignment" Value="Right" />
             <Setter Property="Margin" Value="16,0,0,0" />
+            <Setter Property="Width" Value="34" />
+            <Setter Property="Height" Value="20" />
+            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="CheckBox">
+                        <Grid x:Name="SwitchRoot" Width="34" Height="20" Background="Transparent">
+                            <Border x:Name="SwitchTrack" Width="34" Height="18" CornerRadius="9" Background="#FF363D43" BorderBrush="#22FFFFFF" BorderThickness="1" />
+                            <Ellipse x:Name="SwitchThumb" Width="14" Height="14" Margin="2,0" HorizontalAlignment="Left" VerticalAlignment="Center" Fill="#FFDAE4E9" />
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsChecked" Value="True"><Setter TargetName="SwitchTrack" Property="Background" Value="{StaticResource ColdColorBrush}" /><Setter TargetName="SwitchThumb" Property="HorizontalAlignment" Value="Right" /><Setter TargetName="SwitchThumb" Property="Fill" Value="#FF111419" /></Trigger>
+                            <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="SwitchTrack" Property="BorderBrush" Value="#FF8FDCF9" /></Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="SwitchTrack" Property="BorderBrush" Value="#FFFFFFFF" /><Setter TargetName="SwitchTrack" Property="BorderThickness" Value="2" /></Trigger>
+                            <Trigger Property="IsEnabled" Value="False"><Setter TargetName="SwitchRoot" Property="Opacity" Value="0.35" /></Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
         </Style>
     </UserControl.Resources>
 

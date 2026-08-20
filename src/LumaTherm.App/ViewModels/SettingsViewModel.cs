@@ -14,6 +14,7 @@ public sealed class SettingsViewModel : ObservableObject
     private readonly IStartupService _startupService;
     private readonly IColorPickerService _colorPickerService;
     private readonly ILightingDeviceDiscovery _lightingDeviceDiscovery;
+    private readonly SemaphoreSlim _settingsMutationGate = new(1, 1);
     private AppSettings _liveSettings;
     private double _coldTemperature;
     private RgbColor _coldColor;
@@ -64,10 +65,10 @@ public sealed class SettingsViewModel : ObservableObject
         var snapshot = runtime.CurrentSnapshot;
         GpuName = snapshot.Temperature?.DeviceName ?? GpuName;
         LightingDeviceName = snapshot.LightingDevice?.Name ?? LightingDeviceName;
-        SaveCommand = new AsyncRelayCommand(SaveAsync, onException: _ => ValidationMessage = "Не удалось сохранить настройки.");
-        PickColdColorCommand = new AsyncRelayCommand(PickColdColorAsync, onException: _ => ValidationMessage = "Не удалось выбрать цвет.");
-        PickWarmColorCommand = new AsyncRelayCommand(PickWarmColorAsync, onException: _ => ValidationMessage = "Не удалось выбрать цвет.");
-        PickHotColorCommand = new AsyncRelayCommand(PickHotColorAsync, onException: _ => ValidationMessage = "Не удалось выбрать цвет.");
+        SaveCommand = new AsyncRelayCommand(() => RunSettingsMutationAsync(SaveAsync), onException: _ => ValidationMessage = "Не удалось сохранить настройки.");
+        PickColdColorCommand = new AsyncRelayCommand(() => RunSettingsMutationAsync(PickColdColorAsync), onException: _ => ValidationMessage = "Не удалось выбрать цвет.");
+        PickWarmColorCommand = new AsyncRelayCommand(() => RunSettingsMutationAsync(PickWarmColorAsync), onException: _ => ValidationMessage = "Не удалось выбрать цвет.");
+        PickHotColorCommand = new AsyncRelayCommand(() => RunSettingsMutationAsync(PickHotColorAsync), onException: _ => ValidationMessage = "Не удалось выбрать цвет.");
         DiscoverLightingDevicesCommand = new AsyncRelayCommand(DiscoverLightingDevicesAsync);
         ResetDefaultsCommand = new RelayCommand(ResetDefaults);
     }
@@ -158,6 +159,19 @@ public sealed class SettingsViewModel : ObservableObject
     public AsyncRelayCommand PickHotColorCommand { get; }
     public AsyncRelayCommand DiscoverLightingDevicesCommand { get; }
     public RelayCommand ResetDefaultsCommand { get; }
+
+    private async Task RunSettingsMutationAsync(Func<Task> mutation)
+    {
+        await _settingsMutationGate.WaitAsync();
+        try
+        {
+            await mutation();
+        }
+        finally
+        {
+            _settingsMutationGate.Release();
+        }
+    }
 
     private async Task PickColdColorAsync()
     {
@@ -250,15 +264,20 @@ public sealed class SettingsViewModel : ObservableObject
 
     private async Task SaveAsync()
     {
-        AppSettings candidate;
+        var candidate = CreateCandidate();
+
         try
         {
-            candidate = CreateCandidate();
-            candidate.Validate();
+            await _runtime.UpdateSettingsAsync(candidate, CancellationToken.None);
         }
         catch (ArgumentException exception)
         {
             ValidationMessage = TranslateValidationError(exception);
+            return;
+        }
+        catch (InvalidOperationException)
+        {
+            ValidationMessage = "Не удалось сохранить настройки.";
             return;
         }
 
@@ -271,26 +290,11 @@ public sealed class SettingsViewModel : ObservableObject
             }
             catch (Exception)
             {
-                ValidationMessage = "Не удалось изменить автозапуск.";
+                ValidationMessage = await RollBackRuntimeAfterStartupFailureAsync();
                 return;
             }
         }
 
-        try
-        {
-            await _runtime.UpdateSettingsAsync(candidate, CancellationToken.None);
-        }
-        catch (Exception exception)
-        {
-            var failureMessage = await RollBackAutostartIfNeededAsync(autostartChanged);
-            if (exception is ArgumentException or InvalidOperationException)
-            {
-                ValidationMessage = failureMessage;
-                return;
-            }
-
-            throw;
-        }
 
         Commit(candidate, null);
     }
@@ -327,21 +331,16 @@ public sealed class SettingsViewModel : ObservableObject
         SelectedLightingDeviceId = settings.PreferredLightingDeviceId;
     }
 
-    private async Task<string> RollBackAutostartIfNeededAsync(bool autostartChanged)
+    private async Task<string> RollBackRuntimeAfterStartupFailureAsync()
     {
-        if (!autostartChanged)
-        {
-            return "Не удалось сохранить настройки.";
-        }
-
         try
         {
-            await _startupService.SetEnabledAsync(_liveSettings.IsAutostartEnabled, CancellationToken.None);
-            return "Не удалось сохранить настройки.";
+            await _runtime.UpdateSettingsAsync(_liveSettings, CancellationToken.None);
+            return "Не удалось изменить автозапуск.";
         }
         catch (Exception)
         {
-            return "Не удалось сохранить настройки. Не удалось вернуть настройку автозапуска.";
+            return "Не удалось изменить автозапуск. Не удалось вернуть настройки.";
         }
     }
 

@@ -1,9 +1,11 @@
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Data;
 using System.Windows.Markup;
 using System.Windows.Automation;
 using System.Windows.Media;
+using System.Windows.Shapes;
 using LumaTherm.App.Services;
 using LumaTherm.App.ViewModels;
 using LumaTherm.App.Views;
@@ -210,6 +212,63 @@ public sealed class SettingsUiRuntimeTests
         Assert.Contains("занято", vm.LightingHardwareStatus, StringComparison.OrdinalIgnoreCase);
     });
 
+    [Fact]
+    public void SettingsView_UsesThermalTemplatesWithCompiledInteractionStates() => _sta.Run(() =>
+    {
+        var view = Arrange(new SettingsView { DataContext = CreateViewModel() }, 1104, 900);
+        var slider = Assert.IsType<Slider>(view.FindName("ColdTemperatureSlider"));
+        var toggle = Assert.IsType<CheckBox>(view.FindName("AutostartToggle"));
+        var editor = Assert.IsType<TextBox>(view.FindName("ColdTemperatureEditor"));
+        var reset = Assert.IsType<Button>(view.FindName("ResetButton"));
+        var save = Assert.IsType<Button>(view.FindName("SaveButton"));
+        slider.ApplyTemplate();
+        toggle.ApplyTemplate();
+        editor.ApplyTemplate();
+        reset.ApplyTemplate();
+        save.ApplyTemplate();
+
+        var sliderTrack = Assert.IsType<Border>(slider.Template.FindName("ThermalSliderTrack", slider));
+        Assert.Equal(new CornerRadius(4), sliderTrack.CornerRadius);
+        Assert.Equal(Color.FromRgb(0x36, 0x3D, 0x43), Assert.IsType<SolidColorBrush>(sliderTrack.Background).Color);
+        var interactiveTrack = Assert.IsType<Track>(slider.Template.FindName("PART_Track", slider));
+        slider.Value = 35;
+        slider.UpdateLayout();
+        Assert.Equal(slider.Minimum, interactiveTrack.Minimum);
+        Assert.Equal(slider.Maximum, interactiveTrack.Maximum);
+        Assert.Equal(slider.Value, interactiveTrack.Value);
+        AssertTemplateStates(slider.Template, "IsMouseOver", "IsKeyboardFocused", "IsEnabled");
+
+        var switchTrack = Assert.IsType<Border>(toggle.Template.FindName("SwitchTrack", toggle));
+        var switchThumb = Assert.IsType<Ellipse>(toggle.Template.FindName("SwitchThumb", toggle));
+        Assert.Equal(new CornerRadius(9), switchTrack.CornerRadius);
+        toggle.IsChecked = true;
+        toggle.UpdateLayout();
+        Assert.Equal(Color.FromRgb(0x50, 0xC8, 0xFF), Assert.IsType<SolidColorBrush>(switchTrack.Background).Color);
+        Assert.Equal(HorizontalAlignment.Right, switchThumb.HorizontalAlignment);
+        AssertTemplateStates(toggle.Template, "IsChecked", "IsMouseOver", "IsKeyboardFocused", "IsEnabled");
+
+        var editorChrome = Assert.IsType<Border>(editor.Template.FindName("EditorChrome", editor));
+        Assert.Equal(new CornerRadius(6), editorChrome.CornerRadius);
+        Assert.Equal(Color.FromRgb(0x17, 0x1B, 0x20), Assert.IsType<SolidColorBrush>(editorChrome.Background).Color);
+        AssertTemplateStates(editor.Template, "IsMouseOver", "IsKeyboardFocused", "IsEnabled");
+
+        var resetChrome = Assert.IsType<Border>(reset.Template.FindName("ActionChrome", reset));
+        var saveChrome = Assert.IsType<Border>(save.Template.FindName("ActionChrome", save));
+        Assert.Equal(new CornerRadius(8), resetChrome.CornerRadius);
+        Assert.Equal(Color.FromRgb(0x1B, 0x20, 0x25), Assert.IsType<SolidColorBrush>(resetChrome.Background).Color);
+        Assert.Equal(Color.FromRgb(0x50, 0xC8, 0xFF), Assert.IsType<SolidColorBrush>(saveChrome.Background).Color);
+        AssertTemplateStates(save.Template, "IsMouseOver", "IsPressed", "IsKeyboardFocused", "IsEnabled");
+    });
+
+    private static void AssertTemplateStates(ControlTemplate template, params string[] properties)
+    {
+        var triggerProperties = template.Triggers.OfType<Trigger>().Select(trigger => trigger.Property.Name).ToArray();
+        foreach (var property in properties)
+        {
+            Assert.Contains(property, triggerProperties);
+        }
+    }
+
     private static SettingsViewModel CreateViewModel() => new(
         new FakeRuntime(),
         new FakeStartupService(),
@@ -263,6 +322,7 @@ public sealed class SettingsUiRuntimeTests
         public Task SetModeEnabledAsync(bool enabled, CancellationToken cancellationToken) => Task.CompletedTask;
         public Task UpdateSettingsAsync(AppSettings settings, CancellationToken cancellationToken)
         {
+            settings.Validate();
             CurrentSettings = settings;
             return Task.CompletedTask;
         }
