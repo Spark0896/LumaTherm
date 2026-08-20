@@ -2,7 +2,7 @@
 
 ## Safe-stage result
 
-Implemented the x64 MSIX manifest/package project, deterministic approved assets contract, repeatable self-contained release pipeline, and reversible per-user install/uninstall scripts. Implementation commit: `2f562de` (`build: add signed MSIX and portable release`).
+Implemented the x64 MSIX manifest/package project, deterministic approved assets contract, repeatable self-contained release pipeline, and reversible per-user install/uninstall scripts. Implementation commit: `2f562de` (`build: add signed MSIX and portable release`). Safe tool-resolution fix: `f2858be` (`fix: resolve pinned packaging tools safely`).
 
 The controller-gated real `build-release.ps1` invocation has intentionally not run yet. Therefore MakeAppx schema/signature evidence, final artifact sizes/hashes, and the transient certificate-store thumbprint remain pending; this report does not claim the signed release is complete.
 
@@ -44,10 +44,10 @@ The controller-gated real `build-release.ps1` invocation has intentionally not r
 
 ```text
 dotnet test tests/LumaTherm.Packaging.Tests/LumaTherm.Packaging.Tests.csproj -c Release --no-restore -p:NuGetAudit=false
-PASS: 21 passed, 0 failed.
+PASS: 22 passed, 0 failed.
 
 dotnet test LumaTherm.sln -c Release --no-restore -p:NuGetAudit=false
-PASS: Core 71 + Infrastructure 91 + App 138 + Packaging 21 = 321 passed, 0 failed.
+PASS: Core 71 + Infrastructure 91 + App 138 + Packaging 22 = 322 passed, 0 failed.
 
 dotnet build LumaTherm.sln -c Release --no-restore -p:NuGetAudit=false
 PASS: 0 warnings, 0 errors.
@@ -72,3 +72,9 @@ Expected certificate-store delta: one transient self-signed certificate with sub
 - Tests exercise real XML parsing, PNG headers/hashes/regeneration, SHA-256, fixture certificates, sibling resolution, and executable PowerShell plans. No broad script source-grep test substitutes for behavior.
 - Password values are absent from stdout/stderr and are cleared from release variables in `finally`; generated passwords are cryptographically random per run.
 - Pending by instruction: real MakeAppx schema validation, SHA-256 SignTool sign/verify, artifact sizes/hashes, and certificate-store create/remove evidence. No install/uninstall is authorized at this checkpoint.
+
+## Safe fix round — restored BuildTools property fallback
+
+- RED: a fresh real `build-release.ps1 -Mode Plan` failed with a null-method error because Plan queried only the artifact-rooted MSBuild intermediate path, while the already-restored package property existed in the normal project intermediate path.
+- GREEN: tool resolution first queries the release artifact-rooted path (the path Full mode restores), then safely falls back to the normal restored project path. If neither produces the pinned property it now fails with an actionable restore message instead of dereferencing null.
+- A real safe Plan regression resolves version `10.0.26100.8249` and the absolute x64 tool path; the refreshed focused/full/build results above include this test.
