@@ -70,7 +70,7 @@ Exit `0`:
 {"status":"pass","devices":[{"id":"\\\\?\\HID#VID_048D&PID_5702&MI_00#a&30f63cd2&0&0000#{4d1e55b2-f16f-11cf-88cb-001111000030}","name":"GIGABYTE Device","lampCount":1,"available":true}]}
 ```
 
-Timestamp for the recorded read-only evidence: `2026-08-20T19:40:47.5837960+03:00`. Windows version was not collected because the authorized live probe set was limited to the three smoke commands.
+Timestamp for the recorded read-only evidence: `2026-08-20T19:40:47.5837960+03:00`. Observed Windows version: `Microsoft Windows NT 10.0.26200.0`.
 
 ## Files and commits
 
@@ -83,9 +83,9 @@ Timestamp for the recorded read-only evidence: `2026-08-20T19:40:47.5837960+03:0
 
 - `sensor` constructs no LampArray adapter and uses the production NVML-first/MAHM-fallback source arrangement; `--skip-nvml` constructs MAHM-only provider wiring.
 - `lights` calls only `DiscoverAsync`; it does not call `ConnectAsync`, `SetColorAsync`, `Enable`, or `Disable`.
-- `cycle`/`simulate` require the explicit flag and exact interactive `YES`; `--non-interactive` was removed after review. Prompts use stderr and JSON stdout has one terminal result. Ctrl+C cancellation reaches `ReadLineAsync(CancellationToken)`. Release/dispose calls are isolated behind a finite two-second deadline; success is emitted only after cleanup.
+- `cycle`/`simulate` require the explicit flag and exact interactive `YES`; `--non-interactive` was removed after review. Prompts use stderr and JSON stdout has one terminal result. Ctrl+C cancellation leaves a blocking synchronous `ReadLine()` on a background task while the caller is cancelled. Release/dispose calls are isolated behind a finite two-second deadline; success is emitted only after cleanup.
 - Simulation uses the existing `ColorEngine` and `ThermalProfile.Default`; there is no duplicate interpolation/smoothing implementation.
-- The forced MAHM failure and the uncollected Windows version are reported as such. Documentation marks all physical/install acceptance checks pending.
+- The forced MAHM failure is reported as such; the observed Windows version is `Microsoft Windows NT 10.0.26200.0`. Documentation marks all physical/install acceptance checks pending.
 
 ## Remaining controller gates
 
@@ -112,3 +112,19 @@ Fresh review verification:
 Results: Smoke `17/17`; build exit `0`, warnings `0`, errors `0`; full Release Core 71 + Infrastructure 91 + App 138 + Packaging 40 + Smoke 17 = `357/357`. `[Environment]::OSVersion.VersionString` observed `Microsoft Windows NT 10.0.26200.0`. No physical write, signing, install, UAC, or external app control occurred.
 
 Controller-authorized stale test cleanup: following read-only verification of path, start time, parent and command line, only stale RED-run Debug VSTest trees were terminated. Root `23820` (created 19:56:14) contained testhost `8920`, test exe `17888`, and conhost `6468`; root `16772` (created 19:56:46) contained testhost `10512`, test exe `24704`, and conhost `9132`. All command lines were under `tests\LumaTherm.Smoke.Tests\bin\Debug`. `taskkill /PID 23820 /T /F` and `taskkill /PID 16772 /T /F` succeeded; a one-second bounded post-kill process check found none of those PIDs. No unrelated dotnet process was touched. The harness had abandoned active child test trees after a timeout; the revised test fakes block only five seconds and command cleanup returns a two-second timeout error rather than waiting indefinitely.
+
+## Review fix round 2/5
+
+Witnessed RED:
+
+```powershell
+& "$PWD\.dotnet\dotnet.exe" test tests\LumaTherm.Smoke.Tests\LumaTherm.Smoke.Tests.csproj -c Release -p:NuGetAudit=false --no-restore
+```
+
+Result: exit `1`; 2 expected failures of 19. `JsonConfirmation_SynchronizedBlockingReaderCancelsWithinDeadlineWithoutLighting` timed out at one second because `TextReader.Synchronized` delegates a blocking synchronous `ReadLine`, and `JsonCycle_CancellationAfterWriteReleasesAndReturnsOneCancelledResult` returned exit `1` instead of cancellation exit `3`.
+
+The fix reads synchronous console input on a ThreadPool operation, waits with the real caller cancellation token, and observes any eventual late read fault. `UseLightsAsync` now releases after a cancellation and returns the one cancelled result only when bounded release succeeds; release error/timeout remains one cleanup error. The existing cancellation test double was aligned to the synchronous production path and releases its reader in `finally`; otherwise it would wait forever for an asynchronous override that production no longer uses.
+
+Fresh final verification (all host waits bounded): focused Release Smoke `19/19` in 6 seconds; full Release Core 71 + Infrastructure 91 + App 138 + Packaging 40 + Smoke 19 = `359/359`; Release build exit `0`, warnings `0`, errors `0`. No physical lighting, Full/signing/UAC/install, or other external hardware/application state action occurred.
+
+Two owned stale Release VSTest trees from the interrupted focused runs were removed only after exact PID/path/parent/start-time revalidation and controller authorization: `9876 -> 18492 -> 8024 -> 17200` (created 20:22:48/20:22:50) and `11544 -> 10680 -> 19040 -> 19128` (created 20:26:21/20:26:23). `taskkill /T /F` also ended only their listed descendants; immediate post-kill checks found the named PIDs absent. No unrelated process was touched.
