@@ -24,8 +24,70 @@ public sealed class InstallerScriptTests
         {
             "checksumVerified", "signatureMatchedUntrusted", "certificateImportConfirmed",
             "certificateImportPlanned", "signatureReverificationPlanned", "signatureReverified",
-            "packageInstallPlanned",
+            "packageInstallPlanned", "certificateTrustRetentionPlanned",
         }, events);
+    }
+
+    [Fact]
+    public void AuditPlansOwnedTrustCleanupAfterReverificationThrows()
+    {
+        using var fixture = DistributionFixture.Create();
+        var result = fixture.RunInstall(
+            "-AuditOnly", "-CertificateDecisionForTest", "Accept",
+            "-SignatureStatusForTest", "NotTrusted",
+            "-ReverifiedSignatureStatusForTest", "Exception",
+            "-SignatureThumbprintForTest", fixture.CertificateThumbprint);
+
+        Assert.NotEqual(0, result.ExitCode);
+        using var json = JsonDocument.Parse(result.StandardOutput);
+        var events = json.RootElement.GetProperty("events").EnumerateArray().Select(e => e.GetString()).ToArray();
+        Assert.Equal(new[]
+        {
+            "checksumVerified", "signatureMatchedUntrusted", "certificateImportConfirmed",
+            "certificateImportPlanned", "signatureReverificationPlanned",
+            "signatureReverificationFailed", "certificateTrustCleanupPlanned",
+        }, events);
+        Assert.DoesNotContain("packageInstallPlanned", events);
+    }
+
+    [Fact]
+    public void AuditPlansOwnedTrustCleanupAfterPackageInstallFailure()
+    {
+        using var fixture = DistributionFixture.Create();
+        var result = fixture.RunInstall(
+            "-AuditOnly", "-CertificateDecisionForTest", "Accept",
+            "-SignatureStatusForTest", "NotTrusted",
+            "-ReverifiedSignatureStatusForTest", "Valid",
+            "-SignatureThumbprintForTest", fixture.CertificateThumbprint,
+            "-InstallOutcomeForTest", "Failure");
+
+        Assert.NotEqual(0, result.ExitCode);
+        using var json = JsonDocument.Parse(result.StandardOutput);
+        var events = json.RootElement.GetProperty("events").EnumerateArray().Select(e => e.GetString()).ToArray();
+        Assert.Equal(new[]
+        {
+            "checksumVerified", "signatureMatchedUntrusted", "certificateImportConfirmed",
+            "certificateImportPlanned", "signatureReverificationPlanned", "signatureReverified",
+            "packageInstallPlanned", "packageInstallFailed", "certificateTrustCleanupPlanned",
+        }, events);
+    }
+
+    [Fact]
+    public void AuditNeverPlansCleanupForPreExistingTrust()
+    {
+        using var fixture = DistributionFixture.Create();
+        var result = fixture.RunInstall(
+            "-AuditOnly", "-CertificateDecisionForTest", "Accept",
+            "-SignatureStatusForTest", "NotTrusted",
+            "-ReverifiedSignatureStatusForTest", "Exception",
+            "-SignatureThumbprintForTest", fixture.CertificateThumbprint,
+            "-TrustedCertificatePresentForTest");
+
+        Assert.NotEqual(0, result.ExitCode);
+        using var json = JsonDocument.Parse(result.StandardOutput);
+        var events = json.RootElement.GetProperty("events").EnumerateArray().Select(e => e.GetString()).ToArray();
+        Assert.Contains("certificateAlreadyPresent", events);
+        Assert.DoesNotContain("certificateTrustCleanupPlanned", events);
     }
 
     [Fact]
@@ -102,6 +164,21 @@ public sealed class InstallerScriptTests
     }
 
     [Fact]
+    public void AuditRejectsAnyExtraSiblingEvenWhenItIsOmittedFromChecksums()
+    {
+        using var fixture = DistributionFixture.Create();
+        File.WriteAllText(Path.Combine(fixture.Directory, "unlisted-note.txt"), "not in SHA256SUMS.txt");
+
+        var result = fixture.RunInstall(
+            "-AuditOnly", "-SignatureStatusForTest", "Valid",
+            "-SignatureThumbprintForTest", fixture.CertificateThumbprint);
+
+        Assert.NotEqual(0, result.ExitCode);
+        Assert.Contains("exactly", result.StandardError + result.StandardOutput, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("packageInstallPlanned", result.StandardOutput, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void UninstallAuditScopesEveryOptionalRemovalAndSupportsIdempotency()
     {
         using var fixture = DistributionFixture.Create();
@@ -153,6 +230,52 @@ public sealed class InstallerScriptTests
 
         Assert.NotEqual(0, result.ExitCode);
         Assert.DoesNotContain("packageRemovalPlanned", result.StandardOutput, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void UninstallAuditRefusesAReparseDescendantBeforePlanningRecursiveUserDataRemoval()
+    {
+        using var fixture = DistributionFixture.Create();
+        var localAppData = Path.Combine(fixture.Directory, "local-app-data");
+        var userData = Path.Combine(localAppData, "LumaTherm");
+        var external = Path.Combine(fixture.Directory, "external-user-data-sentinel");
+        Directory.CreateDirectory(userData);
+        Directory.CreateDirectory(external);
+        var sentinel = Path.Combine(external, "sentinel.txt");
+        File.WriteAllText(sentinel, "preserve");
+        var junction = Path.Combine(userData, "linked-child");
+        using var mklink = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("cmd.exe")
+        {
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            ArgumentList = { "/c", "mklink", "/J", junction, external },
+        })!;
+        mklink.WaitForExit();
+        if (mklink.ExitCode != 0)
+        {
+            Assert.Skip("Junction creation is unavailable on this Windows host.");
+        }
+
+        try
+        {
+            var result = PowerShellTestHost.Run(
+                Path.Combine(fixture.Directory, "uninstall.ps1"),
+                new[] { "-AuditOnly", "-Force", "-RemoveUserData", "-InstalledPackageForTest", "" },
+                new Dictionary<string, string>
+                {
+                    ["LUMATHERM_PACKAGING_TEST"] = "1",
+                    ["LOCALAPPDATA"] = localAppData,
+                });
+
+            Assert.NotEqual(0, result.ExitCode);
+            Assert.Contains("reparse", result.StandardError + result.StandardOutput, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("userDataRemovalPlanned", result.StandardOutput, StringComparison.Ordinal);
+            Assert.True(File.Exists(sentinel));
+        }
+        finally
+        {
+            if (Directory.Exists(junction)) Directory.Delete(junction);
+        }
     }
 
     private sealed class DistributionFixture : IDisposable

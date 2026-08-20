@@ -3,8 +3,10 @@ param(
     [switch]$AuditOnly,
     [ValidateSet('Accept', 'Decline')][string]$CertificateDecisionForTest,
     [ValidateSet('Valid', 'NotTrusted', 'Invalid', 'NotSigned')][string]$SignatureStatusForTest,
-    [ValidateSet('Valid', 'NotTrusted', 'Invalid', 'NotSigned')][string]$ReverifiedSignatureStatusForTest,
-    [string]$SignatureThumbprintForTest
+    [ValidateSet('Valid', 'NotTrusted', 'Invalid', 'NotSigned', 'Exception')][string]$ReverifiedSignatureStatusForTest,
+    [string]$SignatureThumbprintForTest,
+    [ValidateSet('Success', 'Failure')][string]$InstallOutcomeForTest,
+    [switch]$TrustedCertificatePresentForTest
 )
 
 $ErrorActionPreference = 'Stop'
@@ -29,7 +31,9 @@ $isTest = $env:LUMATHERM_PACKAGING_TEST -eq '1'
 if ((-not [string]::IsNullOrWhiteSpace($SignatureStatusForTest) -or
      -not [string]::IsNullOrWhiteSpace($ReverifiedSignatureStatusForTest) -or
      -not [string]::IsNullOrWhiteSpace($SignatureThumbprintForTest) -or
-     -not [string]::IsNullOrWhiteSpace($CertificateDecisionForTest)) -and (-not $AuditOnly -or -not $isTest)) {
+     -not [string]::IsNullOrWhiteSpace($CertificateDecisionForTest) -or
+     -not [string]::IsNullOrWhiteSpace($InstallOutcomeForTest) -or
+     $TrustedCertificatePresentForTest) -and (-not $AuditOnly -or -not $isTest)) {
     throw 'Test verification overrides require AuditOnly and LUMATHERM_PACKAGING_TEST=1.'
 }
 
@@ -37,6 +41,13 @@ $releaseRoot = [System.IO.Path]::GetFullPath($PSScriptRoot)
 $checksumPath = Join-Path $releaseRoot 'SHA256SUMS.txt'
 $certificatePath = Join-Path $releaseRoot 'LumaTherm.cer'
 $packageName = 'LumaTherm-1.0.0-win-x64.msix'
+$requiredArtifacts = @($packageName, 'LumaTherm-1.0.0-portable-win-x64.zip', 'LumaTherm.cer', 'install.ps1', 'uninstall.ps1')
+$requiredReleaseEntries = @($requiredArtifacts) + @('SHA256SUMS.txt')
+$releaseEntries = @(Get-ChildItem -LiteralPath $releaseRoot -Force)
+if ($releaseEntries.Count -ne $requiredReleaseEntries.Count -or
+    @($releaseEntries | Where-Object { $_.PSIsContainer -or -not ($requiredReleaseEntries -ccontains $_.Name) }).Count -gt 0) {
+    throw 'Release directory must contain exactly the five case-exact artifacts and SHA256SUMS.txt.'
+}
 $packagePath = [System.IO.Path]::GetFullPath((Join-Path $releaseRoot $packageName))
 if (-not (Test-Path -LiteralPath $packagePath -PathType Leaf)) { throw "Exact sibling package is missing: $packageName" }
 if (-not (Get-Item -LiteralPath $packagePath).Name.Equals($packageName, [System.StringComparison]::Ordinal)) { throw "Package filename casing is not exact: $packageName" }
@@ -45,7 +56,6 @@ if (-not (Test-Path -LiteralPath $certificatePath -PathType Leaf)) { throw 'Sibl
 
 $checksumLines = @(Get-Content -LiteralPath $checksumPath | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
 if ($checksumLines.Count -eq 0) { throw 'Checksum manifest is empty.' }
-$requiredArtifacts = @($packageName, 'LumaTherm-1.0.0-portable-win-x64.zip', 'LumaTherm.cer', 'install.ps1', 'uninstall.ps1')
 $seenNames = @{}
 foreach ($line in $checksumLines) {
     if ($line -notmatch '^([0-9A-Fa-f]{64}) \*([^\\/]+)$') { throw "Invalid checksum entry: $line" }
@@ -81,58 +91,97 @@ if ([string]::IsNullOrWhiteSpace($signatureThumbprint) -or
     throw 'MSIX signer certificate does not match sibling LumaTherm.cer.'
 }
 $trustedPath = 'Cert:\CurrentUser\TrustedPeople\' + $certificate.Thumbprint
-$importedCertificate = $false
-if ($signatureStatus -eq 'NotTrusted') {
-    $events.Add('signatureMatchedUntrusted')
-    if ($isTest -and $AuditOnly) {
-        $accepted = $CertificateDecisionForTest -eq 'Accept'
-    } else {
-        $answer = Read-Host "Import only certificate $($certificate.Thumbprint) ($($certificate.Subject)) into CurrentUser\TrustedPeople? Type YES"
-        $accepted = $answer -ceq 'YES'
-    }
-    if (-not $accepted) {
-        $events.Add('certificateImportDeclined')
-        Write-AuditResult -Events $events.ToArray() -PackagePath $packagePath
-        exit 3
-    }
-    $events.Add('certificateImportConfirmed')
-    if ($AuditOnly) {
-        $events.Add('certificateImportPlanned')
-    } else {
-        if (-not (Test-Path -LiteralPath $trustedPath)) {
-            Import-Certificate -FilePath $certificatePath -CertStoreLocation 'Cert:\CurrentUser\TrustedPeople' | Out-Null
-            $importedCertificate = $true
+$ownedTrustedCertificate = $false
+$installSucceeded = $false
+$operationFailure = $null
+try {
+    if ($signatureStatus -eq 'NotTrusted') {
+        $events.Add('signatureMatchedUntrusted')
+        if ($isTest -and $AuditOnly) {
+            $accepted = $CertificateDecisionForTest -eq 'Accept'
+        } else {
+            $answer = Read-Host "Import only certificate $($certificate.Thumbprint) ($($certificate.Subject)) into CurrentUser\TrustedPeople? Type YES"
+            $accepted = $answer -ceq 'YES'
         }
-        $events.Add('certificateImported')
-    }
-    if ($AuditOnly) {
-        $events.Add('signatureReverificationPlanned')
-        $reverifiedStatus = $ReverifiedSignatureStatusForTest
-        $reverifiedThumbprint = $SignatureThumbprintForTest
+        if (-not $accepted) {
+            $events.Add('certificateImportDeclined')
+            Write-AuditResult -Events $events.ToArray() -PackagePath $packagePath
+            exit 3
+        }
+        $events.Add('certificateImportConfirmed')
+        if ($AuditOnly) {
+            if ($TrustedCertificatePresentForTest) {
+                $events.Add('certificateAlreadyPresent')
+            } else {
+                $ownedTrustedCertificate = $true
+                $events.Add('certificateImportPlanned')
+            }
+        } elseif (Test-Path -LiteralPath $trustedPath) {
+            $events.Add('certificateAlreadyPresent')
+        } else {
+            $ownedTrustedCertificate = $true
+            Import-Certificate -FilePath $certificatePath -CertStoreLocation 'Cert:\CurrentUser\TrustedPeople' | Out-Null
+            $events.Add('certificateImported')
+        }
+
+        if ($AuditOnly) {
+            $events.Add('signatureReverificationPlanned')
+            if ($ReverifiedSignatureStatusForTest -eq 'Exception') {
+                $events.Add('signatureReverificationFailed')
+                throw 'Simulated Authenticode re-verification exception.'
+            }
+            $reverifiedStatus = $ReverifiedSignatureStatusForTest
+            $reverifiedThumbprint = $SignatureThumbprintForTest
+        } else {
+            $reverifiedSignature = Get-AuthenticodeSignature -LiteralPath $packagePath
+            $reverifiedStatus = [string]$reverifiedSignature.Status
+            $reverifiedThumbprint = if ($null -eq $reverifiedSignature.SignerCertificate) { '' } else { $reverifiedSignature.SignerCertificate.Thumbprint }
+        }
+        if ($reverifiedStatus -ne 'Valid' -or
+            [string]::IsNullOrWhiteSpace($reverifiedThumbprint) -or
+            -not $certificate.Thumbprint.Equals($reverifiedThumbprint, [System.StringComparison]::OrdinalIgnoreCase)) {
+            if ($AuditOnly) { $events.Add('signatureReverificationFailed') }
+            throw 'MSIX signature did not become Valid with the matching certificate after trust import.'
+        }
+        $events.Add('signatureReverified')
     } else {
-        $reverifiedSignature = Get-AuthenticodeSignature -LiteralPath $packagePath
-        $reverifiedStatus = [string]$reverifiedSignature.Status
-        $reverifiedThumbprint = if ($null -eq $reverifiedSignature.SignerCertificate) { '' } else { $reverifiedSignature.SignerCertificate.Thumbprint }
+        $events.Add('signatureVerified')
     }
-    if ($reverifiedStatus -ne 'Valid' -or
-        [string]::IsNullOrWhiteSpace($reverifiedThumbprint) -or
-        -not $certificate.Thumbprint.Equals($reverifiedThumbprint, [System.StringComparison]::OrdinalIgnoreCase)) {
-        if ($importedCertificate -and (Test-Path -LiteralPath $trustedPath)) { Remove-Item -LiteralPath $trustedPath -Force }
-        throw 'MSIX signature did not become Valid with the matching certificate after trust import.'
+
+    if ($AuditOnly) {
+        $events.Add('packageInstallPlanned')
+        if ($InstallOutcomeForTest -eq 'Failure') {
+            $events.Add('packageInstallFailed')
+            throw 'Simulated Add-AppxPackage failure.'
+        }
+        $installSucceeded = $true
+    } else {
+        Add-AppxPackage -Path $packagePath
+        $installSucceeded = $true
+        $installedPackages = @(Get-AppxPackage -Name 'LumaTherm' | Where-Object { $_.Name -ceq 'LumaTherm' })
+        if ($installedPackages.Count -ne 1) { throw 'Install completed but the exact installed LumaTherm package identity is ambiguous.' }
     }
-    $events.Add('signatureReverified')
-} else {
-    $events.Add('signatureVerified')
+} catch {
+    $operationFailure = $_
+} finally {
+    if ($ownedTrustedCertificate -and -not $installSucceeded) {
+        if ($AuditOnly) {
+            $events.Add('certificateTrustCleanupPlanned')
+        } elseif (Test-Path -LiteralPath $trustedPath) {
+            Remove-Item -LiteralPath $trustedPath -Force
+        }
+    }
 }
 
+if ($null -ne $operationFailure) {
+    if ($AuditOnly) { Write-AuditResult -Events $events.ToArray() -PackagePath $packagePath }
+    throw $operationFailure
+}
 if ($AuditOnly) {
-    $events.Add('packageInstallPlanned')
+    if ($ownedTrustedCertificate) { $events.Add('certificateTrustRetentionPlanned') }
     Write-AuditResult -Events $events.ToArray() -PackagePath $packagePath
     exit 0
 }
 
-Add-AppxPackage -Path $packagePath
-$installedPackages = @(Get-AppxPackage -Name 'LumaTherm' | Where-Object { $_.Name -ceq 'LumaTherm' })
-if ($installedPackages.Count -ne 1) { throw 'Install completed but the exact installed LumaTherm package identity is ambiguous.' }
 Write-Host "LumaTherm package installed: $($installedPackages[0].PackageFullName)"
 Write-Host 'Launch LumaTherm from the Windows Start menu. Autostart remains disabled until you enable it in the app.'

@@ -64,6 +64,45 @@ function Assert-PathUnderAllowedRoot {
     throw "Refusing to write outside artifacts, dist, or packaging/local-signing: $fullPath"
 }
 
+function Assert-SafeRecursiveTree {
+    param([Parameter(Mandatory = $true)][string]$Path)
+    $fullPath = [System.IO.Path]::GetFullPath($Path)
+    $repository = [System.IO.Path]::GetFullPath($repositoryRoot).TrimEnd('\')
+    if (-not ($fullPath.Equals($repository, [System.StringComparison]::OrdinalIgnoreCase) -or
+        $fullPath.StartsWith($repository + '\', [System.StringComparison]::OrdinalIgnoreCase))) {
+        throw "Recursive operation path is outside the physical repository root: $fullPath"
+    }
+
+    $current = $repository
+    foreach ($segment in @($fullPath.Substring($repository.Length).TrimStart('\').Split('\') | Where-Object { $_.Length -gt 0 })) {
+        $current = Join-Path $current $segment
+        if (Test-Path -LiteralPath $current) {
+            $ancestor = Get-Item -LiteralPath $current -Force
+            if (($ancestor.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+                throw "Refusing a recursive operation through a reparse point: $current"
+            }
+        }
+    }
+    if (-not (Test-Path -LiteralPath $fullPath)) { return }
+
+    $pending = [System.Collections.Generic.Stack[string]]::new()
+    $pending.Push($fullPath)
+    while ($pending.Count -gt 0) {
+        $directory = $pending.Pop()
+        $directoryItem = Get-Item -LiteralPath $directory -Force
+        if (($directoryItem.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+            throw "Refusing a recursive operation containing a reparse point: $directory"
+        }
+        if (-not $directoryItem.PSIsContainer) { continue }
+        foreach ($child in @(Get-ChildItem -LiteralPath $directory -Force)) {
+            if (($child.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+                throw "Refusing a recursive operation containing a reparse point: $($child.FullName)"
+            }
+            if ($child.PSIsContainer) { $pending.Push($child.FullName) }
+        }
+    }
+}
+
 function Get-ManifestPublisher {
     [xml]$manifest = Get-Content -LiteralPath $manifestPath -Raw
     return [string]$manifest.Package.Identity.Publisher
@@ -120,6 +159,7 @@ function New-CleanPackageLayout {
     $PublishedPath = [System.IO.Path]::GetFullPath($PublishedPath)
     Assert-PathUnderAllowedRoot -Path $PublishedPath
     if (-not (Test-Path -LiteralPath $PublishedPath -PathType Container)) { throw "Published app folder not found: $PublishedPath" }
+    Assert-SafeRecursiveTree -Path $PublishedPath
     $manifestExecutable = Join-Path $PublishedPath 'LumaTherm.exe'
     $projectExecutable = Join-Path $PublishedPath 'LumaTherm.App.exe'
     if ((Test-Path -LiteralPath $manifestExecutable) -and (Test-Path -LiteralPath $projectExecutable)) {
@@ -132,12 +172,23 @@ function New-CleanPackageLayout {
         throw 'Published app does not contain the LumaTherm executable.'
     }
     Assert-PathUnderAllowedRoot -Path $layoutRoot
-    if (Test-Path -LiteralPath $layoutRoot) { Remove-Item -LiteralPath $layoutRoot -Recurse -Force }
+    if (Test-Path -LiteralPath $layoutRoot) {
+        Assert-SafeRecursiveTree -Path $layoutRoot
+        Remove-Item -LiteralPath $layoutRoot -Recurse -Force
+    }
     New-Item -ItemType Directory -Path $layoutRoot | Out-Null
+    Assert-SafeRecursiveTree -Path $layoutRoot
+    Assert-SafeRecursiveTree -Path $PublishedPath
     Get-ChildItem -LiteralPath $PublishedPath -Force | Copy-Item -Destination $layoutRoot -Recurse -Force
     Copy-Item -LiteralPath $manifestPath -Destination (Join-Path $layoutRoot 'AppxManifest.xml') -Force
-    Copy-Item -LiteralPath (Join-Path $repositoryRoot 'packaging\Assets') -Destination $layoutRoot -Recurse -Force
-    Copy-Item -LiteralPath (Join-Path $repositoryRoot 'packaging\public') -Destination $layoutRoot -Recurse -Force
+    $packageAssets = Join-Path $repositoryRoot 'packaging\Assets'
+    Assert-SafeRecursiveTree -Path $layoutRoot
+    Assert-SafeRecursiveTree -Path $packageAssets
+    Copy-Item -LiteralPath $packageAssets -Destination $layoutRoot -Recurse -Force
+    $publicFolder = Join-Path $repositoryRoot 'packaging\public'
+    Assert-SafeRecursiveTree -Path $layoutRoot
+    Assert-SafeRecursiveTree -Path $publicFolder
+    Copy-Item -LiteralPath $publicFolder -Destination $layoutRoot -Recurse -Force
 }
 
 function Write-DistributionChecksums {
@@ -245,10 +296,16 @@ if ($LASTEXITCODE -ne 0) { throw 'Release restore failed.' }
 if ($LASTEXITCODE -ne 0) { throw 'Release tests failed.' }
 $tools = Resolve-SdkTools -PackageRoot $SdkBuildToolsPath
 Assert-PathUnderAllowedRoot -Path $distRoot
-if (Test-Path -LiteralPath $distRoot) { Remove-Item -LiteralPath $distRoot -Recurse -Force }
+if (Test-Path -LiteralPath $distRoot) {
+    Assert-SafeRecursiveTree -Path $distRoot
+    Remove-Item -LiteralPath $distRoot -Recurse -Force
+}
 New-Item -ItemType Directory -Path $distRoot | Out-Null
 Assert-PathUnderAllowedRoot -Path $publishRoot
-if (Test-Path -LiteralPath $publishRoot) { Remove-Item -LiteralPath $publishRoot -Recurse -Force }
+if (Test-Path -LiteralPath $publishRoot) {
+    Assert-SafeRecursiveTree -Path $publishRoot
+    Remove-Item -LiteralPath $publishRoot -Recurse -Force
+}
 & $dotnetPath @publishArguments
 if ($LASTEXITCODE -ne 0) { throw 'Self-contained win-x64 publish failed.' }
 New-CleanPackageLayout -PublishedPath $publishRoot
@@ -307,6 +364,7 @@ try {
 
     $zipPath = Join-Path $distRoot $zipName
     if (Test-Path -LiteralPath $zipPath) { Remove-Item -LiteralPath $zipPath -Force }
+    Assert-SafeRecursiveTree -Path $publishRoot
     Compress-Archive -Path (Join-Path $publishRoot '*') -DestinationPath $zipPath -CompressionLevel Optimal
     if ($null -ne $createdCertificate) {
         Copy-Item -LiteralPath (Join-Path $localSigningRunRoot 'LumaTherm.cer') -Destination (Join-Path $distRoot 'LumaTherm.cer') -Force
@@ -338,7 +396,10 @@ try {
     }
     try {
         Assert-PathUnderAllowedRoot -Path $localSigningRunRoot
-        if (Test-Path -LiteralPath $localSigningRunRoot) { Remove-Item -LiteralPath $localSigningRunRoot -Recurse -Force }
+        if (Test-Path -LiteralPath $localSigningRunRoot) {
+            Assert-SafeRecursiveTree -Path $localSigningRunRoot
+            Remove-Item -LiteralPath $localSigningRunRoot -Recurse -Force
+        }
     } catch { $cleanupFailures.Add("Owned signing directory cleanup failed: $($_.Exception.Message)") }
     if ($cleanupFailures.Count -gt 0) { throw ($cleanupFailures -join [Environment]::NewLine) }
     if (-not [string]::IsNullOrWhiteSpace($transientThumbprint)) {

@@ -191,6 +191,75 @@ public sealed class ReleaseScriptTests
     }
 
     [Fact]
+    public void PrepareLayoutRefusesAReparseDescendantBeforeRecursivelyDeletingLayout()
+    {
+        using var fixture = ReleaseFixture.Create();
+        var publish = Path.Combine(fixture.RepositoryRoot, "artifacts", "publish");
+        Directory.CreateDirectory(publish);
+        File.WriteAllText(Path.Combine(publish, "LumaTherm.App.exe"), "app");
+        var layout = Path.Combine(fixture.RepositoryRoot, "artifacts", "package-layout");
+        Directory.CreateDirectory(layout);
+        File.WriteAllText(Path.Combine(layout, "stale.bin"), "stale");
+
+        var external = Path.Combine(fixture.Root, "external-layout-sentinel");
+        Directory.CreateDirectory(external);
+        var sentinel = Path.Combine(external, "sentinel.txt");
+        File.WriteAllText(sentinel, "preserve");
+        var junction = Path.Combine(layout, "linked-child");
+        if (!TryCreateJunction(junction, external))
+        {
+            Assert.Skip("Junction creation is unavailable on this Windows host.");
+        }
+
+        try
+        {
+            var result = fixture.RunBuild("-Mode", "PrepareLayout", "-PublishedAppPath", publish);
+
+            Assert.NotEqual(0, result.ExitCode);
+            Assert.Contains("reparse", result.StandardError + result.StandardOutput, StringComparison.OrdinalIgnoreCase);
+            Assert.True(File.Exists(sentinel));
+            Assert.True(File.Exists(Path.Combine(layout, "stale.bin")));
+        }
+        finally
+        {
+            if (Directory.Exists(junction)) Directory.Delete(junction);
+        }
+    }
+
+    [Fact]
+    public void PrepareLayoutRefusesAReparseDescendantBeforeRecursivelyCopyingPublishedFiles()
+    {
+        using var fixture = ReleaseFixture.Create();
+        var publish = Path.Combine(fixture.RepositoryRoot, "artifacts", "publish");
+        Directory.CreateDirectory(publish);
+        File.WriteAllText(Path.Combine(publish, "LumaTherm.App.exe"), "app");
+
+        var external = Path.Combine(fixture.Root, "external-publish-sentinel");
+        Directory.CreateDirectory(external);
+        var sentinel = Path.Combine(external, "sentinel.txt");
+        File.WriteAllText(sentinel, "preserve");
+        var junction = Path.Combine(publish, "linked-child");
+        if (!TryCreateJunction(junction, external))
+        {
+            Assert.Skip("Junction creation is unavailable on this Windows host.");
+        }
+
+        try
+        {
+            var result = fixture.RunBuild("-Mode", "PrepareLayout", "-PublishedAppPath", publish);
+
+            Assert.NotEqual(0, result.ExitCode);
+            Assert.Contains("reparse", result.StandardError + result.StandardOutput, StringComparison.OrdinalIgnoreCase);
+            Assert.True(File.Exists(sentinel));
+            Assert.False(Directory.Exists(Path.Combine(fixture.RepositoryRoot, "artifacts", "package-layout")));
+        }
+        finally
+        {
+            if (Directory.Exists(junction)) Directory.Delete(junction);
+        }
+    }
+
+    [Fact]
     public void ChecksumsCoverEveryDistributedArtifactWithStableRelativeNames()
     {
         using var fixture = ReleaseFixture.Create();
@@ -250,6 +319,18 @@ public sealed class ReleaseScriptTests
                 Directory.Delete(fixtureRoot, recursive: true);
             }
         }
+    }
+
+    private static bool TryCreateJunction(string junction, string target)
+    {
+        using var process = Process.Start(new ProcessStartInfo("cmd.exe")
+        {
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            ArgumentList = { "/c", "mklink", "/J", junction, target },
+        })!;
+        process.WaitForExit();
+        return process.ExitCode == 0;
     }
 
     private sealed class ReleaseFixture : IDisposable

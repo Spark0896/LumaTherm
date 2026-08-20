@@ -51,6 +51,19 @@ function Assert-SafeUserDataTarget {
             }
         }
     }
+    if (Test-Path -LiteralPath $target) {
+        $pending = [System.Collections.Generic.Stack[string]]::new()
+        $pending.Push($target)
+        while ($pending.Count -gt 0) {
+            $directory = $pending.Pop()
+            foreach ($child in @(Get-ChildItem -LiteralPath $directory -Force)) {
+                if (($child.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+                    throw "Refusing user-data removal containing a reparse point: $($child.FullName)"
+                }
+                if ($child.PSIsContainer) { $pending.Push($child.FullName) }
+            }
+        }
+    }
 }
 if ($RemoveUserData) { Assert-SafeUserDataTarget }
 
