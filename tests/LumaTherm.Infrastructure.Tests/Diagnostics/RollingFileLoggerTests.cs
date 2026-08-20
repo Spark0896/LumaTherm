@@ -1,3 +1,4 @@
+using System.Collections;
 using System.Text;
 using System.Text.Json;
 using LumaTherm.Core.Diagnostics;
@@ -184,10 +185,68 @@ public sealed class RollingFileLoggerTests : IDisposable
         using var _ = JsonDocument.Parse(serialized);
     }
 
+    [Fact]
+    public void NonGenericDictionary_StopsEnumerationAtTheConfiguredItemBound()
+    {
+        var path = Path.Combine(_directory, "lumatherm.log");
+        using var logger = new RollingFileLogger(path, 16 * 1024, archiveCount: 4);
+        var dictionary = new GuardedDictionary(throwAfterMoveNextCalls: 65);
+
+        logger.Write(
+            AppLogLevel.Information,
+            "bounded-dictionary",
+            "data",
+            data: new Dictionary<string, object?> { ["dictionary"] = dictionary });
+
+        Assert.True(File.Exists(path));
+        Assert.InRange(dictionary.MoveNextCalls, 1, 65);
+        using var json = JsonDocument.Parse(File.ReadAllText(path, Encoding.UTF8));
+        var normalized = json.RootElement.GetProperty("data").GetProperty("dictionary");
+        Assert.True(normalized.GetProperty("[truncated]").GetBoolean());
+        Assert.False(normalized.TryGetProperty("accessToken", out _));
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(_directory)) Directory.Delete(_directory, recursive: true);
     }
 
     private sealed record SensitiveDto(string Secret);
+
+    private sealed class GuardedDictionary(int throwAfterMoveNextCalls) : IDictionary
+    {
+        public int MoveNextCalls { get; private set; }
+        public object? this[object key] { get => null; set => throw new NotSupportedException(); }
+        public ICollection Keys => Array.Empty<object>();
+        public ICollection Values => Array.Empty<object>();
+        public bool IsReadOnly => true;
+        public bool IsFixedSize => true;
+        public int Count => int.MaxValue;
+        public object SyncRoot => this;
+        public bool IsSynchronized => false;
+        public void Add(object key, object? value) => throw new NotSupportedException();
+        public void Clear() => throw new NotSupportedException();
+        public bool Contains(object key) => false;
+        public void CopyTo(Array array, int index) => throw new NotSupportedException();
+        public IDictionaryEnumerator GetEnumerator() => new GuardedEnumerator(this, throwAfterMoveNextCalls);
+        public void Remove(object key) => throw new NotSupportedException();
+        IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+
+        private sealed class GuardedEnumerator(GuardedDictionary owner, int throwAfterMoveNextCalls) : IDictionaryEnumerator
+        {
+            private int _index = -1;
+            public DictionaryEntry Entry => new(Key, Value);
+            public object Key => _index == 5 ? "accessToken" : $"key{_index:D2}";
+            public object Value => _index == 5 ? "must-not-leak" : _index;
+            public object Current => Entry;
+            public bool MoveNext()
+            {
+                owner.MoveNextCalls++;
+                if (owner.MoveNextCalls > throwAfterMoveNextCalls) throw new InvalidOperationException("dictionary enumeration exceeded its bound");
+                _index++;
+                return true;
+            }
+            public void Reset() => _index = -1;
+        }
+    }
 }

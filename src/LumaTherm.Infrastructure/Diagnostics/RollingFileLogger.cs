@@ -222,12 +222,7 @@ public sealed class RollingFileLogger : IAppLogger, IDisposable
             }
             if (value is IDictionary dictionary)
             {
-                var entries = new List<KeyValuePair<string, object?>>();
-                foreach (DictionaryEntry entry in dictionary)
-                {
-                    if (entry.Key is string key) entries.Add(new KeyValuePair<string, object?>(key, entry.Value));
-                }
-                return NormalizeDictionary(entries, depth, path);
+                return NormalizeDictionary(dictionary, depth, path);
             }
             if (value is IEnumerable enumerable)
             {
@@ -249,6 +244,28 @@ public sealed class RollingFileLogger : IAppLogger, IDisposable
         {
             path.Remove(value);
         }
+    }
+
+    private static IReadOnlyDictionary<string, object?> NormalizeDictionary(
+        IDictionary data,
+        int depth,
+        HashSet<object> path)
+    {
+        var safe = new Dictionary<string, object?>(StringComparer.Ordinal);
+        var count = 0;
+        foreach (DictionaryEntry entry in data)
+        {
+            if (count++ >= MaximumCollectionItems)
+            {
+                safe["[truncated]"] = true;
+                break;
+            }
+            if (entry.Key is not string rawKey) continue;
+            var key = Sanitize(rawKey);
+            if (IsSecretKey(key)) continue;
+            safe[key] = NormalizeValue(entry.Value, depth + 1, path);
+        }
+        return safe;
     }
 
     private static bool IsSecretKey(string key) =>
