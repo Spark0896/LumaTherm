@@ -85,3 +85,62 @@ Self-review also searched the Task 9 App/test scope for `async void`, `ISettings
 - Automated build/layout tests do not constitute the final rendered visual comparison. The controller should run the planned two-screen rendered comparison gate against `thermal-core-final.html`.
 - Task 11 composition must supply `ColorPickerService`, `LightingDeviceDiscoveryService`, and `MainWindow.SettingsDataContext`, and choose when to execute the discovery command. Task 9 deliberately does not take composition-root ownership.
 - The native dialog is not opened interactively in automation; its owner-handle seam is tested, while the real `ColorDialog` configuration/disposal path is compiled and self-reviewed.
+
+## Fix round 1/5 — review blockers
+
+- Fix commit: `a77d958` (`fix: harden settings mutation flow`)
+- The evidence and call ordering below supersede the original pre-fix persistence-order notes above.
+
+### Blocker 1 — runtime is the validation authority
+
+Covering test: `Save_InvalidCandidate_IsRejectedByRuntimeBeforeAnyStartupSideEffect` with a fake that mirrors production `ThermalRuntime.UpdateSettingsAsync` by calling `settings.Validate()` at its boundary before recording persistence.
+
+```text
+RED command: dotnet test LumaTherm.App.Tests.csproj --filter FullyQualifiedName~Save_InvalidCandidate_IsRejectedByRuntimeBeforeAnyStartupSideEffect
+RED output: 0 passed, 1 failed; expected runtime UpdateCalls 1, actual 0 (ViewModel rejected first).
+GREEN output: 1 passed, 0 failed.
+```
+
+`SettingsViewModel` no longer calls `candidate.Validate()`. It sends the candidate to `IThermalRuntime.UpdateSettingsAsync`, translates a runtime `ArgumentException` to safe Russian validation, and leaves startup, `LiveSettings`, and the synchronized dashboard profile unchanged when the runtime rejects precommit.
+
+Revised autostart ordering:
+
+- Valid change: `runtime.persist(candidate)` → `startup:true/false` → `vm.commit`.
+- Runtime failure or invalid candidate: `runtime.fail/reject` only; startup is not touched.
+- Startup failure after runtime success: `runtime.persist(candidate)` → `startup.fail` → `runtime.persist(last-good)`; ViewModel live state remains last-good.
+- If runtime compensation also fails, the candidate may remain runtime-persisted while ViewModel live state remains last-good; the UI reports `Не удалось изменить автозапуск. Не удалось вернуть настройки.` This unavoidable double-failure is covered and remains a surfaced recovery concern rather than being hidden.
+
+### Blocker 2 — one serialized settings-mutation pipeline
+
+Covering test: `SaveAndPicker_ShareOneSerializedMutationPipelineWithoutOverlappingPersistence`.
+
+```text
+RED command: dotnet test LumaTherm.App.Tests.csproj --filter FullyQualifiedName~SaveAndPicker_ShareOneSerializedMutationPipelineWithoutOverlappingPersistence
+RED output: 0 passed, 1 failed; expected picker calls 0 while Save was held, actual 1.
+GREEN output: 1 passed, 0 failed.
+```
+
+Save and all three picker commands now enter one shared `SemaphoreSlim`-serialized pipeline. The test holds Save inside the runtime, starts a picker, and proves the picker remains outside until release, maximum concurrent runtime updates is 1, two distinct candidates persist exactly once each in deterministic order, and the final `LiveSettings` equals the picked candidate. Same-command reentry remains finite through `AsyncRelayCommand`; exception paths release the shared gate in `finally`. Runtime-first startup compensation remains covered by the startup-failure tests.
+
+### Blocker 3 — compiled Thermal Core control templates
+
+Covering test: `SettingsView_UsesThermalTemplatesWithCompiledInteractionStates`.
+
+```text
+RED command: dotnet test LumaTherm.App.Tests.csproj --filter FullyQualifiedName~SettingsView_UsesThermalTemplatesWithCompiledInteractionStates
+RED output: 0 passed, 1 failed; named ThermalSliderTrack was null under the default WPF template.
+GREEN output: 1 passed, 0 failed.
+```
+
+The compiled Settings view now supplies Thermal Core templates for sliders, tiny application switches, numeric editors, color cards, Reset, and Save. Runtime assertions verify dark `#363D43` tracks, cyan fill/thumb/switch states, 4/6/8/9 px radii, dark editor/reset surfaces, cyan Save surface, real `PART_Track` min/max/value synchronization, and hover/pressed/keyboard-focus/disabled triggers. No emoji or substitute icon was introduced. Final screenshot comparison remains controller-owned.
+
+### Fresh verification after all fix-round changes
+
+```text
+Focused Settings|Ui: 66 passed, 0 failed, 0 skipped
+Full solution: Core 71 + Infrastructure 58 + App 88 = 217 passed, 0 failed, 0 skipped
+Debug build: succeeded, 0 warnings, 0 errors
+git diff --check: clean (only Git LF→CRLF working-copy notices)
+```
+
+The deferred minor binding/LostFocus review finding was not folded into this blocker round.
