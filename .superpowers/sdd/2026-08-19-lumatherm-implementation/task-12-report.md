@@ -44,10 +44,10 @@ The first controller-gated real `build-release.ps1` invocation ran against round
 
 ```text
 dotnet test tests/LumaTherm.Packaging.Tests/LumaTherm.Packaging.Tests.csproj -c Release --no-restore -p:NuGetAudit=false
-PASS: 39 passed, 0 failed.
+PASS: 40 passed, 0 failed.
 
 dotnet test LumaTherm.sln -c Release --no-restore -p:NuGetAudit=false
-PASS: Core 71 + Infrastructure 91 + App 138 + Packaging 39 = 339 passed, 0 failed.
+PASS: Core 71 + Infrastructure 91 + App 138 + Packaging 40 = 340 passed, 0 failed.
 
 dotnet build LumaTherm.sln -c Release --no-restore -p:NuGetAudit=false
 PASS: 0 warnings, 0 errors.
@@ -110,3 +110,11 @@ Source fix: `22c389c` (`fix: close packaging mutation safety gaps`).
 - RED: Plan named CurrentUser/TrustedPeople; Full lacked a pre-mutation Administrator gate; installer/uninstaller audit plans lacked machine-store and privilege-ordering contracts. GREEN in `c9e1ca1`: Plan names exact `Cert:\LocalMachine\TrustedPeople` and the UAC prerequisite; Full rejects non-admin before release writes and temporarily owns only the exact missing machine-trust entry; installer/uninstaller use the exact distributed CER thumbprint in the machine store only after Administrator preflight and explicit intent. Existing failure cleanup, success retention, pre-existing trust preservation, reparse guards, and exact-release checks remain green.
 - Fresh safe verification: Packaging 39/39; Core 71 + Infrastructure 91 + App 138 + Packaging 39 = 339/339; Release build 0 warnings and 0 errors; deterministic asset parity 1/1; real non-mutating Plan resolves pinned `10.0.26100.8249` absolute x64 tools and explicitly reports the machine trust store; `git diff --check` has no whitespace errors apart from checkout line-ending notices.
 - The corrected Full rerun, installer, uninstaller, registry, production app, and hardware were not executed in this fix round. The next action remains the controller-approved UAC checkpoint command above.
+
+## Review fix round 4 — bounded junction helper processes
+
+- RED: all three real `cmd.exe /c mklink` test paths used parameterless `WaitForExit()` and could hang the Packaging suite indefinitely if the helper process stalled.
+- GREEN in `c7a5302`: a shared test-only bounded process host applies explicit 10-second command and 5-second termination/drain deadlines to every junction helper, attempts `Kill(entireProcessTree: true)` on timeout, waits only within the post-kill bound, drains redirected streams within a finite bound, and always disposes the process. Timeout failures identify the executable and exact deadline.
+- The regression launches a real parent/child PowerShell tree whose child holds an exclusive file lock. At the three-second deadline the helper terminates the complete tree, returns within eight seconds, and the test immediately reacquires the lock, proving no child process retained it.
+- Fresh verification: affected junction/timeout tests 5/5; Packaging 40/40; Core 71 + Infrastructure 91 + App 138 + Packaging 40 = 340/340; Release build 0 warnings and 0 errors; `git diff --check` clean apart from checkout line-ending notices.
+- No production script changed, and Full/install/uninstall were not run. The controller-approved UAC checkpoint remains unchanged.
