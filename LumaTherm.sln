@@ -16,6 +16,10 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LumaTherm.App.Tests", "test
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LumaTherm.AssetBuilder", "tools\LumaTherm.AssetBuilder\LumaTherm.AssetBuilder.csproj", "{E2AB7485-5970-46BB-B75D-7CEFEA7D5E36}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LumaTherm.Packaging", "packaging\LumaTherm.Packaging.csproj", "{C74130D1-7F3B-4C51-8356-46FD2E6C4EC9}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LumaTherm.Packaging.Tests", "tests\LumaTherm.Packaging.Tests\LumaTherm.Packaging.Tests.csproj", "{7BC15764-3B25-42A8-B852-3EC209D55831}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -50,5 +54,13 @@ Global
 		{E2AB7485-5970-46BB-B75D-7CEFEA7D5E36}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{E2AB7485-5970-46BB-B75D-7CEFEA7D5E36}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{E2AB7485-5970-46BB-B75D-7CEFEA7D5E36}.Release|Any CPU.Build.0 = Release|Any CPU
+		{C74130D1-7F3B-4C51-8356-46FD2E6C4EC9}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C74130D1-7F3B-4C51-8356-46FD2E6C4EC9}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C74130D1-7F3B-4C51-8356-46FD2E6C4EC9}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C74130D1-7F3B-4C51-8356-46FD2E6C4EC9}.Release|Any CPU.Build.0 = Release|Any CPU
+		{7BC15764-3B25-42A8-B852-3EC209D55831}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{7BC15764-3B25-42A8-B852-3EC209D55831}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{7BC15764-3B25-42A8-B852-3EC209D55831}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{7BC15764-3B25-42A8-B852-3EC209D55831}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal

@@ -1,0 +1,158 @@
+using System.Security.Cryptography;
+using System.Security.Cryptography.X509Certificates;
+using System.Text;
+using System.Text.Json;
+
+namespace LumaTherm.Packaging.Tests;
+
+public sealed class InstallerScriptTests
+{
+    [Fact]
+    public void AuditPerformsChecksumAndSignatureBeforeCertificateImportAndInstall()
+    {
+        using var fixture = DistributionFixture.Create();
+        var result = fixture.RunInstall("-AuditOnly", "-CertificateDecisionForTest", "Accept", "-SignatureStatusForTest", "Valid", "-SignatureThumbprintForTest", fixture.CertificateThumbprint);
+
+        Assert.True(result.ExitCode == 0, result.StandardError + result.StandardOutput);
+        using var json = JsonDocument.Parse(result.StandardOutput);
+        var events = json.RootElement.GetProperty("events").EnumerateArray().Select(e => e.GetString()).ToArray();
+        Assert.Equal(new[] { "checksumVerified", "signatureVerified", "certificateImportConfirmed", "certificateImportPlanned", "packageInstallPlanned" }, events);
+        Assert.DoesNotContain(events, e => e!.Contains("autostart", StringComparison.OrdinalIgnoreCase) || e.Contains("Run", StringComparison.Ordinal));
+        Assert.Equal(Path.Combine(fixture.Directory, "LumaTherm-1.0.0-win-x64.msix"), json.RootElement.GetProperty("packagePath").GetString());
+    }
+
+    [Fact]
+    public void AuditStopsBeforeMutationPlanWhenChecksumIsInvalid()
+    {
+        using var fixture = DistributionFixture.Create();
+        File.AppendAllText(Path.Combine(fixture.Directory, "LumaTherm-1.0.0-win-x64.msix"), "tampered");
+
+        var result = fixture.RunInstall("-AuditOnly", "-CertificateDecisionForTest", "Accept", "-SignatureStatusForTest", "Valid", "-SignatureThumbprintForTest", fixture.CertificateThumbprint);
+
+        Assert.NotEqual(0, result.ExitCode);
+        Assert.Contains("checksum", result.StandardError + result.StandardOutput, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("packageInstallPlanned", result.StandardOutput, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void AuditHonorsCertificateImportDeclineWithoutInstalling()
+    {
+        using var fixture = DistributionFixture.Create();
+        var result = fixture.RunInstall("-AuditOnly", "-CertificateDecisionForTest", "Decline", "-SignatureStatusForTest", "Valid", "-SignatureThumbprintForTest", fixture.CertificateThumbprint);
+
+        Assert.Equal(3, result.ExitCode);
+        Assert.Contains("certificateImportDeclined", result.StandardOutput, StringComparison.Ordinal);
+        Assert.DoesNotContain("packageInstallPlanned", result.StandardOutput, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void AuditRejectsSignatureWhoseSignerDoesNotMatchSiblingCertificate()
+    {
+        using var fixture = DistributionFixture.Create();
+        var result = fixture.RunInstall("-AuditOnly", "-CertificateDecisionForTest", "Accept", "-SignatureStatusForTest", "Valid", "-SignatureThumbprintForTest", new string('A', 40));
+
+        Assert.NotEqual(0, result.ExitCode);
+        Assert.Contains("certificate", result.StandardError + result.StandardOutput, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("certificateImportPlanned", result.StandardOutput, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void UninstallAuditScopesEveryOptionalRemovalAndSupportsIdempotency()
+    {
+        using var fixture = DistributionFixture.Create();
+        var result = fixture.RunUninstall(
+            "-AuditOnly", "-Force", "-RemoveUserData", "-RemoveCertificate",
+            "-InstalledPackageForTest", "LumaTherm_1.0.0.0_x64__test",
+            "-CertificateThumbprintForTest", fixture.CertificateThumbprint);
+
+        Assert.True(result.ExitCode == 0, result.StandardError + result.StandardOutput);
+        using var json = JsonDocument.Parse(result.StandardOutput);
+        var root = json.RootElement;
+        Assert.Equal("LumaTherm_1.0.0.0_x64__test", root.GetProperty("packageFullName").GetString());
+        Assert.Equal("HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Run", root.GetProperty("runKey").GetString());
+        Assert.Equal("LumaTherm", root.GetProperty("runValue").GetString());
+        Assert.EndsWith(Path.Combine("AppData", "Local", "LumaTherm"), root.GetProperty("userDataPath").GetString(), StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(fixture.CertificateThumbprint, root.GetProperty("certificateThumbprint").GetString());
+
+        var emptyResult = fixture.RunUninstall("-AuditOnly", "-Force", "-InstalledPackageForTest", "");
+        Assert.Equal(0, emptyResult.ExitCode);
+        Assert.Contains("alreadyAbsent", emptyResult.StandardOutput, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("userDataRemovalPlanned", emptyResult.StandardOutput, StringComparison.Ordinal);
+        Assert.DoesNotContain("certificateRemovalPlanned", emptyResult.StandardOutput, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void UninstallAuditRequiresConfirmationAndRejectsAmbiguousPackageInput()
+    {
+        using var fixture = DistributionFixture.Create();
+        var declined = fixture.RunUninstall("-AuditOnly", "-ConfirmationDecisionForTest", "Decline", "-InstalledPackageForTest", "LumaTherm_1.0.0.0_x64__test");
+        Assert.True(declined.ExitCode == 3, declined.StandardError + declined.StandardOutput);
+        Assert.DoesNotContain("packageRemovalPlanned", declined.StandardOutput, StringComparison.Ordinal);
+
+        var ambiguous = fixture.RunUninstall("-AuditOnly", "-Force", "-InstalledPackageForTest", "LumaTherm_a;LumaTherm_b");
+        Assert.NotEqual(0, ambiguous.ExitCode);
+        Assert.Contains("ambiguous", ambiguous.StandardError + ambiguous.StandardOutput, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void UninstallAuditRefusesAFullNameOutsideTheExactLumaThermIdentity()
+    {
+        using var fixture = DistributionFixture.Create();
+        var result = fixture.RunUninstall("-AuditOnly", "-Force", "-InstalledPackageForTest", "OtherProduct_1.0.0.0_x64__test");
+
+        Assert.NotEqual(0, result.ExitCode);
+        Assert.DoesNotContain("packageRemovalPlanned", result.StandardOutput, StringComparison.Ordinal);
+    }
+
+    private sealed class DistributionFixture : IDisposable
+    {
+        private DistributionFixture(string directory, string thumbprint)
+        {
+            Directory = directory;
+            CertificateThumbprint = thumbprint;
+        }
+
+        public string Directory { get; }
+        public string CertificateThumbprint { get; }
+
+        public static DistributionFixture Create()
+        {
+            var directory = Path.Combine(RepositoryLayout.Root, "dist", "packaging-tests", Guid.NewGuid().ToString("N"));
+            System.IO.Directory.CreateDirectory(directory);
+            File.Copy(Path.Combine(RepositoryLayout.Root, "scripts", "install.ps1"), Path.Combine(directory, "install.ps1"));
+            File.Copy(Path.Combine(RepositoryLayout.Root, "scripts", "uninstall.ps1"), Path.Combine(directory, "uninstall.ps1"));
+            File.WriteAllText(Path.Combine(directory, "LumaTherm-1.0.0-win-x64.msix"), "fake signed package");
+            File.WriteAllText(Path.Combine(directory, "LumaTherm-1.0.0-portable-win-x64.zip"), "fake portable package");
+
+            using var rsa = RSA.Create(2048);
+            var request = new CertificateRequest("CN=LumaTherm Local", rsa, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+            using var certificate = request.CreateSelfSigned(DateTimeOffset.UtcNow.AddMinutes(-1), DateTimeOffset.UtcNow.AddDays(1));
+            File.WriteAllBytes(Path.Combine(directory, "LumaTherm.cer"), certificate.Export(X509ContentType.Cert));
+            var thumbprint = certificate.Thumbprint;
+            WriteChecksums(directory);
+            return new DistributionFixture(directory, thumbprint);
+        }
+
+        public PowerShellResult RunInstall(params string[] args) => Run("install.ps1", args);
+        public PowerShellResult RunUninstall(params string[] args) => Run("uninstall.ps1", args);
+
+        private PowerShellResult Run(string script, IReadOnlyList<string> args) =>
+            PowerShellTestHost.Run(Path.Combine(Directory, script), args, new Dictionary<string, string> { ["LUMATHERM_PACKAGING_TEST"] = "1" });
+
+        private static void WriteChecksums(string directory)
+        {
+            var files = System.IO.Directory.GetFiles(directory).Where(path => !path.EndsWith("SHA256SUMS.txt", StringComparison.OrdinalIgnoreCase));
+            var lines = files.OrderBy(Path.GetFileName, StringComparer.OrdinalIgnoreCase)
+                .Select(path => $"{Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(path)))} *{Path.GetFileName(path)}");
+            File.WriteAllLines(Path.Combine(directory, "SHA256SUMS.txt"), lines, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+        }
+
+        public void Dispose()
+        {
+            if (System.IO.Directory.Exists(Directory))
+            {
+                System.IO.Directory.Delete(Directory, recursive: true);
+            }
+        }
+    }
+}
