@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -7,6 +8,7 @@ using Brush = System.Windows.Media.Brush;
 using Button = System.Windows.Controls.Button;
 using Color = System.Windows.Media.Color;
 using LumaTherm.App.ViewModels;
+using LumaTherm.App.Services;
 
 namespace LumaTherm.App;
 
@@ -24,7 +26,11 @@ public partial class MainWindow : System.Windows.Window
         ShowDashboardCommand = new RelayCommand(ShowDashboard);
         ShowSettingsCommand = new RelayCommand(ShowSettings);
         InitializeComponent();
+        Closing += OnWindowClosing;
+        StateChanged += OnWindowStateChanged;
     }
+
+    public WindowClosePolicy? ClosePolicy { get; set; }
 
     public SettingsViewModel? SettingsDataContext
     {
@@ -71,6 +77,24 @@ public partial class MainWindow : System.Windows.Window
         WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
 
     private void CloseButton_Click(object sender, RoutedEventArgs e) => Close();
+
+    private void OnWindowClosing(object? sender, CancelEventArgs args)
+    {
+        if (ClosePolicy?.Decide(WindowCloseReason.Close) == WindowCloseDecision.HideAndCancel)
+        {
+            args.Cancel = true;
+            Hide();
+        }
+    }
+
+    private void OnWindowStateChanged(object? sender, EventArgs args)
+    {
+        if (WindowState == WindowState.Minimized &&
+            ClosePolicy?.Decide(WindowCloseReason.Minimize) == WindowCloseDecision.HideAndCancel)
+        {
+            Hide();
+        }
+    }
 
     private void TitleBar_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {

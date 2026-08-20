@@ -173,7 +173,7 @@ public sealed class NvmlTemperatureSourceTests
         public int GetDeviceName(nint handle, byte[] buffer)
         {
             ThrowIfNeeded();
-            var bytes = System.Text.Encoding.UTF8.GetBytes(_deviceName);
+            var bytes = global::System.Text.Encoding.UTF8.GetBytes(_deviceName);
             Array.Copy(bytes, buffer, bytes.Length);
             return DeviceNameResult;
         }

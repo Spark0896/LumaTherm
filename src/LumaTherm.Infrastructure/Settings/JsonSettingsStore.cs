@@ -72,7 +72,7 @@ public sealed class JsonSettingsStore(string path, TimeProvider timeProvider) : 
     {
         if (File.Exists(_path))
         {
-            var timestamp = _timeProvider.GetUtcNow().ToString("yyyyMMdd-HHmmss", System.Globalization.CultureInfo.InvariantCulture);
+            var timestamp = _timeProvider.GetUtcNow().ToString("yyyyMMdd-HHmmss", global::System.Globalization.CultureInfo.InvariantCulture);
             var directory = Path.GetDirectoryName(_path) ?? string.Empty;
             var namePrefix = $"{Path.GetFileNameWithoutExtension(_path)}.corrupt-{timestamp}";
             var extension = Path.GetExtension(_path);
