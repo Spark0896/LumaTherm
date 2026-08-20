@@ -157,3 +157,39 @@ PASS: no whitespace errors.
 - No `async void`, real install/autostart/tray action, physical hardware write, GCC/RGB Fusion dependency, vendor DLL integration, or raw-HID control was added. Production lighting remains direct Windows LampArray; temperature remains NVML primary with optional MSI Afterburner shared-memory fallback.
 - Tests use fakes/temp files plus bounded real STA dispatcher threads only; all waits have explicit deadlines or cancellation.
 - Remaining acceptance is intentionally hardware/package/manual UI validation in later gates; there is no unresolved lifecycle or startup-cancellation contract in this fix round.
+
+---
+
+## Fix round 2 — bounded non-generic dictionary normalization
+
+Implementation commit: `2fbe2acd05ffb569112c07d721ada77f2bab7952` (`fix: bound dictionary log normalization`).
+
+### Witnessed RED -> GREEN
+
+- **RED:** `NonGenericDictionary_StopsEnumerationAtTheConfiguredItemBound` supplied a deterministic effectively-unbounded `IDictionary` whose enumerator throws after 65 `MoveNext` calls. The old implementation first copied the source into an unbounded intermediate list, reached the 66th call, the logger safely swallowed that failure, and no JSONL record was written (`File.Exists(path)` was false).
+- **GREEN:** non-generic `IDictionary` values are normalized directly. Enumeration stops on the 65th successful entry boundary, emits `[truncated]: true`, filters nested `accessToken`, recursively normalizes accepted values, and writes valid bounded JSONL. No source-sized intermediate collection is allocated.
+
+### Fresh verification
+
+```text
+RollingFileLoggerTests: 9 passed, 0 failed.
+
+Task 11 focused filter:
+Infrastructure 14 + App 23 = 37 passed, 0 failed.
+
+Full solution:
+Core 71 + Infrastructure 91 + App 138 = 300 passed, 0 failed.
+
+Debug build:
+0 warnings, 0 errors.
+
+git diff --check / git diff --cached --check:
+PASS, no whitespace errors.
+```
+
+### Self-review / concerns
+
+- The same 64-item contract, secret-key filtering, string/key sanitization, recursion depth/cycle handling, and truncation marker semantics now apply to generic and non-generic dictionaries.
+- The regression is bounded and cannot hang the suite: it throws immediately if production requests a 66th element.
+- Scope is limited to logger normalization and its test. No application lifecycle, hardware, tray, autostart, LampArray, NVML/Afterburner, GCC/vendor DLL, or raw-HID behavior changed; no real side effects were run.
+- No unresolved concern remains for this finding.
