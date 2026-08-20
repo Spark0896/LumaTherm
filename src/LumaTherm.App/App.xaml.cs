@@ -34,6 +34,7 @@ public partial class App : System.Windows.Application
         _exceptionSource = new WpfExceptionSource(this);
         _exceptionBoundary = new AppExceptionBoundary(
             _exceptionSource,
+            new WpfAppDispatcher(Dispatcher),
             (exception, foreground, notify) => _host.LogUnhandled(exception, foreground, notify),
             RequestShutdown);
         _exceptionBoundary.Attach();

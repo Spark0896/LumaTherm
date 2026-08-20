@@ -122,8 +122,72 @@ public sealed class RollingFileLoggerTests : IDisposable
         badLogger.Dispose();
     }
 
+    [Fact]
+    public void NestedData_IsRecursivelySanitizedAndNeverSerializesUnsupportedDtos()
+    {
+        var path = Path.Combine(_directory, "lumatherm.log");
+        using var logger = new RollingFileLogger(path, 4096, archiveCount: 4);
+        var data = new Dictionary<string, object?>
+        {
+            ["safe\r\nkey"] = new Dictionary<string, object?>
+            {
+                ["accessToken"] = "must-not-leak",
+                ["items"] = new object?[]
+                {
+                    "hello\0world",
+                    new Dictionary<string, object?> { ["password"] = "nested-secret", ["value"] = "ok\u0001" },
+                    new SensitiveDto("dto-secret"),
+                },
+            },
+        };
+
+        logger.Write(AppLogLevel.Information, "nested", "data", data: data);
+
+        using var json = JsonDocument.Parse(File.ReadAllText(path, Encoding.UTF8));
+        var serialized = json.RootElement.GetRawText();
+        Assert.DoesNotContain("must-not-leak", serialized, StringComparison.Ordinal);
+        Assert.DoesNotContain("nested-secret", serialized, StringComparison.Ordinal);
+        Assert.DoesNotContain("dto-secret", serialized, StringComparison.Ordinal);
+        Assert.DoesNotContain("\\u0000", serialized, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("\\u0001", serialized, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("[unsupported:SensitiveDto]", serialized, StringComparison.Ordinal);
+        Assert.Contains("hello world", serialized, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void CyclicAndDeepData_AreFiniteAndLoggingNeverThrows()
+    {
+        var path = Path.Combine(_directory, "lumatherm.log");
+        using var logger = new RollingFileLogger(path, 4096, archiveCount: 4);
+        var cycle = new List<object?>();
+        cycle.Add(cycle);
+        var deep = new Dictionary<string, object?>();
+        var cursor = deep;
+        for (var index = 0; index < 20; index++)
+        {
+            var next = new Dictionary<string, object?>();
+            cursor["next"] = next;
+            cursor = next;
+        }
+
+        var exception = Record.Exception(() => logger.Write(
+            AppLogLevel.Information,
+            "bounded",
+            "data",
+            data: new Dictionary<string, object?> { ["cycle"] = cycle, ["deep"] = deep }));
+
+        Assert.Null(exception);
+        var serialized = File.ReadAllText(path, Encoding.UTF8);
+        Assert.InRange(Encoding.UTF8.GetByteCount(serialized), 1, 4096);
+        Assert.Contains("[cycle]", serialized, StringComparison.Ordinal);
+        Assert.Contains("[max-depth]", serialized, StringComparison.Ordinal);
+        using var _ = JsonDocument.Parse(serialized);
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(_directory)) Directory.Delete(_directory, recursive: true);
     }
+
+    private sealed record SensitiveDto(string Secret);
 }

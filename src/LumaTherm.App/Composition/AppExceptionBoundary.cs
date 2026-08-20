@@ -22,19 +22,24 @@ public interface IAppExceptionSource
 public sealed class AppExceptionBoundary : IDisposable
 {
     private readonly IAppExceptionSource _source;
+    private readonly IAppDispatcher _dispatcher;
     private readonly Action<Exception, bool, bool> _route;
     private readonly Action _requestShutdown;
     private int _attached;
     private int _foregroundNotified;
     private int _backgroundNotified;
     private int _shutdownRequested;
+    private int _foregroundRouting;
+    private int _backgroundRouting;
 
     public AppExceptionBoundary(
         IAppExceptionSource source,
+        IAppDispatcher dispatcher,
         Action<Exception, bool, bool> route,
         Action requestShutdown)
     {
         _source = source ?? throw new ArgumentNullException(nameof(source));
+        _dispatcher = dispatcher ?? throw new ArgumentNullException(nameof(dispatcher));
         _route = route ?? throw new ArgumentNullException(nameof(route));
         _requestShutdown = requestShutdown ?? throw new ArgumentNullException(nameof(requestShutdown));
     }
@@ -60,8 +65,16 @@ public sealed class AppExceptionBoundary : IDisposable
     private void OnDispatcherUnhandled(object? sender, AppDispatcherUnhandledEventArgs args)
     {
         args.Handled = true;
-        _route(args.Exception, true, Interlocked.CompareExchange(ref _foregroundNotified, 1, 0) == 0);
-        if (Interlocked.CompareExchange(ref _shutdownRequested, 1, 0) == 0) _requestShutdown();
+        if (Interlocked.CompareExchange(ref _foregroundRouting, 1, 0) != 0) return;
+        DispatchContained(
+            () =>
+            {
+                try { _route(args.Exception, true, Interlocked.CompareExchange(ref _foregroundNotified, 1, 0) == 0); }
+                catch { }
+                finally { RequestShutdownContained(); }
+            },
+            () => Volatile.Write(ref _foregroundRouting, 0),
+            requestShutdownOnDispatchFailure: true);
     }
 
     private void OnDomainUnhandled(object? sender, AppBackgroundUnhandledEventArgs args) => RouteBackground(args);
@@ -72,6 +85,53 @@ public sealed class AppExceptionBoundary : IDisposable
         RouteBackground(args);
     }
 
-    private void RouteBackground(AppBackgroundUnhandledEventArgs args) =>
-        _route(args.Exception, false, Interlocked.CompareExchange(ref _backgroundNotified, 1, 0) == 0);
+    private void RouteBackground(AppBackgroundUnhandledEventArgs args)
+    {
+        if (Interlocked.CompareExchange(ref _backgroundRouting, 1, 0) != 0) return;
+        DispatchContained(
+            () =>
+            {
+                try { _route(args.Exception, false, Interlocked.CompareExchange(ref _backgroundNotified, 1, 0) == 0); }
+                catch { }
+            },
+            () => Volatile.Write(ref _backgroundRouting, 0),
+            requestShutdownOnDispatchFailure: false);
+    }
+
+    private void DispatchContained(Action action, Action completed, bool requestShutdownOnDispatchFailure)
+    {
+        Task dispatch;
+        try
+        {
+            dispatch = _dispatcher.InvokeAsync(() =>
+            {
+                try { action(); }
+                finally { completed(); }
+            });
+        }
+        catch
+        {
+            completed();
+            if (requestShutdownOnDispatchFailure) RequestShutdownContained();
+            return;
+        }
+
+        dispatch.ContinueWith(
+            failedOrCanceled =>
+            {
+                if (failedOrCanceled.IsFaulted) _ = failedOrCanceled.Exception;
+                completed();
+                if (requestShutdownOnDispatchFailure) RequestShutdownContained();
+            },
+            CancellationToken.None,
+            TaskContinuationOptions.NotOnRanToCompletion | TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default);
+    }
+
+    private void RequestShutdownContained()
+    {
+        if (Interlocked.CompareExchange(ref _shutdownRequested, 1, 0) != 0) return;
+        try { _requestShutdown(); }
+        catch { }
+    }
 }

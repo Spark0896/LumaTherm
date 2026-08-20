@@ -31,6 +31,23 @@ public interface IAppDiscoverySession : IAsyncDisposable
     Task StartAsync(CancellationToken cancellationToken);
 }
 
+public interface IAppDispatcher
+{
+    Task InvokeAsync(Action action, CancellationToken cancellationToken = default);
+}
+
+public sealed class InlineAppDispatcher(Action<Action>? observer = null) : IAppDispatcher
+{
+    public Task InvokeAsync(Action action, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(action);
+        cancellationToken.ThrowIfCancellationRequested();
+        observer?.Invoke(action);
+        if (observer is null) action();
+        return Task.CompletedTask;
+    }
+}
+
 public sealed class AppServices
 {
     public AppServices(
@@ -44,7 +61,7 @@ public sealed class AppServices
         Func<IAppUiSession, IThermalRuntime, IAppTraySession> createTray,
         Func<IThermalRuntime, IAsyncDisposable> createPower,
         Func<IThermalRuntime, IAppUiSession, IAppDiscoverySession> createDiscovery,
-        Action<Action> dispatchToUi)
+        IAppDispatcher dispatcher)
     {
         CreateLogger = createLogger ?? throw new ArgumentNullException(nameof(createLogger));
         CreateSingleInstance = createSingleInstance ?? throw new ArgumentNullException(nameof(createSingleInstance));
@@ -56,7 +73,7 @@ public sealed class AppServices
         CreateTray = createTray ?? throw new ArgumentNullException(nameof(createTray));
         CreatePower = createPower ?? throw new ArgumentNullException(nameof(createPower));
         CreateDiscovery = createDiscovery ?? throw new ArgumentNullException(nameof(createDiscovery));
-        DispatchToUi = dispatchToUi ?? throw new ArgumentNullException(nameof(dispatchToUi));
+        Dispatcher = dispatcher ?? throw new ArgumentNullException(nameof(dispatcher));
     }
 
     internal Func<IAppLogger> CreateLogger { get; }
@@ -69,7 +86,7 @@ public sealed class AppServices
     internal Func<IAppUiSession, IThermalRuntime, IAppTraySession> CreateTray { get; }
     internal Func<IThermalRuntime, IAsyncDisposable> CreatePower { get; }
     internal Func<IThermalRuntime, IAppUiSession, IAppDiscoverySession> CreateDiscovery { get; }
-    internal Action<Action> DispatchToUi { get; }
+    internal IAppDispatcher Dispatcher { get; }
 
     public static IReadOnlyList<string> ProductionTemperatureSourceNames()
     {

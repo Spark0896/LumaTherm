@@ -1,3 +1,4 @@
+using System.Collections;
 using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
@@ -7,6 +8,8 @@ namespace LumaTherm.Infrastructure.Diagnostics;
 
 public sealed class RollingFileLogger : IAppLogger, IDisposable
 {
+    private const int MaximumDataDepth = 8;
+    private const int MaximumCollectionItems = 64;
     public const long DefaultMaximumBytes = 1024 * 1024;
     public const int DefaultArchiveCount = 4;
     private static readonly UTF8Encoding Utf8 = new(encoderShouldEmitUTF8Identifier: false);
@@ -172,19 +175,85 @@ public sealed class RollingFileLogger : IAppLogger, IDisposable
     private static IReadOnlyDictionary<string, object?>? SanitizeData(IReadOnlyDictionary<string, object?>? data)
     {
         if (data is null) return null;
+        var path = new HashSet<object>(ReferenceEqualityComparer.Instance);
+        return NormalizeDictionary(data, depth: 0, path);
+    }
+
+    private static IReadOnlyDictionary<string, object?> NormalizeDictionary(
+        IEnumerable<KeyValuePair<string, object?>> data,
+        int depth,
+        HashSet<object> path)
+    {
         var safe = new Dictionary<string, object?>(StringComparer.Ordinal);
+        var count = 0;
         foreach (var pair in data)
         {
-            var key = Sanitize(pair.Key);
-            if (key.Contains("password", StringComparison.OrdinalIgnoreCase)
-                || key.Contains("secret", StringComparison.OrdinalIgnoreCase)
-                || key.Contains("token", StringComparison.OrdinalIgnoreCase)
-                || key.Contains("certificate", StringComparison.OrdinalIgnoreCase))
+            if (count++ >= MaximumCollectionItems)
             {
-                continue;
+                safe["[truncated]"] = true;
+                break;
             }
-            safe[key] = pair.Value is string text ? Sanitize(text) : pair.Value;
+            var key = Sanitize(pair.Key);
+            if (IsSecretKey(key)) continue;
+            safe[key] = NormalizeValue(pair.Value, depth + 1, path);
         }
         return safe;
     }
+
+    private static object? NormalizeValue(object? value, int depth, HashSet<object> path)
+    {
+        if (value is null) return null;
+        if (depth > MaximumDataDepth) return "[max-depth]";
+        if (value is string text) return Sanitize(text);
+        if (value is char character) return Sanitize(character.ToString());
+        if (value is bool or byte or sbyte or short or ushort or int or uint or long or ulong or float or double or decimal
+            or DateTime or DateTimeOffset or DateOnly or TimeOnly or Guid)
+        {
+            return value;
+        }
+        if (value is Enum) return Sanitize(value.ToString());
+
+        if (!path.Add(value)) return "[cycle]";
+        try
+        {
+            if (value is IReadOnlyDictionary<string, object?> readOnlyDictionary)
+            {
+                return NormalizeDictionary(readOnlyDictionary, depth, path);
+            }
+            if (value is IDictionary dictionary)
+            {
+                var entries = new List<KeyValuePair<string, object?>>();
+                foreach (DictionaryEntry entry in dictionary)
+                {
+                    if (entry.Key is string key) entries.Add(new KeyValuePair<string, object?>(key, entry.Value));
+                }
+                return NormalizeDictionary(entries, depth, path);
+            }
+            if (value is IEnumerable enumerable)
+            {
+                var safe = new List<object?>();
+                foreach (var item in enumerable)
+                {
+                    if (safe.Count >= MaximumCollectionItems)
+                    {
+                        safe.Add("[truncated]");
+                        break;
+                    }
+                    safe.Add(NormalizeValue(item, depth + 1, path));
+                }
+                return safe;
+            }
+            return $"[unsupported:{Sanitize(value.GetType().Name)}]";
+        }
+        finally
+        {
+            path.Remove(value);
+        }
+    }
+
+    private static bool IsSecretKey(string key) =>
+        key.Contains("password", StringComparison.OrdinalIgnoreCase)
+        || key.Contains("secret", StringComparison.OrdinalIgnoreCase)
+        || key.Contains("token", StringComparison.OrdinalIgnoreCase)
+        || key.Contains("certificate", StringComparison.OrdinalIgnoreCase);
 }

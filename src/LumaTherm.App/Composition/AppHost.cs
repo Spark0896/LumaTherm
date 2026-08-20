@@ -25,8 +25,10 @@ public sealed class AppHost : IAsyncDisposable
     private IAppDiscoverySession? _discovery;
     private Task<bool>? _startTask;
     private Task? _stopTask;
+    private CancellationTokenSource? _startupCancellation;
     private bool _sentinelBegun;
     private bool _cleanupCompleted;
+    private bool _stopRequested;
     private string? _lastSensorSource;
     private string? _lastLampId;
     private RuntimeStatus? _lastRuntimeStatus;
@@ -50,7 +52,9 @@ public sealed class AppHost : IAsyncDisposable
         lock (_sync)
         {
             if (_stopTask is not null) return Task.FromException<bool>(new InvalidOperationException("LumaTherm is stopping or stopped."));
-            return _startTask ??= StartCoreAsync(cancellationToken);
+            if (_startTask is not null) return _startTask;
+            _startupCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            return _startTask = StartCoreAsync(_startupCancellation.Token);
         }
     }
 
@@ -71,6 +75,7 @@ public sealed class AppHost : IAsyncDisposable
                 _singleInstance = null;
                 DisposeLogger();
                 lock (_sync) _cleanupCompleted = true;
+                DisposeStartupCancellation();
                 _requestExit();
                 return false;
             }
@@ -85,6 +90,7 @@ public sealed class AppHost : IAsyncDisposable
             }
             Attempt(DisposeLogger, cleanupFailures);
             lock (_sync) _cleanupCompleted = true;
+            DisposeStartupCancellation();
             if (cleanupFailures.Count == 0) throw;
             throw new AggregateException([ownershipFailure, .. cleanupFailures]);
         }
@@ -108,14 +114,20 @@ public sealed class AppHost : IAsyncDisposable
             }
 
             _startup = _services.CreateStartupService(_runtime);
-            _ui = _services.CreateUi(_runtime, _startup, settings);
-            if (!_autostart) _ui.Show();
-            _tray = _services.CreateTray(_ui, _runtime);
-            _power = _services.CreatePower(_runtime);
+            await _services.Dispatcher.InvokeAsync(() =>
+            {
+                _ui = _services.CreateUi(_runtime, _startup, settings);
+                if (!_autostart) _ui.Show();
+                _tray = _services.CreateTray(_ui, _runtime);
+                _power = _services.CreatePower(_runtime);
+                _discovery = _services.CreateDiscovery(_runtime, _ui);
+            }, cancellationToken).ConfigureAwait(false);
             var warning = priorCrash ? CrashRecoveryWarning : load.RecoveryMessage;
-            if (!string.IsNullOrWhiteSpace(warning)) _tray.ShowRecoveryWarning(warning);
-            _discovery = _services.CreateDiscovery(_runtime, _ui);
-            await _discovery.StartAsync(cancellationToken).ConfigureAwait(false);
+            if (!string.IsNullOrWhiteSpace(warning))
+            {
+                await _services.Dispatcher.InvokeAsync(() => _tray!.ShowRecoveryWarning(warning), cancellationToken).ConfigureAwait(false);
+            }
+            await _discovery!.StartAsync(cancellationToken).ConfigureAwait(false);
             await _runtime.StartAsync(cancellationToken).ConfigureAwait(false);
             SafeLog(AppLogLevel.Information, "app.start", "LumaTherm started.", data: new Dictionary<string, object?>
             {
@@ -140,10 +152,17 @@ public sealed class AppHost : IAsyncDisposable
 
     public Task StopAsync(CancellationToken cancellationToken)
     {
+        Task stop;
+        CancellationTokenSource? startupCancellation;
         lock (_sync)
         {
-            return _stopTask ??= StopCoreAsync();
+            _stopRequested = true;
+            startupCancellation = _startupCancellation;
+            stop = _stopTask ??= StopCoreAsync();
         }
+        try { startupCancellation?.Cancel(); }
+        catch (ObjectDisposedException) { }
+        return stop;
     }
 
     public void LogUnhandled(Exception exception, bool foreground, bool notify = true)
@@ -191,24 +210,87 @@ public sealed class AppHost : IAsyncDisposable
         await AttemptAsync(() => _runtime?.StopAsync(CancellationToken.None) ?? Task.CompletedTask, failures).ConfigureAwait(false);
         if (_runtime is not null) _runtime.SnapshotChanged -= OnRuntimeSnapshotChanged;
         await AttemptAsync(() => _discovery?.DisposeAsync().AsTask() ?? Task.CompletedTask, failures).ConfigureAwait(false);
+        _discovery = null;
         await AttemptAsync(() => _power?.DisposeAsync().AsTask() ?? Task.CompletedTask, failures).ConfigureAwait(false);
-        await AttemptAsync(() => _tray?.DisposeAsync().AsTask() ?? Task.CompletedTask, failures).ConfigureAwait(false);
-        Attempt(() => _ui?.Dispose(), failures);
+        _power = null;
+        var tray = _tray;
+        Task trayDisposal = Task.CompletedTask;
+        await AttemptAsync(
+            () => _services.Dispatcher.InvokeAsync(
+                () => trayDisposal = tray?.DisposeAsync().AsTask() ?? Task.CompletedTask,
+                CancellationToken.None),
+            failures).ConfigureAwait(false);
+        await AttemptAsync(() => trayDisposal, failures).ConfigureAwait(false);
+        _tray = null;
+        var ui = _ui;
+        await AttemptAsync(
+            () => _services.Dispatcher.InvokeAsync(() => ui?.Dispose(), CancellationToken.None),
+            failures).ConfigureAwait(false);
+        _ui = null;
+        var sentinelRemoved = false;
+        if (removeSentinel && failures.Count == 0 && _sentinelBegun && _sentinel is not null)
+        {
+            var beforeSentinel = failures.Count;
+            await AttemptAsync(() => _sentinel.CompleteAsync(CancellationToken.None), failures).ConfigureAwait(false);
+            sentinelRemoved = failures.Count == beforeSentinel;
+        }
+        SafeLog(failures.Count == 0 ? AppLogLevel.Information : AppLogLevel.Error, "app.stop", failures.Count == 0 ? "LumaTherm stopped." : "LumaTherm stop was incomplete.");
+        var beforeLogger = failures.Count;
+        Attempt(DisposeLogger, failures);
+        if (sentinelRemoved && failures.Count > beforeLogger)
+        {
+            await RestoreSentinelAsync(failures).ConfigureAwait(false);
+            sentinelRemoved = false;
+        }
         if (_singleInstance is not null)
         {
             _singleInstance.ActivationRequested -= OnActivationRequested;
+            var beforeInstance = failures.Count;
             await AttemptAsync(() => _singleInstance.DisposeAsync().AsTask(), failures).ConfigureAwait(false);
+            if (sentinelRemoved && failures.Count > beforeInstance)
+            {
+                await RestoreSentinelAsync(failures).ConfigureAwait(false);
+            }
+            _singleInstance = null;
         }
-        SafeLog(failures.Count == 0 ? AppLogLevel.Information : AppLogLevel.Error, "app.stop", failures.Count == 0 ? "LumaTherm stopped." : "LumaTherm stop was incomplete.");
-        Attempt(DisposeLogger, failures);
-        if (removeSentinel && failures.Count == 0 && _sentinelBegun && _sentinel is not null)
-        {
-            await AttemptAsync(() => _sentinel.CompleteAsync(CancellationToken.None), failures).ConfigureAwait(false);
-        }
+        _runtime = null;
+        _startup = null;
+        _settingsStore = null;
+        DisposeStartupCancellation();
         return failures;
     }
 
-    private void OnActivationRequested(object? sender, EventArgs args) => _services.DispatchToUi(() => _ui?.ShowRestoreActivate());
+    private async Task RestoreSentinelAsync(List<Exception> failures)
+    {
+        if (_sentinel is null) return;
+        await AttemptAsync(() => _sentinel.BeginAsync(CancellationToken.None), failures).ConfigureAwait(false);
+    }
+
+    private void OnActivationRequested(object? sender, EventArgs args)
+    {
+        lock (_sync)
+        {
+            if (_stopRequested || _cleanupCompleted || _ui is null) return;
+        }
+        try
+        {
+            ObserveDispatch(_services.Dispatcher.InvokeAsync(() =>
+            {
+                IAppUiSession? ui;
+                lock (_sync) ui = _stopRequested || _cleanupCompleted ? null : _ui;
+                ui?.ShowRestoreActivate();
+            }, CancellationToken.None));
+        }
+        catch
+        {
+        }
+    }
+
+    private static void ObserveDispatch(Task dispatch) => dispatch.ContinueWith(
+        completed => _ = completed.Exception,
+        CancellationToken.None,
+        TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
+        TaskScheduler.Default);
 
     private void OnRuntimeSnapshotChanged(object? sender, RuntimeSnapshot snapshot)
     {
@@ -265,6 +347,15 @@ public sealed class AppHost : IAsyncDisposable
     {
         if (_logger is IDisposable disposable) disposable.Dispose();
         _logger = null;
+    }
+
+    private void DisposeStartupCancellation()
+    {
+        lock (_sync)
+        {
+            _startupCancellation?.Dispose();
+            _startupCancellation = null;
+        }
     }
 
     private static async Task AttemptAsync(Func<Task> action, List<Exception> failures)

@@ -55,7 +55,7 @@ public static class ProductionAppServices
             (ui, runtime) => new WpfTraySession((WpfUiSession)ui, runtime, application, exception => WriteFailure(logger, "app.unhandled", exception)),
             runtime => new PowerEventService(new WindowsPowerEventSource(), runtime, exception => WriteFailure(logger, "runtime.power_failed", exception)),
             (_, _) => new ReadOnlyDiscoverySession(lighting ?? throw new InvalidOperationException("Lighting composition is unavailable."), () => logger),
-            action => application.Dispatcher.BeginInvoke(action));
+            new WpfAppDispatcher(application.Dispatcher));
     }
 
     private static IStartupService CreateStartupService()
