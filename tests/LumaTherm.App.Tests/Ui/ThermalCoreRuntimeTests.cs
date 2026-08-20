@@ -699,7 +699,7 @@ public sealed class ThermalCoreStaFixture : IDisposable
         try
         {
             _stage = "constructing Application";
-            var application = new LumaTherm.App.App();
+            var application = new LumaTherm.App.App(startHost: false);
             _stage = "initializing Application resources";
             application.InitializeComponent();
             _stage = "STA queue ready";
