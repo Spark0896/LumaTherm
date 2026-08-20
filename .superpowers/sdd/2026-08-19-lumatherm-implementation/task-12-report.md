@@ -36,7 +36,7 @@ The controller-gated real `build-release.ps1` invocation has intentionally not r
 - Pinned BuildTools property resolved to `C:\Users\User\.nuget\packages\microsoft.windows.sdk.buildtools\10.0.26100.8249`.
 - Plan mode selected absolute x64 `MakeAppx.exe` and `SignTool.exe` from `bin\10.0.26100.0\x64`.
 - Publish contract includes self-contained `win-x64`, single file, native self-extraction, and disabled symbols.
-- Full mode cleans only its owned `dist`, publish, and package-layout locations; generated outputs/signing material are ignored. No production GCC/RGB Fusion, raw HID, vendor DLL, lighting, autostart, package, registry, or certificate trust operation is used.
+- Full mode cleans only its owned `dist`, publish, and package-layout locations; generated outputs/signing material are ignored. It does not use production GCC/RGB Fusion, raw HID, vendor DLL, lighting, autostart, package installation, or registry operations. Its only trust operation is the exact temporary CurrentUser certificate bootstrap described in the controller checkpoint below.
 - Installer requires exactly the five named release artifacts, checks every checksum, and requires the signer thumbprint to equal sibling `LumaTherm.cer`. A `Valid` signature installs without a trust mutation. A matching `NotTrusted` signature requires explicit confirmation, imports only that CER into CurrentUser TrustedPeople when absent, then re-runs Authenticode and requires `Valid` before installation. It never enables autostart.
 - Uninstaller confirms unless forced, targets one exact package and only the `LumaTherm` portable Run value, preserves user data by default, and removes only the distributed CER thumbprint when explicitly requested.
 
@@ -44,10 +44,10 @@ The controller-gated real `build-release.ps1` invocation has intentionally not r
 
 ```text
 dotnet test tests/LumaTherm.Packaging.Tests/LumaTherm.Packaging.Tests.csproj -c Release --no-restore -p:NuGetAudit=false
-PASS: 29 passed, 0 failed.
+PASS: 36 passed, 0 failed.
 
 dotnet test LumaTherm.sln -c Release --no-restore -p:NuGetAudit=false
-PASS: Core 71 + Infrastructure 91 + App 138 + Packaging 29 = 329 passed, 0 failed.
+PASS: Core 71 + Infrastructure 91 + App 138 + Packaging 36 = 336 passed, 0 failed.
 
 dotnet build LumaTherm.sln -c Release --no-restore -p:NuGetAudit=false
 PASS: 0 warnings, 0 errors.
@@ -90,3 +90,14 @@ Expected certificate-store delta: one transient code-signing certificate with su
 - M1 RED: installer accepted version globs and checksum extras. GREEN: it requires exact `LumaTherm-1.0.0-win-x64.msix`, exact casing and exactly five checksum names, then queries and reports one unique installed `LumaTherm` PackageFullName after Add-AppxPackage.
 - Fresh safe verification after this round: Packaging 29/29; Core 71 + Infrastructure 91 + App 138 + Packaging 29 = 329/329; Release build 0 warnings and 0 errors; deterministic asset parity 1/1; real non-mutating Plan resolved the pinned absolute x64 tools; `git diff --check` reported no whitespace errors (only the repository's LF-to-CRLF checkout notices).
 - No Full mode, certificate-store mutation, MSIX install/uninstall, registry mutation, production app launch, or hardware access was performed. The controller-approved real MakeAppx/SignTool checkpoint remains pending.
+
+## Review fix round 2 — recursive-tree and installer rollback safety
+
+Source fix: `22c389c` (`fix: close packaging mutation safety gaps`).
+
+- C2 descendant RED: allowed output roots containing child junctions passed ancestor-only checks. PrepareLayout reached recursive layout deletion and published-tree copying; uninstall planned recursive user-data removal. GREEN: recursive operations enumerate one physical directory level at a time, reject each reparse point before it can be traversed, and recheck immediately before every recursive delete, copy, archive input, and owned signing-directory cleanup. Real junction regressions prove refusal while preserving external sentinels and stale target content.
+- Installer rollback RED: after importing the exact TrustedPeople certificate, an Authenticode exception/non-Valid result or Add-AppxPackage failure could leave invocation-owned trust behind. GREEN: post-import verification and installation are enclosed by ownership-aware `try`/`finally`; failures remove only the exact invocation-owned trust entry, successful installation retains it so the package remains runnable, and a pre-existing trust entry is never removed. Audit tests prove re-verification-failure and install-failure cleanup ordering plus successful retention without touching the real certificate store or package registry.
+- Release-directory RED: an extra sibling omitted from SHA256SUMS.txt was ignored. GREEN: installer enumerates the release directory and requires exactly the five case-exact artifacts plus `SHA256SUMS.txt`, with no extra file or directory.
+- Fresh safe verification after this round: Packaging 36/36; Core 71 + Infrastructure 91 + App 138 + Packaging 36 = 336/336; Release build 0 warnings and 0 errors; deterministic asset parity 1/1; real non-mutating Plan resolved pinned `10.0.26100.8249` absolute x64 MakeAppx/SignTool; `git diff --check` reported no whitespace errors apart from checkout line-ending notices.
+- Revised checkpoint store delta for Full is unchanged in scope: one generated code-signing certificate is transiently owned in CurrentUser/My and, only if absent, the matching public certificate is transiently owned in CurrentUser/TrustedPeople for `/pa`; both owned entries are independently removed and verified in `finally`, pre-existing trust is retained, and the unique signing run directory is removed. Installer trust persistence applies only to a later explicit user-approved installation and is outside the Full release checkpoint.
+- Full mode, certificate mutation, package install/uninstall, registry changes, production launch, and hardware access were not run.
