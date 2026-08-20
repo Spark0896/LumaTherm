@@ -12,10 +12,16 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
+if (-not [string]::IsNullOrWhiteSpace($SdkBuildToolsPath) -and
+    ($Mode -ne 'Plan' -or $env:LUMATHERM_PACKAGING_TEST -ne '1')) {
+    throw '-SdkBuildToolsPath is permitted only in Plan mode with LUMATHERM_PACKAGING_TEST=1.'
+}
+
 $repositoryRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $artifactsRoot = Join-Path $repositoryRoot 'artifacts'
 $distRoot = Join-Path $repositoryRoot 'dist'
-$localSigningRoot = Join-Path $repositoryRoot 'packaging\local-signing'
+$localSigningBaseRoot = Join-Path $repositoryRoot 'packaging\local-signing'
+$localSigningRunRoot = Join-Path $localSigningBaseRoot ('run-' + [Guid]::NewGuid().ToString('N'))
 $manifestPath = Join-Path $repositoryRoot 'packaging\AppxManifest.xml'
 $layoutRoot = Join-Path $artifactsRoot 'package-layout'
 $publishRoot = Join-Path $artifactsRoot 'publish\win-x64'
@@ -27,11 +33,31 @@ $safeDotnetOutputArguments = @('-p:UseArtifactsOutput=true', "-p:ArtifactsPath=$
 function Assert-PathUnderAllowedRoot {
     param([Parameter(Mandatory = $true)][string]$Path)
     $fullPath = [System.IO.Path]::GetFullPath($Path)
-    $allowed = @($artifactsRoot, $distRoot, $localSigningRoot)
+    $allowed = @($artifactsRoot, $distRoot, $localSigningBaseRoot)
     foreach ($root in $allowed) {
         $fullRoot = [System.IO.Path]::GetFullPath($root).TrimEnd('\') + '\'
         if ($fullPath.StartsWith($fullRoot, [System.StringComparison]::OrdinalIgnoreCase) -or
             $fullPath.TrimEnd('\').Equals($fullRoot.TrimEnd('\'), [System.StringComparison]::OrdinalIgnoreCase)) {
+            $repository = [System.IO.Path]::GetFullPath($repositoryRoot).TrimEnd('\')
+            if (-not ($fullPath.Equals($repository, [System.StringComparison]::OrdinalIgnoreCase) -or
+                $fullPath.StartsWith($repository + '\', [System.StringComparison]::OrdinalIgnoreCase))) {
+                throw "Path is outside the physical repository root: $fullPath"
+            }
+            $repositoryItem = Get-Item -LiteralPath $repository -Force
+            if (($repositoryItem.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+                throw "Repository root itself is a reparse point: $repository"
+            }
+            $current = $repository
+            $relative = $fullPath.Substring($repository.Length).TrimStart('\')
+            foreach ($segment in @($relative.Split('\') | Where-Object { $_.Length -gt 0 })) {
+                $current = Join-Path $current $segment
+                if (Test-Path -LiteralPath $current) {
+                    $item = Get-Item -LiteralPath $current -Force
+                    if (($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+                        throw "Refusing a sensitive operation through a reparse point: $current"
+                    }
+                }
+            }
             return
         }
     }
@@ -53,6 +79,7 @@ function Open-SigningCertificate {
 
 function Resolve-SdkTools {
     param([string]$PackageRoot)
+    $isTestOverride = -not [string]::IsNullOrWhiteSpace($PackageRoot)
     if ([string]::IsNullOrWhiteSpace($PackageRoot)) {
         $dotnet = Join-Path $repositoryRoot '.dotnet\dotnet.exe'
         if (-not (Test-Path -LiteralPath $dotnet -PathType Leaf)) {
@@ -69,6 +96,12 @@ function Resolve-SdkTools {
         $PackageRoot = $resolvedLine.Trim()
     }
     $PackageRoot = [System.IO.Path]::GetFullPath($PackageRoot)
+    if (-not $isTestOverride) {
+        $expectedSuffix = [System.IO.Path]::Combine('microsoft.windows.sdk.buildtools', '10.0.26100.8249')
+        if (-not $PackageRoot.TrimEnd('\').EndsWith($expectedSuffix, [System.StringComparison]::OrdinalIgnoreCase)) {
+            throw "Resolved SDK BuildTools path is not the pinned package/version: $PackageRoot"
+        }
+    }
     $makeAppx = Get-ChildItem -LiteralPath (Join-Path $PackageRoot 'bin') -Filter 'MakeAppx.exe' -File -Recurse |
         Where-Object { $_.Directory.Name -eq 'x64' } | Sort-Object FullName -Descending | Select-Object -First 1
     $signTool = Get-ChildItem -LiteralPath (Join-Path $PackageRoot 'bin') -Filter 'SignTool.exe' -File -Recurse |
@@ -184,13 +217,27 @@ if ($Mode -eq 'Plan') {
         packageLayout = $layoutRoot
         msixName = $msixName
         zipName = $zipName
-        allowedWriteRoots = @($artifactsRoot, $distRoot, $localSigningRoot)
+        allowedWriteRoots = @($artifactsRoot, $distRoot, $localSigningBaseRoot)
+        localSigningDirectory = $localSigningRunRoot
+        localCertificateWorkflow = if ([string]::IsNullOrWhiteSpace($CertificatePath)) { @(
+            'create:CurrentUser/My', 'export:owned-run-directory', 'sign:SHA256',
+            'import-if-absent:CurrentUser/TrustedPeople', 'verify:/pa',
+            'remove-if-owned:CurrentUser/TrustedPeople', 'remove:CurrentUser/My',
+            'verify:owned-store-cleanup', 'remove:owned-run-directory'
+        ) } else { @() }
+        localCertificateProfile = [ordered]@{
+            subject = 'CN=LumaTherm Local'
+            enhancedKeyUsage = '1.3.6.1.5.5.7.3.3'
+            keyUsage = 'DigitalSignature'
+        }
     }
     Write-Output ($plan | ConvertTo-Json -Depth 4 -Compress)
     exit 0
 }
 
-New-Item -ItemType Directory -Path $artifactsRoot, $distRoot, $localSigningRoot -Force | Out-Null
+Assert-PathUnderAllowedRoot -Path $artifactsRoot
+Assert-PathUnderAllowedRoot -Path $distRoot
+New-Item -ItemType Directory -Path $artifactsRoot, $distRoot -Force | Out-Null
 $dotnetPath = Join-Path $repositoryRoot '.dotnet\dotnet.exe'
 & $dotnetPath @restoreArguments
 if ($LASTEXITCODE -ne 0) { throw 'Release restore failed.' }
@@ -200,6 +247,7 @@ $tools = Resolve-SdkTools -PackageRoot $SdkBuildToolsPath
 Assert-PathUnderAllowedRoot -Path $distRoot
 if (Test-Path -LiteralPath $distRoot) { Remove-Item -LiteralPath $distRoot -Recurse -Force }
 New-Item -ItemType Directory -Path $distRoot | Out-Null
+Assert-PathUnderAllowedRoot -Path $publishRoot
 if (Test-Path -LiteralPath $publishRoot) { Remove-Item -LiteralPath $publishRoot -Recurse -Force }
 & $dotnetPath @publishArguments
 if ($LASTEXITCODE -ne 0) { throw 'Self-contained win-x64 publish failed.' }
@@ -209,6 +257,11 @@ $createdCertificate = $null
 $certificate = $null
 $plainPassword = $CertificatePassword
 $pfxPath = $CertificatePath
+$trustedCertificateAdded = $false
+$trustedCertificatePath = $null
+$transientThumbprint = $null
+Assert-PathUnderAllowedRoot -Path $localSigningRunRoot
+New-Item -ItemType Directory -Path $localSigningRunRoot -Force | Out-Null
 try {
     if ([string]::IsNullOrWhiteSpace($pfxPath)) {
         $randomBytes = New-Object byte[] 32
@@ -217,10 +270,12 @@ try {
         finally { $random.Dispose() }
         $plainPassword = [Convert]::ToBase64String($randomBytes)
         $securePassword = ConvertTo-SecureString -String $plainPassword -AsPlainText -Force
-        $createdCertificate = New-SelfSignedCertificate -Type Custom -Subject 'CN=LumaTherm Local' -KeyAlgorithm RSA -KeyLength 2048 -HashAlgorithm SHA256 -KeyExportPolicy Exportable -CertStoreLocation 'Cert:\CurrentUser\My' -NotAfter (Get-Date).AddYears(1)
-        $pfxPath = Join-Path $localSigningRoot 'LumaTherm-local.pfx'
+        $createdCertificate = New-SelfSignedCertificate -Type Custom -Subject 'CN=LumaTherm Local' -FriendlyName 'LumaTherm Local Package Signing' -KeyAlgorithm RSA -KeyLength 2048 -HashAlgorithm SHA256 -KeyUsage DigitalSignature -TextExtension @('2.5.29.37={text}1.3.6.1.5.5.7.3.3') -KeyExportPolicy Exportable -CertStoreLocation 'Cert:\CurrentUser\My' -NotAfter (Get-Date).AddYears(1)
+        $transientThumbprint = $createdCertificate.Thumbprint
+        $pfxPath = Join-Path $localSigningRunRoot 'LumaTherm-local.pfx'
+        Assert-PathUnderAllowedRoot -Path $localSigningRunRoot
         Export-PfxCertificate -Cert $createdCertificate -FilePath $pfxPath -Password $securePassword | Out-Null
-        Export-Certificate -Cert $createdCertificate -FilePath (Join-Path $localSigningRoot 'LumaTherm.cer') -Type CERT | Out-Null
+        Export-Certificate -Cert $createdCertificate -FilePath (Join-Path $localSigningRunRoot 'LumaTherm.cer') -Type CERT | Out-Null
     } else {
         $pfxPath = [System.IO.Path]::GetFullPath($pfxPath)
         if (-not (Test-Path -LiteralPath $pfxPath -PathType Leaf)) { throw "Certificate PFX not found: $pfxPath" }
@@ -240,6 +295,13 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'MakeAppx packaging failed.' }
     & $tools.SignTool sign /fd SHA256 /f $pfxPath /p $plainPassword $msixPath
     if ($LASTEXITCODE -ne 0) { throw 'SignTool signing failed.' }
+    if ($null -ne $createdCertificate) {
+        $trustedCertificatePath = 'Cert:\CurrentUser\TrustedPeople\' + $createdCertificate.Thumbprint
+        if (-not (Test-Path -LiteralPath $trustedCertificatePath)) {
+            $trustedCertificateAdded = $true
+            Import-Certificate -FilePath (Join-Path $localSigningRunRoot 'LumaTherm.cer') -CertStoreLocation 'Cert:\CurrentUser\TrustedPeople' | Out-Null
+        }
+    }
     & $tools.SignTool verify /pa /v $msixPath
     if ($LASTEXITCODE -ne 0) { throw 'SignTool verification failed.' }
 
@@ -247,7 +309,7 @@ try {
     if (Test-Path -LiteralPath $zipPath) { Remove-Item -LiteralPath $zipPath -Force }
     Compress-Archive -Path (Join-Path $publishRoot '*') -DestinationPath $zipPath -CompressionLevel Optimal
     if ($null -ne $createdCertificate) {
-        Copy-Item -LiteralPath (Join-Path $localSigningRoot 'LumaTherm.cer') -Destination (Join-Path $distRoot 'LumaTherm.cer') -Force
+        Copy-Item -LiteralPath (Join-Path $localSigningRunRoot 'LumaTherm.cer') -Destination (Join-Path $distRoot 'LumaTherm.cer') -Force
     } else {
         Export-Certificate -Cert $certificate -FilePath (Join-Path $distRoot 'LumaTherm.cer') -Type CERT -Force | Out-Null
     }
@@ -259,8 +321,27 @@ try {
     $plainPassword = $null
     $CertificatePassword = $null
     if ($null -ne $certificate) { $certificate.Dispose() }
+    $cleanupFailures = [System.Collections.Generic.List[string]]::new()
+    if ($trustedCertificateAdded -and -not [string]::IsNullOrWhiteSpace($trustedCertificatePath)) {
+        try { if (Test-Path -LiteralPath $trustedCertificatePath) { Remove-Item -LiteralPath $trustedCertificatePath -Force } }
+        catch { $cleanupFailures.Add("TrustedPeople cleanup failed: $($_.Exception.Message)") }
+    }
     if ($null -ne $createdCertificate) {
-        Remove-Item -LiteralPath ("Cert:\CurrentUser\My\" + $createdCertificate.Thumbprint) -Force
-        Write-Host 'Removed the temporary local signing certificate from CurrentUser\My.'
+        $myCertificatePath = "Cert:\CurrentUser\My\" + $createdCertificate.Thumbprint
+        try { if (Test-Path -LiteralPath $myCertificatePath) { Remove-Item -LiteralPath $myCertificatePath -Force } }
+        catch { $cleanupFailures.Add("CurrentUser/My cleanup failed: $($_.Exception.Message)") }
+        try {
+            if (($trustedCertificateAdded -and (Test-Path -LiteralPath $trustedCertificatePath)) -or (Test-Path -LiteralPath $myCertificatePath)) {
+                throw 'Owned transient certificate remains in a certificate store.'
+            }
+        } catch { $cleanupFailures.Add("Certificate cleanup verification failed: $($_.Exception.Message)") }
+    }
+    try {
+        Assert-PathUnderAllowedRoot -Path $localSigningRunRoot
+        if (Test-Path -LiteralPath $localSigningRunRoot) { Remove-Item -LiteralPath $localSigningRunRoot -Recurse -Force }
+    } catch { $cleanupFailures.Add("Owned signing directory cleanup failed: $($_.Exception.Message)") }
+    if ($cleanupFailures.Count -gt 0) { throw ($cleanupFailures -join [Environment]::NewLine) }
+    if (-not [string]::IsNullOrWhiteSpace($transientThumbprint)) {
+        Write-Host "Removed transient signing certificate $transientThumbprint from owned CurrentUser stores and verified cleanup."
     }
 }

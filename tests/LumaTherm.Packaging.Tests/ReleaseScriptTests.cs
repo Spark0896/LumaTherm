@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using System.Diagnostics;
 using System.Text.Json;
 
 namespace LumaTherm.Packaging.Tests;
@@ -25,6 +26,21 @@ public sealed class ReleaseScriptTests
         Assert.NotEqual(0, result.ExitCode);
         Assert.Contains("Publisher", result.StandardError + result.StandardOutput, StringComparison.OrdinalIgnoreCase);
         Assert.Empty(Directory.GetFiles(fixture.RepositoryRoot, "*.msix", SearchOption.AllDirectories));
+    }
+
+    [Fact]
+    public void SdkToolOverrideRequiresExplicitTestPlanAndFullRejectsBeforeWrites()
+    {
+        using var fixture = ReleaseFixture.Create();
+        var script = Path.Combine(fixture.RepositoryRoot, "scripts", "build-release.ps1");
+        var unauthenticatedPlan = PowerShellTestHost.Run(script, new[] { "-Mode", "Plan", "-SdkBuildToolsPath", fixture.SdkPath });
+        Assert.NotEqual(0, unauthenticatedPlan.ExitCode);
+        Assert.Contains("test", unauthenticatedPlan.StandardError + unauthenticatedPlan.StandardOutput, StringComparison.OrdinalIgnoreCase);
+
+        var full = fixture.RunBuild("-Mode", "Full", "-SdkBuildToolsPath", fixture.SdkPath);
+        Assert.NotEqual(0, full.ExitCode);
+        Assert.Contains("Plan", full.StandardError + full.StandardOutput, StringComparison.OrdinalIgnoreCase);
+        Assert.False(Directory.Exists(Path.Combine(fixture.RepositoryRoot, "dist")));
     }
 
     [Fact]
@@ -65,6 +81,45 @@ public sealed class ReleaseScriptTests
     }
 
     [Fact]
+    public void EachReleasePlanOwnsAUniqueIgnoredSigningDirectory()
+    {
+        using var fixture = ReleaseFixture.Create();
+        var first = fixture.RunBuild("-Mode", "Plan", "-SdkBuildToolsPath", fixture.SdkPath);
+        var second = fixture.RunBuild("-Mode", "Plan", "-SdkBuildToolsPath", fixture.SdkPath);
+        Assert.Equal(0, first.ExitCode);
+        Assert.Equal(0, second.ExitCode);
+        using var firstJson = JsonDocument.Parse(first.StandardOutput);
+        using var secondJson = JsonDocument.Parse(second.StandardOutput);
+        var firstPath = firstJson.RootElement.GetProperty("localSigningDirectory").GetString()!;
+        var secondPath = secondJson.RootElement.GetProperty("localSigningDirectory").GetString()!;
+        Assert.NotEqual(firstPath, secondPath);
+        Assert.StartsWith(Path.Combine(fixture.RepositoryRoot, "packaging", "local-signing") + Path.DirectorySeparatorChar, firstPath, StringComparison.OrdinalIgnoreCase);
+        Assert.False(Directory.Exists(firstPath));
+        Assert.False(Directory.Exists(secondPath));
+    }
+
+    [Fact]
+    public void LocalCertificatePlanTrustsOnlyForPaVerificationAndCleansBothOwnedStores()
+    {
+        using var fixture = ReleaseFixture.Create();
+        var result = fixture.RunBuild("-Mode", "Plan", "-SdkBuildToolsPath", fixture.SdkPath);
+        Assert.Equal(0, result.ExitCode);
+        using var json = JsonDocument.Parse(result.StandardOutput);
+        var steps = json.RootElement.GetProperty("localCertificateWorkflow").EnumerateArray().Select(e => e.GetString()).ToArray();
+        Assert.Equal(new[]
+        {
+            "create:CurrentUser/My", "export:owned-run-directory", "sign:SHA256",
+            "import-if-absent:CurrentUser/TrustedPeople", "verify:/pa",
+            "remove-if-owned:CurrentUser/TrustedPeople", "remove:CurrentUser/My",
+            "verify:owned-store-cleanup", "remove:owned-run-directory",
+        }, steps);
+        var profile = json.RootElement.GetProperty("localCertificateProfile");
+        Assert.Equal("CN=LumaTherm Local", profile.GetProperty("subject").GetString());
+        Assert.Equal("1.3.6.1.5.5.7.3.3", profile.GetProperty("enhancedKeyUsage").GetString());
+        Assert.Equal("DigitalSignature", profile.GetProperty("keyUsage").GetString());
+    }
+
+    [Fact]
     public void PlanRejectsInvalidCertificatePasswordWithoutDisclosingIt()
     {
         using var fixture = ReleaseFixture.Create();
@@ -96,6 +151,43 @@ public sealed class ReleaseScriptTests
         Assert.True(File.Exists(Path.Combine(layout, "Assets", "StoreLogo.png")));
         Assert.True(Directory.Exists(Path.Combine(layout, "public")));
         Assert.All(Directory.GetFiles(fixture.RepositoryRoot, "*", SearchOption.AllDirectories), path => Assert.StartsWith(fixture.RepositoryRoot, Path.GetFullPath(path), StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void PrepareLayoutRejectsJunctionBeforeMovingOrRecursivelyDeletingAnything()
+    {
+        using var fixture = ReleaseFixture.Create();
+        var external = Path.Combine(fixture.Root, "external-sentinel");
+        Directory.CreateDirectory(external);
+        var sentinel = Path.Combine(external, "sentinel.txt");
+        File.WriteAllText(sentinel, "preserve");
+        File.WriteAllText(Path.Combine(external, "LumaTherm.App.exe"), "app");
+        var junction = Path.Combine(fixture.RepositoryRoot, "artifacts", "publish-junction");
+        Directory.CreateDirectory(Path.GetDirectoryName(junction)!);
+        var mklink = Process.Start(new ProcessStartInfo("cmd.exe")
+        {
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            ArgumentList = { "/c", "mklink", "/J", junction, external },
+        })!;
+        mklink.WaitForExit();
+        if (mklink.ExitCode != 0)
+        {
+            Assert.Skip("Junction creation is unavailable on this Windows host.");
+        }
+
+        try
+        {
+            var result = fixture.RunBuild("-Mode", "PrepareLayout", "-PublishedAppPath", junction);
+            Assert.NotEqual(0, result.ExitCode);
+            Assert.True(File.Exists(sentinel));
+            Assert.True(File.Exists(Path.Combine(external, "LumaTherm.App.exe")));
+            Assert.False(Directory.Exists(Path.Combine(fixture.RepositoryRoot, "artifacts", "package-layout")));
+        }
+        finally
+        {
+            Directory.Delete(junction);
+        }
     }
 
     [Fact]
@@ -208,7 +300,10 @@ public sealed class ReleaseScriptTests
         }
 
         public PowerShellResult RunBuild(params string[] arguments) =>
-            PowerShellTestHost.Run(Path.Combine(RepositoryRoot, "scripts", "build-release.ps1"), arguments);
+            PowerShellTestHost.Run(
+                Path.Combine(RepositoryRoot, "scripts", "build-release.ps1"),
+                arguments,
+                new Dictionary<string, string> { ["LUMATHERM_PACKAGING_TEST"] = "1" });
 
         public void Dispose()
         {

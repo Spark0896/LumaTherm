@@ -8,6 +8,27 @@ namespace LumaTherm.Packaging.Tests;
 public sealed class InstallerScriptTests
 {
     [Fact]
+    public void AuditAcceptsMatchingNotTrustedSignatureOnlyAfterPlannedTrustAndReverification()
+    {
+        using var fixture = DistributionFixture.Create();
+        var result = fixture.RunInstall(
+            "-AuditOnly", "-CertificateDecisionForTest", "Accept",
+            "-SignatureStatusForTest", "NotTrusted",
+            "-ReverifiedSignatureStatusForTest", "Valid",
+            "-SignatureThumbprintForTest", fixture.CertificateThumbprint);
+
+        Assert.True(result.ExitCode == 0, result.StandardError + result.StandardOutput);
+        using var json = JsonDocument.Parse(result.StandardOutput);
+        var events = json.RootElement.GetProperty("events").EnumerateArray().Select(e => e.GetString()).ToArray();
+        Assert.Equal(new[]
+        {
+            "checksumVerified", "signatureMatchedUntrusted", "certificateImportConfirmed",
+            "certificateImportPlanned", "signatureReverificationPlanned", "signatureReverified",
+            "packageInstallPlanned",
+        }, events);
+    }
+
+    [Fact]
     public void AuditPerformsChecksumAndSignatureBeforeCertificateImportAndInstall()
     {
         using var fixture = DistributionFixture.Create();
@@ -16,7 +37,7 @@ public sealed class InstallerScriptTests
         Assert.True(result.ExitCode == 0, result.StandardError + result.StandardOutput);
         using var json = JsonDocument.Parse(result.StandardOutput);
         var events = json.RootElement.GetProperty("events").EnumerateArray().Select(e => e.GetString()).ToArray();
-        Assert.Equal(new[] { "checksumVerified", "signatureVerified", "certificateImportConfirmed", "certificateImportPlanned", "packageInstallPlanned" }, events);
+        Assert.Equal(new[] { "checksumVerified", "signatureVerified", "packageInstallPlanned" }, events);
         Assert.DoesNotContain(events, e => e!.Contains("autostart", StringComparison.OrdinalIgnoreCase) || e.Contains("Run", StringComparison.Ordinal));
         Assert.Equal(Path.Combine(fixture.Directory, "LumaTherm-1.0.0-win-x64.msix"), json.RootElement.GetProperty("packagePath").GetString());
     }
@@ -38,7 +59,7 @@ public sealed class InstallerScriptTests
     public void AuditHonorsCertificateImportDeclineWithoutInstalling()
     {
         using var fixture = DistributionFixture.Create();
-        var result = fixture.RunInstall("-AuditOnly", "-CertificateDecisionForTest", "Decline", "-SignatureStatusForTest", "Valid", "-SignatureThumbprintForTest", fixture.CertificateThumbprint);
+        var result = fixture.RunInstall("-AuditOnly", "-CertificateDecisionForTest", "Decline", "-SignatureStatusForTest", "NotTrusted", "-ReverifiedSignatureStatusForTest", "Valid", "-SignatureThumbprintForTest", fixture.CertificateThumbprint);
 
         Assert.Equal(3, result.ExitCode);
         Assert.Contains("certificateImportDeclined", result.StandardOutput, StringComparison.Ordinal);
@@ -57,6 +78,30 @@ public sealed class InstallerScriptTests
     }
 
     [Fact]
+    public void AuditRequiresExactPackageNameAndExactFiveChecksumArtifacts()
+    {
+        using var wrongName = DistributionFixture.Create();
+        File.Move(
+            Path.Combine(wrongName.Directory, "LumaTherm-1.0.0-win-x64.msix"),
+            Path.Combine(wrongName.Directory, "LumaTherm-2.0.0-win-x64.msix"));
+        DistributionFixture.RewriteChecksums(wrongName.Directory);
+        var wrongPackage = wrongName.RunInstall("-AuditOnly", "-SignatureStatusForTest", "Valid", "-SignatureThumbprintForTest", wrongName.CertificateThumbprint);
+        Assert.NotEqual(0, wrongPackage.ExitCode);
+
+        using var extraArtifact = DistributionFixture.Create();
+        File.WriteAllText(Path.Combine(extraArtifact.Directory, "extra.exe"), "unexpected");
+        DistributionFixture.RewriteChecksums(extraArtifact.Directory);
+        var extra = extraArtifact.RunInstall("-AuditOnly", "-SignatureStatusForTest", "Valid", "-SignatureThumbprintForTest", extraArtifact.CertificateThumbprint);
+        Assert.NotEqual(0, extra.ExitCode);
+
+        using var missingZip = DistributionFixture.Create();
+        File.Delete(Path.Combine(missingZip.Directory, "LumaTherm-1.0.0-portable-win-x64.zip"));
+        DistributionFixture.RewriteChecksums(missingZip.Directory);
+        var missing = missingZip.RunInstall("-AuditOnly", "-SignatureStatusForTest", "Valid", "-SignatureThumbprintForTest", missingZip.CertificateThumbprint);
+        Assert.NotEqual(0, missing.ExitCode);
+    }
+
+    [Fact]
     public void UninstallAuditScopesEveryOptionalRemovalAndSupportsIdempotency()
     {
         using var fixture = DistributionFixture.Create();
@@ -68,6 +113,12 @@ public sealed class InstallerScriptTests
         Assert.True(result.ExitCode == 0, result.StandardError + result.StandardOutput);
         using var json = JsonDocument.Parse(result.StandardOutput);
         var root = json.RootElement;
+        var events = root.GetProperty("events").EnumerateArray().Select(e => e.GetString()).ToArray();
+        Assert.Equal(new[]
+        {
+            "targetsPreflighted", "confirmationAccepted", "packageRemovalPlanned",
+            "runValueRemovalPlanned", "userDataRemovalPlanned", "certificateRemovalPlanned",
+        }, events);
         Assert.Equal("LumaTherm_1.0.0.0_x64__test", root.GetProperty("packageFullName").GetString());
         Assert.Equal("HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Run", root.GetProperty("runKey").GetString());
         Assert.Equal("LumaTherm", root.GetProperty("runValue").GetString());
@@ -138,6 +189,8 @@ public sealed class InstallerScriptTests
 
         private PowerShellResult Run(string script, IReadOnlyList<string> args) =>
             PowerShellTestHost.Run(Path.Combine(Directory, script), args, new Dictionary<string, string> { ["LUMATHERM_PACKAGING_TEST"] = "1" });
+
+        internal static void RewriteChecksums(string directory) => WriteChecksums(directory);
 
         private static void WriteChecksums(string directory)
         {

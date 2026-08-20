@@ -37,6 +37,37 @@ if (-not [string]::IsNullOrWhiteSpace($packageFullName) -and -not $packageFullNa
     throw 'Discovered package is outside the exact LumaTherm identity; no package was removed.'
 }
 
+function Assert-SafeUserDataTarget {
+    $localRoot = [System.IO.Path]::GetFullPath($env:LOCALAPPDATA).TrimEnd('\')
+    $target = [System.IO.Path]::GetFullPath($userDataPath)
+    if (-not $target.Equals((Join-Path $localRoot 'LumaTherm'), [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw "User-data target is outside the exact LumaTherm path: $target"
+    }
+    foreach ($path in @($localRoot, $target)) {
+        if (Test-Path -LiteralPath $path) {
+            $item = Get-Item -LiteralPath $path -Force
+            if (($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+                throw "Refusing user-data removal through a reparse point: $path"
+            }
+        }
+    }
+}
+if ($RemoveUserData) { Assert-SafeUserDataTarget }
+
+$certificateThumbprint = ''
+$trustedPath = ''
+if ($RemoveCertificate) {
+    if (-not (Test-Path -LiteralPath $certificatePath -PathType Leaf)) { throw 'Sibling LumaTherm.cer is required to remove a certificate.' }
+    $distributedCertificate = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2($certificatePath)
+    $certificateThumbprint = $distributedCertificate.Thumbprint
+    if ($isTest -and $AuditOnly -and -not [string]::IsNullOrWhiteSpace($CertificateThumbprintForTest) -and
+        -not $certificateThumbprint.Equals($CertificateThumbprintForTest, [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw 'Certificate test thumbprint does not match sibling LumaTherm.cer.'
+    }
+    $trustedPath = 'Cert:\CurrentUser\TrustedPeople\' + $certificateThumbprint
+}
+$events.Add('targetsPreflighted')
+
 if (-not $Force) {
     if ($isTest -and $AuditOnly) {
         $confirmed = $ConfirmationDecisionForTest -eq 'Accept'
@@ -50,6 +81,7 @@ if (-not $Force) {
         exit 3
     }
 }
+$events.Add('confirmationAccepted')
 
 if ([string]::IsNullOrWhiteSpace($packageFullName)) {
     $events.Add('packageAlreadyAbsent')
@@ -71,21 +103,13 @@ if ($RemoveUserData) {
     if ($AuditOnly) {
         $events.Add('userDataRemovalPlanned')
     } elseif (Test-Path -LiteralPath $userDataPath) {
+        Assert-SafeUserDataTarget
         Remove-Item -LiteralPath $userDataPath -Recurse -Force
         $events.Add('userDataRemoved')
     }
 }
 
-$certificateThumbprint = ''
 if ($RemoveCertificate) {
-    if (-not (Test-Path -LiteralPath $certificatePath -PathType Leaf)) { throw 'Sibling LumaTherm.cer is required to remove a certificate.' }
-    $distributedCertificate = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2($certificatePath)
-    $certificateThumbprint = $distributedCertificate.Thumbprint
-    if ($isTest -and $AuditOnly -and -not [string]::IsNullOrWhiteSpace($CertificateThumbprintForTest) -and
-        -not $certificateThumbprint.Equals($CertificateThumbprintForTest, [System.StringComparison]::OrdinalIgnoreCase)) {
-        throw 'Certificate test thumbprint does not match sibling LumaTherm.cer.'
-    }
-    $trustedPath = 'Cert:\CurrentUser\TrustedPeople\' + $certificateThumbprint
     if ($AuditOnly) {
         $events.Add('certificateRemovalPlanned')
     } elseif (Test-Path -LiteralPath $trustedPath) {

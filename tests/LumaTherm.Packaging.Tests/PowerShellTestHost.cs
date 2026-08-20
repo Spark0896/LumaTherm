@@ -6,7 +6,11 @@ internal sealed record PowerShellResult(int ExitCode, string StandardOutput, str
 
 internal static class PowerShellTestHost
 {
-    public static PowerShellResult Run(string script, IReadOnlyList<string> arguments, IReadOnlyDictionary<string, string>? environment = null)
+    public static PowerShellResult Run(
+        string script,
+        IReadOnlyList<string> arguments,
+        IReadOnlyDictionary<string, string>? environment = null,
+        TimeSpan? timeout = null)
     {
         var startInfo = new ProcessStartInfo
         {
@@ -37,9 +41,29 @@ internal static class PowerShellTestHost
         }
 
         using var process = Process.Start(startInfo) ?? throw new InvalidOperationException("PowerShell did not start.");
-        var output = process.StandardOutput.ReadToEnd();
-        var error = process.StandardError.ReadToEnd();
-        Assert.True(process.WaitForExit(15_000), "PowerShell script exceeded its 15-second test bound.");
-        return new PowerShellResult(process.ExitCode, output, error);
+        var outputTask = process.StandardOutput.ReadToEndAsync();
+        var errorTask = process.StandardError.ReadToEndAsync();
+        var effectiveTimeout = timeout ?? TimeSpan.FromSeconds(15);
+        if (!process.WaitForExit((int)effectiveTimeout.TotalMilliseconds))
+        {
+            process.Kill(entireProcessTree: true);
+            if (!process.WaitForExit(5_000))
+            {
+                throw new TimeoutException("PowerShell process tree did not terminate after timeout.");
+            }
+
+            if (!Task.WaitAll(new Task[] { outputTask, errorTask }, TimeSpan.FromSeconds(5)))
+            {
+                throw new TimeoutException("PowerShell redirected streams did not drain after process-tree termination.");
+            }
+            throw new TimeoutException($"PowerShell script exceeded its {effectiveTimeout.TotalMilliseconds:F0} ms test bound.");
+        }
+
+        process.WaitForExit();
+        if (!Task.WaitAll(new Task[] { outputTask, errorTask }, TimeSpan.FromSeconds(5)))
+        {
+            throw new TimeoutException("PowerShell redirected streams did not drain after process exit.");
+        }
+        return new PowerShellResult(process.ExitCode, outputTask.Result, errorTask.Result);
     }
 }
