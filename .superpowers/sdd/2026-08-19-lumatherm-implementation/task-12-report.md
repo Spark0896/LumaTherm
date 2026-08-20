@@ -2,9 +2,9 @@
 
 ## Safe-stage result
 
-Implemented the x64 MSIX manifest/package project, deterministic approved assets contract, repeatable self-contained release pipeline, and reversible per-user install/uninstall scripts. Implementation commit: `2f562de` (`build: add signed MSIX and portable release`). Safe tool-resolution fix: `f2858be` (`fix: resolve pinned packaging tools safely`). Signing-security review fix: `8ebaff3` (`fix: secure local package signing workflow`).
+Implemented the x64 MSIX manifest/package project, deterministic approved assets contract, repeatable self-contained release pipeline, and reversible per-user install/uninstall scripts. Implementation commit: `2f562de` (`build: add signed MSIX and portable release`). Safe tool-resolution fix: `f2858be` (`fix: resolve pinned packaging tools safely`). Signing-security review fixes: `8ebaff3` and `c9e1ca1` (`fix: use machine trust for package verification`).
 
-The controller-gated real `build-release.ps1` invocation has intentionally not run yet. Therefore MakeAppx schema/signature evidence, final artifact sizes/hashes, and the transient certificate-store thumbprint remain pending; this report does not claim the signed release is complete.
+The first controller-gated real `build-release.ps1` invocation ran against round 2 and stopped at SignTool `/pa` verification after restore, tests, publish, MakeAppx packing, and signing succeeded. The generated certificate was trusted in CurrentUser/TrustedPeople, but Windows still reported an untrusted root. A separately authorized elevated diagnostic proved the same exact public signer certificate in LocalMachine/TrustedPeople makes both Get-AuthenticodeSignature and SignTool `/pa` succeed. The corrected Full rerun, final complete artifact set, and final hashes remain pending; this report does not claim the signed release is complete.
 
 ## Witnessed RED -> GREEN evidence
 
@@ -36,18 +36,18 @@ The controller-gated real `build-release.ps1` invocation has intentionally not r
 - Pinned BuildTools property resolved to `C:\Users\User\.nuget\packages\microsoft.windows.sdk.buildtools\10.0.26100.8249`.
 - Plan mode selected absolute x64 `MakeAppx.exe` and `SignTool.exe` from `bin\10.0.26100.0\x64`.
 - Publish contract includes self-contained `win-x64`, single file, native self-extraction, and disabled symbols.
-- Full mode cleans only its owned `dist`, publish, and package-layout locations; generated outputs/signing material are ignored. It does not use production GCC/RGB Fusion, raw HID, vendor DLL, lighting, autostart, package installation, or registry operations. Its only trust operation is the exact temporary CurrentUser certificate bootstrap described in the controller checkpoint below.
-- Installer requires exactly the five named release artifacts, checks every checksum, and requires the signer thumbprint to equal sibling `LumaTherm.cer`. A `Valid` signature installs without a trust mutation. A matching `NotTrusted` signature requires explicit confirmation, imports only that CER into CurrentUser TrustedPeople when absent, then re-runs Authenticode and requires `Valid` before installation. It never enables autostart.
-- Uninstaller confirms unless forced, targets one exact package and only the `LumaTherm` portable Run value, preserves user data by default, and removes only the distributed CER thumbprint when explicitly requested.
+- Full mode cleans only its owned `dist`, publish, and package-layout locations; generated outputs/signing material are ignored. It does not use production GCC/RGB Fusion, raw HID, vendor DLL, lighting, autostart, package installation, or registry operations. Its only trust operation is the exact temporary LocalMachine certificate bootstrap described in the controller checkpoint below, and Full refuses to start without explicit Administrator elevation.
+- Installer requires exactly the five named release artifacts, checks every checksum, and requires the signer thumbprint to equal sibling `LumaTherm.cer`. A `Valid` signature installs without a trust mutation. A matching `NotTrusted` signature requires Administrator elevation and explicit confirmation, imports only that CER into LocalMachine TrustedPeople when absent, then re-runs Authenticode and requires `Valid` before installation. Invocation-owned trust is retained only after successful installation and removed on verification/install failure. It never enables autostart.
+- Uninstaller confirms unless forced, targets one exact package and only the `LumaTherm` portable Run value, preserves user data by default, and removes only the distributed CER thumbprint from LocalMachine TrustedPeople when explicitly requested with Administrator elevation.
 
 ## Fresh safe verification
 
 ```text
 dotnet test tests/LumaTherm.Packaging.Tests/LumaTherm.Packaging.Tests.csproj -c Release --no-restore -p:NuGetAudit=false
-PASS: 36 passed, 0 failed.
+PASS: 39 passed, 0 failed.
 
 dotnet test LumaTherm.sln -c Release --no-restore -p:NuGetAudit=false
-PASS: Core 71 + Infrastructure 91 + App 138 + Packaging 36 = 336 passed, 0 failed.
+PASS: Core 71 + Infrastructure 91 + App 138 + Packaging 39 = 339 passed, 0 failed.
 
 dotnet build LumaTherm.sln -c Release --no-restore -p:NuGetAudit=false
 PASS: 0 warnings, 0 errors.
@@ -58,20 +58,20 @@ PASS before source commit; no whitespace errors.
 
 ## Controller-gated real release checkpoint
 
-From the worktree root, the precise command is:
+From a non-elevated PowerShell in the worktree root, the precise UAC checkpoint command is:
 
 ```powershell
-& "$PWD\scripts\build-release.ps1"
+Start-Process -FilePath "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -Verb RunAs -Wait -ArgumentList '-NoLogo -NoProfile -ExecutionPolicy Bypass -File "C:\Users\User\Documents\project\monitoring_color\.worktrees\lumatherm-v1\scripts\build-release.ps1"'
 ```
 
-Expected certificate-store delta: one transient code-signing certificate with subject `CN=LumaTherm Local` is created under `Cert:\CurrentUser\My` and exported only to a unique ignored `packaging/local-signing/run-<guid>/` directory. After signing, the exact public certificate is imported temporarily into `Cert:\CurrentUser\TrustedPeople` only when that thumbprint was not already present, so SignTool `/pa` can verify the package. The nested cleanup independently removes and verifies absence of the owned TrustedPeople entry and the owned CurrentUser/My entry, never removes a pre-existing TrustedPeople certificate, then removes only the owned run directory. The final report must record the transient thumbprint only after verified cleanup. The expected outputs are `dist/LumaTherm-1.0.0-win-x64.msix`, `dist/LumaTherm-1.0.0-portable-win-x64.zip`, `dist/LumaTherm.cer`, `dist/SHA256SUMS.txt`, `dist/install.ps1`, and `dist/uninstall.ps1`; MakeAppx and SignTool verification, exact sizes, and SHA-256 values must be appended after the approved run.
+Expected certificate-store delta: one transient code-signing certificate with subject `CN=LumaTherm Local` is created under `Cert:\CurrentUser\My` and exported only to a unique ignored `packaging/local-signing/run-<guid>/` directory. After signing, the exact public certificate is imported temporarily into `Cert:\LocalMachine\TrustedPeople` only when that thumbprint was not already present, so SignTool `/pa` can verify the package. The nested cleanup independently removes and verifies absence of the invocation-owned LocalMachine/TrustedPeople entry and the generated CurrentUser/My entry, never removes a pre-existing machine-trust certificate, then removes only the owned run directory. The final report must record the transient thumbprint only after verified cleanup. The expected outputs are `dist/LumaTherm-1.0.0-win-x64.msix`, `dist/LumaTherm-1.0.0-portable-win-x64.zip`, `dist/LumaTherm.cer`, `dist/SHA256SUMS.txt`, `dist/install.ps1`, and `dist/uninstall.ps1`; corrected Full SignTool verification, exact final sizes, and SHA-256 values must be appended after the approved rerun.
 
 ## Self-review and pending evidence
 
-- Installer/uninstaller verification overrides require both `-AuditOnly` and `LUMATHERM_PACKAGING_TEST=1`; those audit paths cannot reach package, registry, certificate, or filesystem mutation. The release tool-path override is separately restricted to `-Mode Plan` plus `LUMATHERM_PACKAGING_TEST=1`; Full mode always resolves and validates the pinned BuildTools package.
+- Installer/uninstaller verification and Administrator-status overrides require both `-AuditOnly` and `LUMATHERM_PACKAGING_TEST=1`; those audit paths cannot reach package, registry, certificate, or filesystem mutation. The release tool-path override is separately restricted to `-Mode Plan` plus `LUMATHERM_PACKAGING_TEST=1`; Full mode always resolves and validates the pinned BuildTools package. Its Administrator test seam can only force `NonAdmin` rejection and cannot bypass elevation.
 - Tests exercise real XML parsing, PNG headers/hashes/regeneration, SHA-256, fixture certificates, sibling resolution, and executable PowerShell plans. No broad script source-grep test substitutes for behavior.
 - Password values are absent from stdout/stderr and are cleared from release variables in `finally`; generated passwords are cryptographically random per run.
-- Pending by instruction: real MakeAppx schema validation, SHA-256 SignTool sign/verify, artifact sizes/hashes, and certificate-store create/remove evidence. No install/uninstall is authorized at this checkpoint.
+- Observed in the first real checkpoint: MakeAppx packing and SHA-256 signing succeeded; the remaining failure was specifically `/pa` trust validation. Pending by instruction: the corrected elevated Full rerun, final SignTool verification, complete artifact sizes/hashes, and corrected machine-store cleanup evidence. No install/uninstall is authorized at this checkpoint.
 
 ## Safe fix round — restored BuildTools property fallback
 
@@ -99,5 +99,14 @@ Source fix: `22c389c` (`fix: close packaging mutation safety gaps`).
 - Installer rollback RED: after importing the exact TrustedPeople certificate, an Authenticode exception/non-Valid result or Add-AppxPackage failure could leave invocation-owned trust behind. GREEN: post-import verification and installation are enclosed by ownership-aware `try`/`finally`; failures remove only the exact invocation-owned trust entry, successful installation retains it so the package remains runnable, and a pre-existing trust entry is never removed. Audit tests prove re-verification-failure and install-failure cleanup ordering plus successful retention without touching the real certificate store or package registry.
 - Release-directory RED: an extra sibling omitted from SHA256SUMS.txt was ignored. GREEN: installer enumerates the release directory and requires exactly the five case-exact artifacts plus `SHA256SUMS.txt`, with no extra file or directory.
 - Fresh safe verification after this round: Packaging 36/36; Core 71 + Infrastructure 91 + App 138 + Packaging 36 = 336/336; Release build 0 warnings and 0 errors; deterministic asset parity 1/1; real non-mutating Plan resolved pinned `10.0.26100.8249` absolute x64 MakeAppx/SignTool; `git diff --check` reported no whitespace errors apart from checkout line-ending notices.
-- Revised checkpoint store delta for Full is unchanged in scope: one generated code-signing certificate is transiently owned in CurrentUser/My and, only if absent, the matching public certificate is transiently owned in CurrentUser/TrustedPeople for `/pa`; both owned entries are independently removed and verified in `finally`, pre-existing trust is retained, and the unique signing run directory is removed. Installer trust persistence applies only to a later explicit user-approved installation and is outside the Full release checkpoint.
+- Round 2 expected the matching public certificate in CurrentUser/TrustedPeople. The real checkpoint and elevated diagnostic below proved that store choice was insufficient on this machine and is superseded by round 3's LocalMachine/TrustedPeople contract.
 - Full mode, certificate mutation, package install/uninstall, registry changes, production launch, and hardware access were not run.
+
+## Real checkpoint failure and review fix round 3 — machine trust
+
+- Real round-2 checkpoint: no-argument Full restore, all tests, self-contained publish, MakeAppx pack, and SHA-256 sign succeeded. SignTool `verify /pa /v` then failed with an untrusted-root result while exact generated thumbprint `D84116356ACC8BA4759DAAC57BEC8317BCE85750` was transiently present in CurrentUser/TrustedPeople. Script cleanup left no exact-thumb entry in CurrentUser/My or CurrentUser/TrustedPeople. The incomplete signed MSIX remained at 73,982,091 bytes with SHA-256 `DA6972713B51CA0600F465BEC15B8401006AFE69B2E44BD8143A4FD0E2B15BEA`.
+- Authorized diagnostic: the exact extracted public signer certificate was temporarily imported into LocalMachine/TrustedPeople under UAC elevation. Get-AuthenticodeSignature returned `Valid`, SignTool `/pa` exited `0`, and the invocation-owned machine entry was removed in `finally`. `artifacts/signing-diagnostics/machine-trust-result.json` records the thumbprint, Valid status, zero exit code, no failure, and `ownedEntryPresentAfter=false`; post-checks found no exact-thumb entry in LocalMachine/TrustedPeople, CurrentUser/My, or CurrentUser/TrustedPeople.
+- Root cause: Windows' `/pa` policy on this host did not accept the self-signed leaf from CurrentUser/TrustedPeople, but did accept the identical certificate from LocalMachine/TrustedPeople. This was a trust-store scope mismatch, not a package-schema, signing-key, certificate-profile, or cleanup failure.
+- RED: Plan named CurrentUser/TrustedPeople; Full lacked a pre-mutation Administrator gate; installer/uninstaller audit plans lacked machine-store and privilege-ordering contracts. GREEN in `c9e1ca1`: Plan names exact `Cert:\LocalMachine\TrustedPeople` and the UAC prerequisite; Full rejects non-admin before release writes and temporarily owns only the exact missing machine-trust entry; installer/uninstaller use the exact distributed CER thumbprint in the machine store only after Administrator preflight and explicit intent. Existing failure cleanup, success retention, pre-existing trust preservation, reparse guards, and exact-release checks remain green.
+- Fresh safe verification: Packaging 39/39; Core 71 + Infrastructure 91 + App 138 + Packaging 39 = 339/339; Release build 0 warnings and 0 errors; deterministic asset parity 1/1; real non-mutating Plan resolves pinned `10.0.26100.8249` absolute x64 tools and explicitly reports the machine trust store; `git diff --check` has no whitespace errors apart from checkout line-ending notices.
+- The corrected Full rerun, installer, uninstaller, registry, production app, and hardware were not executed in this fix round. The next action remains the controller-approved UAC checkpoint command above.

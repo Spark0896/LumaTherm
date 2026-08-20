@@ -1,0 +1,123 @@
+# SDD ledger — plan: C:\Users\User\Documents\project\monitoring_color\.worktrees\lumatherm-v1\docs\superpowers\plans\2026-08-19-lumatherm-implementation.md
+
+## Setup
+
+- Worktree: `C:\Users\User\Documents\project\monitoring_color\.worktrees\lumatherm-v1`
+- Branch: `feature/lumatherm-v1`
+- Start commit: `1fce693`
+- Baseline: repository contains only specifications/plans; no buildable solution or automated suite exists before Task 1.
+- Ruling: selecting Subagent-Driven Development authorizes its required isolated worktree — this keeps implementation off `main` — cost if wrong: one local feature branch/worktree must be removed.
+- Ruling: the bundled SDD helpers are Bash scripts but this Windows environment has no Bash/WSL distribution; reproduce `sdd-workspace`, `task-brief`, and `review-package` semantics with plan-scoped PowerShell/apply-patch artifacts — cost if wrong: artifact naming or extraction can drift, so paths and task boundaries must be checked before every dispatch.
+
+## Preflight self-consistency
+
+| Task | Test/code/file agreement | Finding or ruling |
+|---|---|---|
+| 1 | Color tests precede Core types and solution bootstrap | Ruling: add `ThermalRange` classification and literal tests because the binding spec requires ColorEngine to return cold/warm/hot range state; cost if wrong: one extra stable Core API. |
+| 2 | Persistence tests precede settings store/migrator | Clean; schema migration, quarantine, defaults, and atomic save align. |
+| 3 | Fake native seam precedes NVML P/Invoke | Clean; transient initialization retry preserves recovery requirement. |
+| 4 | Binary fixture and failover tests precede MAHM/provider | Clean; exact installed MAHM v2 offsets are stated. |
+| 5 | Fake LampArray platform and gate tests precede Windows adapter | Ruling: expose available device list/selection so a chosen LampArray id can be saved when multiple devices exist; cost if wrong: a small selection API/UI surface beyond automatic selection. |
+| 6 | Deterministic runtime tests precede state machine | Ruling: keep 500 ms polling while healthy, but when both sources fail schedule retries at 1, 2, 5, 10, then 15 seconds per the spec; freeze for five seconds and release afterward; cost if wrong: added retry scheduler state and tests. |
+| 7 | ViewModel tests precede WPF state layer | Clean after Task 1 range state is projected through RuntimeSnapshot. |
+| 8 | Plan mandates tests that grep XAML source text | Ruling: replace source-text assertions with STA tests that instantiate compiled WPF views/resources and inspect actual bindings/accessibility properties; source grep violates the binding test-quality rules — cost if wrong: a small reusable STA test harness. |
+| 9 | Plan includes settings XAML source-contract tests | Ruling: test instantiated controls, bindings, commands, validation, and accessible names instead of source text; also add the multiple-LampArray selector required by Task 5/spec — cost if wrong: more integration-oriented WPF tests. |
+| 10 | Lifecycle fakes precede startup/tray/power services | Clean; no tests touch real Run key or StartupTask. |
+| 11 | Logger/composition tests precede the app host | Ruling: add a crash-session sentinel; a prior unclean exit forces effective mode OFF and requires explicit re-enable, while graceful autostart may restore a saved active mode — cost if wrong: one local marker file and startup branch. |
+| 12 | Manifest metadata tests precede packaging | Ruling: retain XML metadata tests only as one layer, then require MakeAppx schema validation, SignTool verification, and installed-package behavior in Task 13; cost if wrong: package registration defects are caught later in acceptance rather than by unit tests alone. |
+| 13 | Safe fake smoke tests precede hardware probes/writes | Clean; real light writes and sign-out remain explicit side-effect gates. |
+
+## Preflight shared files and interfaces
+
+| Producer → consumer | Shared file/interface | Result |
+|---|---|---|
+| 1 → 2 | `RgbColor`, `ThermalProfile` | Compatible; Task 2 consumes validation/hex parsing. |
+| 1 → 6 | `ColorEngine`, `ThermalRange` | Compatible under Task 1 range ruling; Task 6 owns time/state orchestration. |
+| 1 → 8 | palette values and `RgbColor` | Compatible; WPF converts Core color without Core depending on WPF. |
+| 1 → 9 | profile limits/validation | Compatible; UI cannot weaken Core validation. |
+| 2 → 6 | `AppSettings`, `ISettingsStore` | Compatible; persistence occurs before snapshot publication. |
+| 2 → 7 | settings records/store | Compatible; ViewModels depend on interfaces. |
+| 2 → 10 | autostart/tray/notification flags | Compatible; platform side effects stay behind services. |
+| 2 → 11 | load result/recovery warning | Compatible; AppHost consumes one-shot warning. |
+| 3 → 4 | `ITemperatureSource`, `TemperatureReading` | Compatible; provider retains ordered NVML-first semantics. |
+| 3 → 11 | NVML factory/composition | Compatible; native access remains infrastructure-only. |
+| 3-4 → 13 | production sensor adapters | Compatible; smoke tool adds read-only source selection. |
+| 4 → 6 | `ITemperatureProvider` | Compatible under Task 6 retry ruling. |
+| 5 → 6 | `ILightingController`, gate/device info | Compatible; runtime owns timing, controller owns device session. |
+| 5 → 11 | LampArray discovery/controller | Compatible; composition owns concrete Windows adapter. |
+| 5 → 13 | production LampArray adapter | Compatible; write commands require explicit gate/finally release. |
+| 6 → 7 | `IThermalRuntime`, `RuntimeSnapshot` | Compatible; add range projection from Task 1 ruling. |
+| 6 → 10 | runtime lifecycle | Compatible; suspend/resume/exit call interface methods. |
+| 6 → 11 | runtime composition/start-stop | Compatible; add crash-sentinel startup ruling. |
+| 7 → 8 | `MainViewModel`, `App.xaml`, `MainWindow` | Compatible; Task 8 creates compiled views over stable properties. |
+| 7 → 9 | `SettingsViewModel`, `MainWindow` | Compatible; Task 9 extends bindings/commands without moving hardware code into UI. |
+| 7 → 10 | ViewModels/runtime snapshots | Compatible; tray projects state and invokes commands. |
+| 7 → 11 | ViewModel factories | Compatible; AppHost supplies interfaces and synchronization context. |
+| 8 → 9 | theme/MainWindow/settings navigation | Compatible; Task 9 modifies rather than replaces the approved shell. |
+| 8 → 10 | icon/MainWindow close behavior | Compatible; lifecycle logic remains service/policy driven. |
+| 8 → 11 | `App.xaml`, `App.xaml.cs` | Compatible; Task 11 modifies startup/composition only. |
+| 8 → 12 | generated icon/package PNG assets | Compatible; Task 12 verifies/reuses deterministic outputs. |
+| 8 → 13 | approved Thermal Core UI | Compatible; Task 13 adds visual capture/inspection during installed acceptance. |
+| 9 → 10 | behavior toggles/autostart service | Compatible; settings apply platform changes only after success. |
+| 9 → 11 | SettingsViewModel dependencies | Compatible; composition supplies picker/startup/runtime. |
+| 10 → 11 | single instance, tray, startup, power | Compatible; AppHost owns creation/disposal order. |
+| 10 → 12 | `LumaThermStartup` task id | Compatible; runtime and manifest must use the exact same id. |
+| 10 → 13 | tray/autostart/single-instance acceptance | Compatible; real sign-in is an explicit external side-effect checkpoint. |
+| 11 → 12 | `LumaTherm.exe` publish entry | Compatible; package wraps the self-contained application output. |
+| 11 → 13 | logs, recovery, real app lifecycle | Compatible; acceptance validates bounded logs/crash recovery. |
+| 12 → 13 | signed MSIX/install/uninstall artifacts | Compatible; Task 13 installs the exact hashed build. |
+
+## Task reviews
+
+- Task 1 Ruling: the plan-mandated tick-size test compares two calls to the same production algorithm and violates the binding good-test rule; replace it with a hand-derived literal RGB expectation while retaining both tick paths — cost if wrong: the literal may need intentional update if the approved smoothing/color math changes.
+- Task 1 minor (deferred): `ColorEngine.Step` accepts negative elapsed time and can extrapolate backward; final review must decide whether to reject it before merge.
+- Task 1: fix round 1/5 (2 addressed, 0 open — finite profile validation; independent smoothing oracle; commits `4ed15a5..c5ae8ec`).
+- Task 1: complete (commits `1fce693..c5ae8ec`, review clean).
+- Task 2: fix round 1/5 (3 addressed, 0 open — quarantine collision safety; replacement-path coverage; commits `4a5c436..01ce917`).
+- Task 2: complete (commits `c5ae8ec..01ce917`, review clean).
+- Task 3: complete (commits `01ce917..16d6cdb`, review clean).
+- Task 4: fix round 1/5 (2 addressed, 0 open — exact v2 header; mapping-capacity guard; commits `db22b58..feb6979`).
+- Task 4: complete (commits `16d6cdb..feb6979`, review clean).
+- Task 5 minor (deferred): an already-entered device callback may publish `DevicesChanged` after controller disposal; final review must decide whether a final disposed re-check is required.
+- Task 5 minor (deferred): `OnDeviceUpdated` may leave cached availability stale; final review must verify the corrected cache/update design.
+- Task 5: fix round 1/5 (5 addressed, 1 open — concurrency tests lack finite liveness deadlines; commits `2ee2d2b..55eabe5`).
+- Task 5: fix round 2/5 (0 addressed, 1 open — implicit `await using` cleanup can still hang; commits `55eabe5..2086d43`).
+- Task 5: fix round 3/5 (1 addressed, 0 open — bounded explicit concurrency-test cleanup; commits `2086d43..cd67bca`).
+- Task 5: complete (commits `feb6979..cd67bca`, review clean; 2 deferred minors remain for final review).
+- Task 6 minor (deferred): runtime ramp tests do not independently probe sub-100-ms write gating or exact 500-ms polling boundary; final review must decide whether Task 5 gate tests plus runtime integration coverage are sufficient.
+- Task 6 minor (deferred): runtime tests do not force release/source-disposal aggregation failures during full shutdown; final review must decide whether failure aggregation needs direct coverage.
+- Task 6: fix round 1/5 (2 addressed, 1 open — disabled resume incorrectly clears pending release; commits `27ac25f..b57f704`).
+- Task 6: fix round 2/5 (1 addressed, 0 open — pending release survives disabled/enabled resume until successful ownership boundary; commits `b57f704..9eaf52e`).
+- Task 6: complete (commits `cd67bca..9eaf52e`, review clean; 2 deferred minors remain for final review).
+- Task 8 Product Design ruling: the exact selected visual truth is the user-approved `thermal-core-final.html`; the Product Design `image-to-code` workflow is web-oriented, so preserve its source-fidelity, asset-catalog, interaction, and blocking rendered-design-QA requirements while implementing the planned native WPF shell rather than initializing a web template — cost if wrong: the final visual comparison may expose WPF-specific metric drift requiring a polish round.
+- Task 8 asset ruling: the approved source already contains the exact LumaTherm logo paths. Translating those supplied paths into one shared WPF geometry/drawing and deterministic package rasters is source-asset reuse, not invented SVG/code art; use Segoe Fluent Icons for standard shell icons and WPF drawing only for live temperature visualizations — cost if wrong: package/on-screen logo parity or icon metrics may need correction during visual QA.
+- Task 8 design-QA status: Product Design saved-context preflight returned no entries. The in-app Browser bootstrap is currently blocked by a trusted-code-path error, so no source screenshot has yet been captured; do not claim design QA passed until both the selected source and the rendered native window are opened and compared in the same evidence input.
+- Task 7 review: fix round 1/5 open (5 blockers — missing `ThermalRange` projection; ambiguous/contradictory enabled-mode projection; duplicate persistence and uncompensated autostart partial failure; vacuous cross-service ordering test; incomplete async-command routing/reentry coverage). Deferred minors: public profile-wiring surface, post-disposal resubscription, and missing queued-snapshot disposal test.
+- Task 7: fix round 1/5 (range projection, duplicate ViewModel persistence, shared ordering recorder, command reentry, and disposal guards addressed; 2 blockers remain — no authoritative mode bit for initial/toggled suspended state, and no reconciliation when runtime reports an exception after settings commit; commits `c147671..4be34dd`).
+- Task 7: fix round 2/5 (authoritative snapshot mode bit, committed settings exposure, suspended-state coverage, and runtime observer isolation addressed; 2 blockers remain — mutable `CurrentSettings` equality is not a stable transaction marker and observer/property failures can still be mislabeled after commit; commits `4be34dd..ebb3513`).
+- Task 7: fix round 3/5 (volatile publication, equality-race removal, per-observer continuation, internal settings APIs, and one-shot post-commit proof addressed; 3 blockers remain — fallback snapshot repeats fallible dependencies, disable faults can skip/lose release retry, and `SetModeEnabledAsync` lacks the same post-commit atomicity; required opposite-outcome/stateful-startup/real-command proofs remain; commits `ebb3513..32cc9c8`).
+- Task 7: fix round 4/5 (persistent fallback, both mutation atomicity, precommit proofs, exact/stateful App assertions, real command routing, and API narrowing addressed; 1 blocker remains — faulted loop shutdown still skips immediate LampArray release and tests incorrectly bless a manual second disable without first establishing ownership; commits `32cc9c8..aa7ca28`).
+- Task 7: fix round 5/5 (faulted-loop disable now captures the stop failure, releases/reset lighting in the same committed mutation, preserves retry only for a release failure, and proves real prior ownership without duplicate persistence; commits `aa7ca28..0f8fcb0`).
+- Task 7: complete (commits `9eaf52e..0f8fcb0`, review clean; Core 71, Infrastructure 58, App 37).
+- Task 8 review: fix round 1/5 open (3 important findings — sparkline subscriptions survive unload; the primary mode switch lacks UI Automation Toggle state; approved workspace/nav/glow/chart-fill structures are absent. Two related test-strength minors cover compact panel bounds and rendered marker/history updates; commits `0f8fcb0..295447bd`).
+- Task 8: fix round 1/5 (subscription lifetime, Toggle UIA semantics, missing approved-source visual layers, responsive bounds, and rendered-update coverage addressed; 2 important blockers remain — native ToggleButton optimistic state can diverge after async command failure, and the workspace brush is 45° rather than the approved responsive CSS 145° geometry; commits `295447bd..d12d53d`).
+- Task 8: fix round 2/5 (runtime-authoritative ToggleButton/UIA success, failure, and reentry; responsive exact CSS 145° workspace gradient geometry; commits `d12d53d..b03b541`).
+- Task 8: complete (commits `0f8fcb0..b03b541`, review clean; UI 28, full solution 194, final rendered source comparison intentionally deferred until Task 9).
+- PAUSED by user on 2026-08-19 during Task 9. Reviewed base/HEAD is `b03b541`. Task 9 initial picker RED (missing `IColorPickerService`) and GREEN 1/1 were witnessed. Worktree intentionally remains dirty with partial test-first Task 9 work in `SettingsViewModel.cs`, `SettingsViewModelTests.cs`, and new `Services/IColorPickerService.cs` / `Services/ILightingDeviceDiscovery.cs`; no Task 9 commit exists, no physical RGB/autostart side effect occurred, and the Task 9 agent was interrupted. Resume by re-dispatching `/root/task9_settings_ui` (or a fresh implementer) from this exact dirty state, first inspect the diff and run the focused picker/device tests before continuing the device-discovery RED→GREEN cycle.
+- 2026-08-20 user-approved ruling: lighting control must not depend on GCC/RGB Fusion or any third-party program. Ruling: the sole production lighting writer is `Windows.Devices.Lights.LampArray`; LumaTherm never launches, reads, modifies, or requires GCC. NVIDIA NVML is the primary direct temperature source, while MSI Afterburner shared memory remains optional fallback only. On disable/sleep/exit LumaTherm releases LampArray so GCC/other controllers may resume; conflicts surface as non-fatal occupied/unavailable status. No unsupported raw GIGABYTE HID writes or closed DLLs — cost if wrong: Windows Dynamic Lighting/LampArray support remains a platform prerequisite on this hardware.
+- Task 9 review: fix round 1/5 open (3 blockers — ViewModel duplicates runtime validation authority; color-picker and Save commands can enter the save/startup pipeline concurrently; Settings uses default WPF slider/switch/editor visuals instead of approved compiled templates; commits `b03b541..01dce31`).
+- Task 9 minor (deferred): compiled binding coverage does not enumerate every Settings binding and simulates LostFocus via `UpdateSource()` rather than an actual focus transfer; final visual/whole-branch review must triage whether strengthened integration coverage is required.
+- Task 9: fix round 1/5 (3 addressed, 0 open — runtime-only validation authority, one serialized settings-mutation pipeline, and compiled Thermal Core control templates; commits `01dce31..fb5ec19`).
+- Task 9: complete (commits `b03b541..fb5ec19`, review clean; focused Settings/UI 66, full solution 217, build 0 warnings/errors; one deferred minor plus controller-owned rendered comparison remain).
+- Task 10 review: fix round 1/5 open (5 important — oversized unterminated pipe can monopolize activation server; ShowWindow exceptions escape tray callbacks; stop/log/hide failures can skip icon disposal or WPF shutdown; single-instance tests use unbounded acquire/signal; tray toggle test can hang in cleanup. One minor: registry-path test asserts production constant rather than literal; commits `fb5ec19..da8b5c8`).
+- Task 10: fix round 1/5 (5 important + 1 minor addressed, 0 open — immediate oversized-pipe rejection; observed ShowWindow failures; unconditional hide/dispose/shutdown cleanup; bounded single-instance and tray tests; independent registry-path literal; commits `da8b5c8..90d019b`).
+- Task 10: complete (commits `fb5ec19..90d019b`, review clean; focused lifecycle 38, full solution 256, build 0 warnings/errors).
+- Task 11 review: fix round 1/5 open (3 critical — production UI/tray construction resumes off the WPF dispatcher; sentinel marker has a crash gap before publication; single-instance ownership is released before sentinel deletion. 4 important — exception routing can throw/reenter or touch UI off-dispatcher; queued SHOW can target disposed UI; Stop ignores cancellation and cannot cancel blocked Start; nested logger data can leak secrets/control characters. 2 minors — app.stop success precedes sentinel completion; failed sentinel writes can leave temp files; commits `90d019b..46fedfc`).
+- Task 11: fix round 1/5 (3 critical, 3 important, 2 minor addressed; 1 important remains — non-generic `IDictionary` is copied without a 64-item bound before normalization and can hang/allocate unboundedly; commits `46fedfc..1d9d231`).
+- Task 11: fix round 2/5 (remaining `IDictionary` enumeration bound addressed, 0 open; direct 64-item normalization with deterministic guarded-enumerator regression; commits `1d9d231..469b35b`).
+- Task 11: complete (commits `90d019b..469b35b`, review clean; Task 11 focused 37, full solution 300, build 0 warnings/errors).
+- Task 12 safe-stage review: fix round 1/5 open; real signing checkpoint NOT SAFE yet (2 critical — self-signed trust flow fails SignTool `/pa` and first-install validation; lexical allowed-root guard ignores junction/reparse redirection. 4 important — Full mode accepts arbitrary fake tool roots; stale local-signing outputs break retry; certificate preflight happens after uninstall mutations; PowerShell test host timeout can block before WaitForExit. 2 minors — installer artifact/report strictness; report overstates seam gating; commits `469b35b..6962b55`).
+- Task 12: fix round 1/5 (build trust model, SDK override, unique signing dir, uninstall preflight, bounded PowerShell host addressed; 1 critical + 1 important + 2 minor remain — nested descendant reparse points are not rejected before recursive operations; installer can leak newly imported trust on verify/install exception; unlisted sibling artifacts are accepted; one report sentence contradicts temporary trust; commits `6962b55..966fa88`). Full checkpoint remains NOT SAFE.
+- Task 12: fix round 2/5 (descendant reparse refusal, installer trust rollback/retention, and exact six-entry release directory addressed; commits `966fa88..1b27fad`; Packaging 36, full solution 336, build clean). Review implementation was safe, but the real signing checkpoint remained pending.
+- Task 12 real checkpoint: no-argument Full reached successful restore/tests/publish/MakeAppx/sign, then SignTool `/pa` failed because CurrentUser/TrustedPeople did not satisfy the self-signed package trust policy on this host. Exact thumbprint `D84116356ACC8BA4759DAAC57BEC8317BCE85750` was removed from CurrentUser/My and CurrentUser/TrustedPeople. An explicitly authorized elevated diagnostic proved the identical public cert in LocalMachine/TrustedPeople yields Authenticode `Valid` and SignTool exit `0`, then removed the exact machine entry; all three exact-thumb store checks were empty afterward. Corrected Full rerun required.
+- Task 12: fix round 3/5 safe implementation complete (exact temporary LocalMachine/TrustedPeople trust, pre-mutation/UAC Administrator checks, installer failure cleanup/success retention, exact machine-store uninstall, and literal privilege-order tests; source commit `c9e1ca1`; Packaging 39, full solution 339, build clean). Full/install/uninstall were not run; controller-approved elevated Full checkpoint remains pending.
