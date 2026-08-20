@@ -124,14 +124,42 @@ public static class SmokeCommand
     {
         if (!options.ConfirmLightWrite) return SmokeResult.Error("Требуется --confirm-light-write.", 2);
         await prompt.WriteAsync("LumaTherm временно возьмёт управление Windows Dynamic Lighting и освободит его после проверки. Введите YES для продолжения: ").ConfigureAwait(false);
-        return string.Equals(await input.ReadLineAsync(token).ConfigureAwait(false), "YES", StringComparison.Ordinal)
+        return string.Equals(await ReadLineWithCancellationAsync(input, token).ConfigureAwait(false), "YES", StringComparison.Ordinal)
             ? null
             : SmokeResult.Error("Подтверждение отклонено. Для записи подсветки введите точное YES.", 2);
+    }
+
+    private static async Task<string?> ReadLineWithCancellationAsync(TextReader input, CancellationToken token)
+    {
+        token.ThrowIfCancellationRequested();
+        var readTask = Task.Run(input.ReadLine);
+        try
+        {
+            return await readTask.WaitAsync(token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        {
+            _ = ObserveLateReadFaultAsync(readTask);
+            throw;
+        }
+    }
+
+    private static async Task ObserveLateReadFaultAsync(Task<string?> readTask)
+    {
+        try
+        {
+            await readTask.ConfigureAwait(false);
+        }
+        catch
+        {
+            // A cancelled caller cannot await a synchronous console read; observe its eventual fault.
+        }
     }
 
     private static async Task<SmokeResult> UseLightsAsync(ILightingController lights, Func<CancellationToken, Task> work, CancellationToken token)
     {
         Exception? operationFailure = null;
+        var cancelled = false;
         var connected = false;
         try
         {
@@ -139,22 +167,26 @@ public static class SmokeCommand
             if (!connected) return SmokeResult.Error("LampArray недоступен. Выполните `lights` для безопасной диагностики.", 1);
             await work(token).ConfigureAwait(false);
         }
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        {
+            cancelled = true;
+        }
         catch (Exception exception)
         {
             operationFailure = exception;
         }
 
         var releaseFailure = connected ? await RunBoundedAsync(cleanupToken => lights.ReleaseAsync(cleanupToken)).ConfigureAwait(false) : null;
-        if (operationFailure is not null || releaseFailure is not null)
+        if (releaseFailure is not null)
         {
             var message = operationFailure is null
-                ? $"Не удалось освободить Dynamic Lighting: {releaseFailure!.Message}"
-                : releaseFailure is null
-                    ? $"Проверка подсветки не завершилась: {operationFailure.Message}"
-                    : $"Проверка подсветки не завершилась: {operationFailure.Message}; освобождение Dynamic Lighting также не удалось: {releaseFailure.Message}";
+                ? $"Не удалось освободить Dynamic Lighting: {releaseFailure.Message}"
+                : $"Проверка подсветки не завершилась: {operationFailure.Message}; освобождение Dynamic Lighting также не удалось: {releaseFailure.Message}";
             return SmokeResult.Error(message, 1, releaseFailure is TimeoutException);
         }
 
+        if (cancelled) return SmokeResult.Cancelled();
+        if (operationFailure is not null) return SmokeResult.Error($"Проверка подсветки не завершилась: {operationFailure.Message}", 1);
         return SmokeResult.Pass(new { status = "pass" }, "Подсветка освобождена.");
     }
 

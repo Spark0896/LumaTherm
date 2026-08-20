@@ -161,18 +161,25 @@ public sealed class SmokeCommandTests
     [Fact]
     public async Task JsonConfirmation_CancellationDuringReadReturnsOneParseableCancelledResultWithinDeadline()
     {
-        var reader = new BlockingReader();
+        var reader = new SynchronousBlockingReader();
         var lights = new FakeLightingController(new LightingDeviceInfo("lamp", "GIGABYTE Device", 12, true));
         using var cancellation = new CancellationTokenSource();
-        var task = RunWithPromptAsync(["cycle", "--confirm-light-write", "--json"], lights, reader, cancellationToken: cancellation.Token);
+        var task = RunWithPromptAsync(["cycle", "--confirm-light-write", "--json"], lights, TextReader.Synchronized(reader), cancellationToken: cancellation.Token);
 
-        await reader.Started.Task.WaitAsync(TestContext.Current.CancellationToken);
-        cancellation.Cancel();
-        var result = await task.WaitAsync(TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken);
+        try
+        {
+            await reader.Started.Task.WaitAsync(TestContext.Current.CancellationToken);
+            cancellation.Cancel();
+            var result = await task.WaitAsync(TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken);
 
-        Assert.Equal(3, result.ExitCode);
-        Assert.Equal("cancelled", JsonDocument.Parse(result.Output).RootElement.GetProperty("status").GetString());
-        Assert.Equal(0, lights.ConnectCount);
+            Assert.Equal(3, result.ExitCode);
+            Assert.Equal("cancelled", JsonDocument.Parse(result.Output).RootElement.GetProperty("status").GetString());
+            Assert.Equal(0, lights.ConnectCount);
+        }
+        finally
+        {
+            reader.Release();
+        }
     }
 
     [Fact]
@@ -187,6 +194,52 @@ public sealed class SmokeCommandTests
         Assert.Equal(3, result.ExitCode);
         Assert.Equal("cancelled", JsonDocument.Parse(result.Output).RootElement.GetProperty("status").GetString());
         Assert.Equal(0, lights.ConnectCount);
+    }
+
+    [Fact]
+    public async Task JsonConfirmation_SynchronizedBlockingReaderCancelsWithinDeadlineWithoutLighting()
+    {
+        var blockingReader = new SynchronousBlockingReader();
+        using var cancellation = new CancellationTokenSource();
+        var stopwatch = Stopwatch.StartNew();
+        var task = Task.Run(async () => await RunWithPromptAsync(
+            ["cycle", "--confirm-light-write", "--json"],
+            new FakeLightingController(new LightingDeviceInfo("lamp", "GIGABYTE Device", 12, true)),
+            TextReader.Synchronized(blockingReader),
+            cancellationToken: cancellation.Token));
+
+        try
+        {
+            await blockingReader.Started.Task.WaitAsync(TestContext.Current.CancellationToken);
+            cancellation.Cancel();
+            var result = await task.WaitAsync(TimeSpan.FromSeconds(1), TestContext.Current.CancellationToken);
+
+            Assert.True(stopwatch.Elapsed < TimeSpan.FromSeconds(1));
+            Assert.Equal(3, result.ExitCode);
+            Assert.Equal("cancelled", JsonDocument.Parse(result.Output).RootElement.GetProperty("status").GetString());
+        }
+        finally
+        {
+            blockingReader.Release();
+        }
+    }
+
+    [Fact]
+    public async Task JsonCycle_CancellationAfterWriteReleasesAndReturnsOneCancelledResult()
+    {
+        using var cancellation = new CancellationTokenSource();
+        var lights = new FakeLightingController(new LightingDeviceInfo("lamp", "GIGABYTE Device", 12, true))
+        {
+            OnColorWritten = cancellation.Cancel,
+        };
+
+        var result = await RunWithPromptAsync(["cycle", "--confirm-light-write", "--json"], lights, new StringReader("YES"), cancellationToken: cancellation.Token)
+            .WaitAsync(TimeSpan.FromSeconds(3), TestContext.Current.CancellationToken);
+
+        Assert.Equal(3, result.ExitCode);
+        Assert.Equal("cancelled", JsonDocument.Parse(result.Output).RootElement.GetProperty("status").GetString());
+        Assert.Single(result.Output.Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries));
+        Assert.Equal(1, lights.ReleaseCount);
     }
 
     [Fact]
@@ -307,6 +360,7 @@ public sealed class SmokeCommandTests
         public int FailOnWrite { get; init; }
         public Exception? ReleaseException { get; init; }
         public int ReleaseDelayMilliseconds { get; init; }
+        public Action? OnColorWritten { get; init; }
         public List<RgbColor> Colors { get; } = [];
         public bool IsConnected { get; private set; }
         public LightingDeviceInfo? ConnectedDevice => IsConnected ? _devices.FirstOrDefault(device => device.IsAvailable) : null;
@@ -335,6 +389,7 @@ public sealed class SmokeCommandTests
         {
             cancellationToken.ThrowIfCancellationRequested();
             Colors.Add(color);
+            OnColorWritten?.Invoke();
             if (Colors.Count == FailOnWrite)
             {
                 throw new InvalidOperationException("Write failed.");
@@ -374,5 +429,21 @@ public sealed class SmokeCommandTests
             await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
             return null;
         }
+    }
+
+    private sealed class SynchronousBlockingReader : TextReader
+    {
+        private readonly ManualResetEventSlim _released = new();
+
+        public TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public override string? ReadLine()
+        {
+            Started.TrySetResult();
+            _released.Wait(TimeSpan.FromSeconds(5));
+            return null;
+        }
+
+        public void Release() => _released.Set();
     }
 }
