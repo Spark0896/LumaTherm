@@ -183,7 +183,11 @@ public sealed class TrayIconService : IAsyncDisposable
         DisposePlatform();
     }
 
-    private void OnShowRequested(object? sender, EventArgs args) => ShowWindow();
+    private void OnShowRequested(object? sender, EventArgs args) => Enqueue(() =>
+    {
+        ShowWindow();
+        return Task.CompletedTask;
+    });
 
     private void OnToggleRequested(object? sender, EventArgs args)
     {
@@ -259,7 +263,7 @@ public sealed class TrayIconService : IAsyncDisposable
             }
             catch (Exception exception)
             {
-                _errorSink?.Invoke(exception);
+                ReportFailure(exception);
             }
         }
     }
@@ -273,11 +277,26 @@ public sealed class TrayIconService : IAsyncDisposable
         }
         catch (Exception exception)
         {
-            _errorSink?.Invoke(exception);
+            ReportFailure(exception);
         }
-
-        DisposePlatform();
-        _application.RequestShutdown();
+        finally
+        {
+            try
+            {
+                DisposePlatform();
+            }
+            finally
+            {
+                try
+                {
+                    _application.RequestShutdown();
+                }
+                catch (Exception exception)
+                {
+                    ReportFailure(exception);
+                }
+            }
+        }
     }
 
     private void DisposePlatform()
@@ -290,15 +309,35 @@ public sealed class TrayIconService : IAsyncDisposable
             }
 
             _platformDisposed = true;
-            try
-            {
-                _platform.Visible = false;
-                _platform.Dispose();
-            }
-            catch (Exception exception)
-            {
-                _errorSink?.Invoke(exception);
-            }
+        }
+
+        try
+        {
+            _platform.Visible = false;
+        }
+        catch (Exception exception)
+        {
+            ReportFailure(exception);
+        }
+
+        try
+        {
+            _platform.Dispose();
+        }
+        catch (Exception exception)
+        {
+            ReportFailure(exception);
+        }
+    }
+
+    private void ReportFailure(Exception exception)
+    {
+        try
+        {
+            _errorSink?.Invoke(exception);
+        }
+        catch
+        {
         }
     }
 }

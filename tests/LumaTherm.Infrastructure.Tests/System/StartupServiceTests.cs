@@ -59,7 +59,7 @@ public sealed class StartupServiceTests
         await service.SetEnabledAsync(true, CancellationToken.None);
 
         Assert.True(await service.GetEnabledAsync(CancellationToken.None));
-        Assert.Equal(RegistryStartupService.RunKeyPath, registry.LastKeyPath);
+        Assert.Equal(@"Software\Microsoft\Windows\CurrentVersion\Run", registry.LastKeyPath);
         Assert.Equal("LumaTherm", registry.LastValueName);
         Assert.Equal("\"C:\\Program Files\\LumaTherm\\LumaTherm.exe\" --autostart", registry.Value);
 

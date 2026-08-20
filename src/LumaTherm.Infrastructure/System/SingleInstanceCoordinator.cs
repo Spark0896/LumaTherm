@@ -207,9 +207,8 @@ public sealed class SingleInstanceCoordinator : IAsyncDisposable
 
     private static async Task<bool> ReadExactShowAsync(Stream stream, CancellationToken cancellationToken)
     {
-        var bytes = new byte[MaximumMessageBytes + 1];
+        var bytes = new byte[MaximumMessageBytes];
         var length = 0;
-        var oversized = false;
         var oneByte = new byte[1];
         while (true)
         {
@@ -224,19 +223,11 @@ public sealed class SingleInstanceCoordinator : IAsyncDisposable
                 break;
             }
 
-            if (length < bytes.Length)
+            if (length >= MaximumMessageBytes)
             {
-                bytes[length++] = oneByte[0];
+                return false;
             }
-            else
-            {
-                oversized = true;
-            }
-        }
-
-        if (oversized || length > MaximumMessageBytes)
-        {
-            return false;
+            bytes[length++] = oneByte[0];
         }
 
         try

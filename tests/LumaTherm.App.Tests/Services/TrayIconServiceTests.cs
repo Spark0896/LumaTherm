@@ -91,11 +91,26 @@ public sealed class TrayIconServiceTests
         fixture.Platform.RaiseLeftClick();
         fixture.Platform.RaiseDoubleClick();
         fixture.Platform.RaiseOpen();
+        await WaitUntilAsync(() => fixture.Window.BringToFrontCalls == 3);
 
         Assert.Equal(1, fixture.Window.ShowCalls);
         Assert.Equal(1, fixture.Window.RestoreCalls);
         Assert.Equal(3, fixture.Window.ActivateCalls);
         Assert.Equal(3, fixture.Window.BringToFrontCalls);
+    }
+
+    [Fact]
+    public async Task ShowCallback_ObservesWindowFailureWithoutEscapingTrayEvent()
+    {
+        var fixture = new TrayFixture();
+        fixture.Window.IsVisible = false;
+        fixture.Window.ShowFailure = new InvalidOperationException("window failed");
+        await using var service = fixture.CreateService();
+
+        fixture.Platform.RaiseLeftClick();
+        await WaitUntilAsync(() => fixture.Errors.Count == 1);
+
+        Assert.Equal("window failed", fixture.Errors[0].Message);
     }
 
     [Fact]
@@ -108,7 +123,7 @@ public sealed class TrayIconServiceTests
         fixture.Platform.RaiseExit();
         await fixture.Application.ShutdownRequested.Task.WaitAsync(TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken);
 
-        Assert.Equal(["runtime.stop", "icon.dispose", "app.shutdown"], order);
+        Assert.Equal(["runtime.stop", "icon.hide", "icon.dispose", "app.shutdown"], order);
         Assert.True(fixture.ClosePolicy.IsExplicitExitRequested);
         Assert.Single(fixture.Errors);
 
@@ -118,11 +133,58 @@ public sealed class TrayIconServiceTests
     }
 
     [Fact]
+    public async Task Exit_AttemptsHideDisposeAndShutdownWhenEveryCleanupStepFails()
+    {
+        var order = new List<string>();
+        var fixture = new TrayFixture(order: order) { RuntimeStopFailure = new InvalidOperationException("stop failed") };
+        fixture.Platform.HideFailure = new InvalidOperationException("hide failed");
+        fixture.Platform.DisposeFailure = new InvalidOperationException("dispose failed");
+        fixture.ErrorHandler = exception =>
+        {
+            fixture.Errors.Add(exception);
+            order.Add($"error:{exception.Message}");
+        };
+        await using var service = fixture.CreateService();
+
+        fixture.Platform.RaiseExit();
+        await fixture.Application.ShutdownRequested.Task.WaitAsync(TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken);
+
+        Assert.Equal(
+            ["runtime.stop", "error:stop failed", "icon.hide", "error:hide failed", "icon.dispose", "error:dispose failed", "app.shutdown"],
+            order);
+        Assert.Equal(1, fixture.Platform.HideCalls);
+        Assert.Equal(1, fixture.Platform.DisposeCalls);
+        Assert.Equal(3, fixture.Errors.Count);
+    }
+
+    [Fact]
+    public async Task Exit_StillShutsDownWhenErrorSinkThrows()
+    {
+        var order = new List<string>();
+        var fixture = new TrayFixture(order: order) { RuntimeStopFailure = new InvalidOperationException("stop failed") };
+        var reports = 0;
+        fixture.ErrorHandler = _ =>
+        {
+            Interlocked.Increment(ref reports);
+            throw new InvalidOperationException("logger failed");
+        };
+        await using var service = fixture.CreateService();
+
+        fixture.Platform.RaiseExit();
+        await fixture.Application.ShutdownRequested.Task.WaitAsync(TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken);
+
+        Assert.Equal(["runtime.stop", "icon.hide", "icon.dispose", "app.shutdown"], order);
+        Assert.Equal(1, reports);
+    }
+
+    [Fact]
     public async Task ToggleOperations_AreSerializedAndErrorsObservedWithoutEscapingCallback()
     {
         var fixture = new TrayFixture();
         var firstEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var releaseFirst = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var gateTimeout = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+        gateTimeout.CancelAfter(TimeSpan.FromSeconds(2));
         var calls = 0;
         fixture.Toggle = async () =>
         {
@@ -130,21 +192,29 @@ public sealed class TrayIconServiceTests
             if (call == 1)
             {
                 firstEntered.TrySetResult();
-                await releaseFirst.Task;
+                await releaseFirst.Task.WaitAsync(gateTimeout.Token);
                 throw new InvalidOperationException("toggle failed");
             }
         };
-        await using var service = fixture.CreateService();
+        var service = fixture.CreateService();
 
-        fixture.Platform.RaiseToggle();
-        await firstEntered.Task.WaitAsync(TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken);
-        fixture.Platform.RaiseToggle();
-        Assert.Equal(1, calls);
-        releaseFirst.TrySetResult();
+        try
+        {
+            fixture.Platform.RaiseToggle();
+            await firstEntered.Task.WaitAsync(TimeSpan.FromSeconds(2), gateTimeout.Token);
+            fixture.Platform.RaiseToggle();
+            Assert.Equal(1, calls);
+            releaseFirst.TrySetResult();
 
-        await WaitUntilAsync(() => calls == 2 && fixture.Errors.Count == 1);
-        Assert.Equal(2, calls);
-        Assert.Equal("toggle failed", fixture.Errors[0].Message);
+            await WaitUntilAsync(() => calls == 2 && fixture.Errors.Count == 1);
+            Assert.Equal(2, calls);
+            Assert.Equal("toggle failed", fixture.Errors[0].Message);
+        }
+        finally
+        {
+            releaseFirst.TrySetResult();
+            await service.DisposeAsync();
+        }
     }
 
     [Fact]
@@ -200,6 +270,7 @@ public sealed class TrayIconServiceTests
         public bool NotificationsEnabled { get; set; }
         public Exception? RuntimeStopFailure { set => _runtime.StopFailure = value; }
         public List<Exception> Errors { get; } = [];
+        public Action<Exception>? ErrorHandler { get; set; }
         public int ToggleCalls { get; private set; }
         public Func<Task> Toggle { get; set; } = () => Task.CompletedTask;
 
@@ -215,12 +286,13 @@ public sealed class TrayIconServiceTests
                 async () => { ToggleCalls++; await Toggle(); },
                 ClosePolicy,
                 () => NotificationsEnabled,
-                Errors.Add);
+                ErrorHandler ?? Errors.Add);
         }
     }
 
     private sealed class FakeTrayPlatform : ITrayIconPlatform
     {
+        private bool _visible;
         public event EventHandler? LeftClick;
         public event EventHandler? DoubleClick;
         public event EventHandler? OpenRequested;
@@ -229,10 +301,31 @@ public sealed class TrayIconServiceTests
         public List<(string Title, string Message)> Notifications { get; } = [];
         public List<string> Order { get; set; } = [];
         public int DisposeCalls { get; private set; }
-        public bool Visible { get; set; }
+        public int HideCalls { get; private set; }
+        public Exception? HideFailure { get; set; }
+        public Exception? DisposeFailure { get; set; }
+        public bool Visible
+        {
+            get => _visible;
+            set
+            {
+                if (!value)
+                {
+                    HideCalls++;
+                    Order.Add("icon.hide");
+                    if (HideFailure is not null) throw HideFailure;
+                }
+                _visible = value;
+            }
+        }
         public TrayMenuState? MenuState { get; set; }
         public void ShowNotification(string title, string message) => Notifications.Add((title, message));
-        public void Dispose() { DisposeCalls++; Order.Add("icon.dispose"); }
+        public void Dispose()
+        {
+            DisposeCalls++;
+            Order.Add("icon.dispose");
+            if (DisposeFailure is not null) throw DisposeFailure;
+        }
         public void RaiseLeftClick() => LeftClick?.Invoke(this, EventArgs.Empty);
         public void RaiseDoubleClick() => DoubleClick?.Invoke(this, EventArgs.Empty);
         public void RaiseOpen() => OpenRequested?.Invoke(this, EventArgs.Empty);
@@ -248,7 +341,13 @@ public sealed class TrayIconServiceTests
         public int RestoreCalls { get; private set; }
         public int ActivateCalls { get; private set; }
         public int BringToFrontCalls { get; private set; }
-        public void Show() { ShowCalls++; IsVisible = true; }
+        public Exception? ShowFailure { get; set; }
+        public void Show()
+        {
+            ShowCalls++;
+            if (ShowFailure is not null) throw ShowFailure;
+            IsVisible = true;
+        }
         public void Restore() { RestoreCalls++; IsMinimized = false; }
         public void Activate() => ActivateCalls++;
         public void BringToFront() => BringToFrontCalls++;
