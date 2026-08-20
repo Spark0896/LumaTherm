@@ -2,7 +2,7 @@
 
 ## Safe-stage result
 
-Implemented the x64 MSIX manifest/package project, deterministic approved assets contract, repeatable self-contained release pipeline, and reversible per-user install/uninstall scripts. Implementation commit: `2f562de` (`build: add signed MSIX and portable release`). Safe tool-resolution fix: `f2858be` (`fix: resolve pinned packaging tools safely`).
+Implemented the x64 MSIX manifest/package project, deterministic approved assets contract, repeatable self-contained release pipeline, and reversible per-user install/uninstall scripts. Implementation commit: `2f562de` (`build: add signed MSIX and portable release`). Safe tool-resolution fix: `f2858be` (`fix: resolve pinned packaging tools safely`). Signing-security review fix: `8ebaff3` (`fix: secure local package signing workflow`).
 
 The controller-gated real `build-release.ps1` invocation has intentionally not run yet. Therefore MakeAppx schema/signature evidence, final artifact sizes/hashes, and the transient certificate-store thumbprint remain pending; this report does not claim the signed release is complete.
 
@@ -37,17 +37,17 @@ The controller-gated real `build-release.ps1` invocation has intentionally not r
 - Plan mode selected absolute x64 `MakeAppx.exe` and `SignTool.exe` from `bin\10.0.26100.0\x64`.
 - Publish contract includes self-contained `win-x64`, single file, native self-extraction, and disabled symbols.
 - Full mode cleans only its owned `dist`, publish, and package-layout locations; generated outputs/signing material are ignored. No production GCC/RGB Fusion, raw HID, vendor DLL, lighting, autostart, package, registry, or certificate trust operation is used.
-- Installer checks every checksum, validates Authenticode, requires the signer thumbprint to equal sibling `LumaTherm.cer`, then confirms before importing only that CER into CurrentUser TrustedPeople. It never enables autostart.
+- Installer requires exactly the five named release artifacts, checks every checksum, and requires the signer thumbprint to equal sibling `LumaTherm.cer`. A `Valid` signature installs without a trust mutation. A matching `NotTrusted` signature requires explicit confirmation, imports only that CER into CurrentUser TrustedPeople when absent, then re-runs Authenticode and requires `Valid` before installation. It never enables autostart.
 - Uninstaller confirms unless forced, targets one exact package and only the `LumaTherm` portable Run value, preserves user data by default, and removes only the distributed CER thumbprint when explicitly requested.
 
 ## Fresh safe verification
 
 ```text
 dotnet test tests/LumaTherm.Packaging.Tests/LumaTherm.Packaging.Tests.csproj -c Release --no-restore -p:NuGetAudit=false
-PASS: 22 passed, 0 failed.
+PASS: 29 passed, 0 failed.
 
 dotnet test LumaTherm.sln -c Release --no-restore -p:NuGetAudit=false
-PASS: Core 71 + Infrastructure 91 + App 138 + Packaging 22 = 322 passed, 0 failed.
+PASS: Core 71 + Infrastructure 91 + App 138 + Packaging 29 = 329 passed, 0 failed.
 
 dotnet build LumaTherm.sln -c Release --no-restore -p:NuGetAudit=false
 PASS: 0 warnings, 0 errors.
@@ -64,11 +64,11 @@ From the worktree root, the precise command is:
 & "$PWD\scripts\build-release.ps1"
 ```
 
-Expected certificate-store delta: one transient self-signed certificate with subject `CN=LumaTherm Local` is created under `Cert:\CurrentUser\My`, exported to ignored `packaging/local-signing/`, and removed in the script `finally` block. It is never imported into `TrustedPeople` by the build. The final report must record its thumbprint and confirm removal. The expected outputs are `dist/LumaTherm-1.0.0-win-x64.msix`, `dist/LumaTherm-1.0.0-portable-win-x64.zip`, `dist/LumaTherm.cer`, `dist/SHA256SUMS.txt`, `dist/install.ps1`, and `dist/uninstall.ps1`; MakeAppx and SignTool verification, exact sizes, and SHA-256 values must be appended after the approved run.
+Expected certificate-store delta: one transient code-signing certificate with subject `CN=LumaTherm Local` is created under `Cert:\CurrentUser\My` and exported only to a unique ignored `packaging/local-signing/run-<guid>/` directory. After signing, the exact public certificate is imported temporarily into `Cert:\CurrentUser\TrustedPeople` only when that thumbprint was not already present, so SignTool `/pa` can verify the package. The nested cleanup independently removes and verifies absence of the owned TrustedPeople entry and the owned CurrentUser/My entry, never removes a pre-existing TrustedPeople certificate, then removes only the owned run directory. The final report must record the transient thumbprint only after verified cleanup. The expected outputs are `dist/LumaTherm-1.0.0-win-x64.msix`, `dist/LumaTherm-1.0.0-portable-win-x64.zip`, `dist/LumaTherm.cer`, `dist/SHA256SUMS.txt`, `dist/install.ps1`, and `dist/uninstall.ps1`; MakeAppx and SignTool verification, exact sizes, and SHA-256 values must be appended after the approved run.
 
 ## Self-review and pending evidence
 
-- Safe seams are gated by both `-AuditOnly` and `LUMATHERM_PACKAGING_TEST=1`; they cannot reach mutation paths.
+- Installer/uninstaller verification overrides require both `-AuditOnly` and `LUMATHERM_PACKAGING_TEST=1`; those audit paths cannot reach package, registry, certificate, or filesystem mutation. The release tool-path override is separately restricted to `-Mode Plan` plus `LUMATHERM_PACKAGING_TEST=1`; Full mode always resolves and validates the pinned BuildTools package.
 - Tests exercise real XML parsing, PNG headers/hashes/regeneration, SHA-256, fixture certificates, sibling resolution, and executable PowerShell plans. No broad script source-grep test substitutes for behavior.
 - Password values are absent from stdout/stderr and are cleared from release variables in `finally`; generated passwords are cryptographically random per run.
 - Pending by instruction: real MakeAppx schema validation, SHA-256 SignTool sign/verify, artifact sizes/hashes, and certificate-store create/remove evidence. No install/uninstall is authorized at this checkpoint.
@@ -78,3 +78,15 @@ Expected certificate-store delta: one transient self-signed certificate with sub
 - RED: a fresh real `build-release.ps1 -Mode Plan` failed with a null-method error because Plan queried only the artifact-rooted MSBuild intermediate path, while the already-restored package property existed in the normal project intermediate path.
 - GREEN: tool resolution first queries the release artifact-rooted path (the path Full mode restores), then safely falls back to the normal restored project path. If neither produces the pinned property it now fails with an actionable restore message instead of dereferencing null.
 - A real safe Plan regression resolves version `10.0.26100.8249` and the absolute x64 tool path; the refreshed focused/full/build results above include this test.
+
+## Review fix round 1 — secure local signing and mutation boundaries
+
+- C1 RED: a locally self-signed package could be signed but `/pa` verification had no coherent trust bootstrap, while the installer rejected `NotTrusted` before an informed trust decision. GREEN: the build uses a code-signing EKU/DigitalSignature certificate, temporarily trusts only the exact generated public certificate for `/pa`, and independently removes and verifies both owned store entries in `finally`. Installer Audit tests prove checksum and signer matching precede the explicit prompt, planned import, Authenticode re-verification, and install; the already-`Valid` path has no trust prompt or import.
+- C2 RED: a real temporary junction beneath an allowed output root passed the lexical root check and allowed a source file outside the repository to be moved. GREEN: every sensitive recursive delete, move, export, or signing-directory write walks existing components from the physical repository root and refuses any reparse point. The regression preserves both an external sentinel and external executable and creates no package layout.
+- I1 RED: Plan accepted an arbitrary SDK tool override without the test environment gate. GREEN: `-SdkBuildToolsPath` is accepted only by Plan with `LUMATHERM_PACKAGING_TEST=1`; Full rejects it before any mutation and otherwise validates the exact pinned package/version and x64 tools.
+- I2 RED: local signing reused one fixed directory. GREEN: each invocation owns a unique `run-<guid>` signing directory, Plan only reports it, and Full creates/removes only that directory.
+- I3 RED: uninstall could plan package removal before discovering a requested certificate mismatch or missing sibling CER. GREEN: exact package identity, user-data target, CER thumbprint, and store target are all preflighted before confirmation or the first mutation plan.
+- I4 RED: the test host synchronously read redirected streams and had no bounded timeout. GREEN: stdout/stderr drains run asynchronously, waits are bounded, timeout kills the process tree, and drains are awaited; a real child-process timeout regression completes in under five seconds.
+- M1 RED: installer accepted version globs and checksum extras. GREEN: it requires exact `LumaTherm-1.0.0-win-x64.msix`, exact casing and exactly five checksum names, then queries and reports one unique installed `LumaTherm` PackageFullName after Add-AppxPackage.
+- Fresh safe verification after this round: Packaging 29/29; Core 71 + Infrastructure 91 + App 138 + Packaging 29 = 329/329; Release build 0 warnings and 0 errors; deterministic asset parity 1/1; real non-mutating Plan resolved the pinned absolute x64 tools; `git diff --check` reported no whitespace errors (only the repository's LF-to-CRLF checkout notices).
+- No Full mode, certificate-store mutation, MSIX install/uninstall, registry mutation, production app launch, or hardware access was performed. The controller-approved real MakeAppx/SignTool checkpoint remains pending.
