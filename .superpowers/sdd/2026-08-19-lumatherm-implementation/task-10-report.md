@@ -67,3 +67,39 @@ Executed from the worktree at production commit `2860073` with `--no-restore -p:
 
 - Task 11 still needs to compose these production adapters, provide the real logger/error sink, wire the ViewModel toggle delegate, and coordinate application-wide shutdown/activation. This was intentionally not done in Task 10.
 - Real StartupTask, registry, NotifyIcon, SystemEvents, and packaged/unpackaged behavior were intentionally not exercised in this task; those side-effecting acceptance checks remain gated to later tasks.
+
+## Fix round 1/5 — lifecycle failure hardening
+
+Review range base: `da8b5c8`. Production/tests fix:
+
+- `51c478e` — `fix: harden lifecycle failure handling`
+
+### Findings addressed
+
+1. **Held-open oversized activation client**
+   - Verified RED: a client wrote 17 bytes without a newline and remained connected; a later valid `SignalActivationAsync` timed out after two seconds with `OperationCanceledException` because the only pipe server kept reading the oversized connection.
+   - GREEN: the reader rejects and closes immediately when byte 17 arrives. The regression keeps the oversized client open while a later exact `SHOW` connects and activates within a bounded deadline.
+2. **Throwing window callback**
+   - Verified RED: `FakeWindow.Show()` threw `InvalidOperationException("window failed")` directly through `RaiseLeftClick` and the tray event callback.
+   - GREEN: Open/left-click/double-click use the tracked serialized operation queue; the failure reaches the non-throwing error path and never escapes the callback thread.
+3. **Exit cleanup failures**
+   - Verified RED: when hide threw, icon dispose was skipped; when the error sink threw, shutdown was never requested and disposal surfaced `logger failed`.
+   - GREEN: runtime stop, failure reporting, icon hide, icon dispose, and WPF shutdown use independent nested `try/finally` boundaries. Hide and dispose are each attempted exactly once; a throwing error sink is contained; shutdown remains last and unconditional. Tests assert exact temporal order and all observed failures.
+4. **Bounded single-instance tests**
+   - Structural RED audit found every acquire/signal call used `CancellationToken.None`, and two coordinators were not guaranteed cleanup after an early assertion.
+   - GREEN: every potentially blocking acquire/signal uses a linked finite CTS; raw pipe helpers are also bounded; coordinator/client lifetime uses `await using` or `finally`, so failed assertions cannot leave unbounded operations/resources.
+5. **Bounded tray toggle gate**
+   - Structural RED audit found the first toggle awaited an unbounded `TaskCompletionSource`, released only after an assertion which could fail before cleanup.
+   - GREEN: the gate uses a linked two-second token and is released in an outer `finally` before awaited service disposal.
+6. **Registry path assertion (minor)**
+   - The test now derives the expectation independently with the literal `@"Software\Microsoft\Windows\CurrentVersion\Run"` rather than the production constant.
+
+### Fix-round verification
+
+Executed with `--no-restore -p:NuGetAudit=false`:
+
+- Exact Task 10 focused filter plus new regression cases: **38 passed** (`19` Infrastructure + `19` App), `0` failed, `0` skipped.
+- Full solution: **256 passed** (`71` Core + `77` Infrastructure + `108` App), `0` failed, `0` skipped.
+- Debug build: **0 warnings, 0 errors**.
+- `git diff --check`: clean.
+- Static self-review: no `async void`; no real registry/StartupTask/tray/SystemEvents/hardware side effects; no GCC/RGB Fusion, vendor controller, raw HID, or lighting-write dependency introduced.
