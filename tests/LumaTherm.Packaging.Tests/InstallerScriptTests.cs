@@ -285,13 +285,12 @@ public sealed class InstallerScriptTests
         var sentinel = Path.Combine(external, "sentinel.txt");
         File.WriteAllText(sentinel, "preserve");
         var junction = Path.Combine(userData, "linked-child");
-        using var mklink = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("cmd.exe")
+        var mklink = BoundedProcessTestHost.Run(new System.Diagnostics.ProcessStartInfo("cmd.exe")
         {
             UseShellExecute = false,
             CreateNoWindow = true,
             ArgumentList = { "/c", "mklink", "/J", junction, external },
-        })!;
-        mklink.WaitForExit();
+        }, TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(5));
         if (mklink.ExitCode != 0)
         {
             Assert.Skip("Junction creation is unavailable on this Windows host.");

@@ -178,13 +178,12 @@ public sealed class ReleaseScriptTests
         File.WriteAllText(Path.Combine(external, "LumaTherm.App.exe"), "app");
         var junction = Path.Combine(fixture.RepositoryRoot, "artifacts", "publish-junction");
         Directory.CreateDirectory(Path.GetDirectoryName(junction)!);
-        var mklink = Process.Start(new ProcessStartInfo("cmd.exe")
+        var mklink = BoundedProcessTestHost.Run(new ProcessStartInfo("cmd.exe")
         {
             UseShellExecute = false,
             CreateNoWindow = true,
             ArgumentList = { "/c", "mklink", "/J", junction, external },
-        })!;
-        mklink.WaitForExit();
+        }, TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(5));
         if (mklink.ExitCode != 0)
         {
             Assert.Skip("Junction creation is unavailable on this Windows host.");
@@ -337,13 +336,12 @@ public sealed class ReleaseScriptTests
 
     private static bool TryCreateJunction(string junction, string target)
     {
-        using var process = Process.Start(new ProcessStartInfo("cmd.exe")
+        var process = BoundedProcessTestHost.Run(new ProcessStartInfo("cmd.exe")
         {
             UseShellExecute = false,
             CreateNoWindow = true,
             ArgumentList = { "/c", "mklink", "/J", junction, target },
-        })!;
-        process.WaitForExit();
+        }, TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(5));
         return process.ExitCode == 0;
     }
 
