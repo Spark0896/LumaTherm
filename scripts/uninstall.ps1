@@ -6,7 +6,8 @@ param(
     [switch]$AuditOnly,
     [string]$InstalledPackageForTest,
     [ValidateSet('Accept', 'Decline')][string]$ConfirmationDecisionForTest,
-    [string]$CertificateThumbprintForTest
+    [string]$CertificateThumbprintForTest,
+    [ValidateSet('Admin', 'NonAdmin')][string]$AdministratorStatusForTest
 )
 
 $ErrorActionPreference = 'Stop'
@@ -15,8 +16,19 @@ Set-StrictMode -Version Latest
 $isTest = $env:LUMATHERM_PACKAGING_TEST -eq '1'
 if ((-not [string]::IsNullOrWhiteSpace($InstalledPackageForTest) -or
      -not [string]::IsNullOrWhiteSpace($ConfirmationDecisionForTest) -or
-     -not [string]::IsNullOrWhiteSpace($CertificateThumbprintForTest)) -and (-not $AuditOnly -or -not $isTest)) {
+     -not [string]::IsNullOrWhiteSpace($CertificateThumbprintForTest) -or
+     -not [string]::IsNullOrWhiteSpace($AdministratorStatusForTest)) -and (-not $AuditOnly -or -not $isTest)) {
     throw 'Test discovery overrides require AuditOnly and LUMATHERM_PACKAGING_TEST=1.'
+}
+
+function Test-IsAdministrator {
+    if ($isTest -and $AuditOnly) {
+        if ([string]::IsNullOrWhiteSpace($AdministratorStatusForTest)) { return $true }
+        return $AdministratorStatusForTest -eq 'Admin'
+    }
+    $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+    $principal = [Security.Principal.WindowsPrincipal]::new($identity)
+    return $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 }
 
 $events = [System.Collections.Generic.List[string]]::new()
@@ -77,7 +89,15 @@ if ($RemoveCertificate) {
         -not $certificateThumbprint.Equals($CertificateThumbprintForTest, [System.StringComparison]::OrdinalIgnoreCase)) {
         throw 'Certificate test thumbprint does not match sibling LumaTherm.cer.'
     }
-    $trustedPath = 'Cert:\CurrentUser\TrustedPeople\' + $certificateThumbprint
+    $trustedPath = 'Cert:\LocalMachine\TrustedPeople\' + $certificateThumbprint
+    if (-not (Test-IsAdministrator)) {
+        $events.Add('administratorPreflightFailed')
+        if ($AuditOnly) {
+            [pscustomobject]@{ events = $events.ToArray(); certificateStorePath = $trustedPath } | ConvertTo-Json -Compress | Write-Output
+        }
+        throw 'Removing the exact LumaTherm machine trust certificate requires an elevated Administrator PowerShell.'
+    }
+    $events.Add('administratorPreflightPassed')
 }
 $events.Add('targetsPreflighted')
 
@@ -138,6 +158,7 @@ $result = [ordered]@{
     runValue = $runValue
     userDataPath = $userDataPath
     certificateThumbprint = $certificateThumbprint
+    certificateStorePath = $trustedPath
 }
 $result | ConvertTo-Json -Depth 3 -Compress | Write-Output
 if (-not $AuditOnly) { Write-Host 'LumaTherm uninstall completed. User data was preserved unless -RemoveUserData was supplied.' }

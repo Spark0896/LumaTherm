@@ -6,7 +6,8 @@ param(
     [string]$CertificatePassword,
     [string]$Publisher,
     [string]$SdkBuildToolsPath,
-    [string]$PublishedAppPath
+    [string]$PublishedAppPath,
+    [ValidateSet('NonAdmin')][string]$AdministratorStatusForTest
 )
 
 $ErrorActionPreference = 'Stop'
@@ -15,6 +16,22 @@ Set-StrictMode -Version Latest
 if (-not [string]::IsNullOrWhiteSpace($SdkBuildToolsPath) -and
     ($Mode -ne 'Plan' -or $env:LUMATHERM_PACKAGING_TEST -ne '1')) {
     throw '-SdkBuildToolsPath is permitted only in Plan mode with LUMATHERM_PACKAGING_TEST=1.'
+}
+if (-not [string]::IsNullOrWhiteSpace($AdministratorStatusForTest) -and $env:LUMATHERM_PACKAGING_TEST -ne '1') {
+    throw '-AdministratorStatusForTest requires LUMATHERM_PACKAGING_TEST=1.'
+}
+
+function Test-IsAdministrator {
+    if (-not [string]::IsNullOrWhiteSpace($AdministratorStatusForTest)) {
+        return $false
+    }
+    $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+    $principal = [Security.Principal.WindowsPrincipal]::new($identity)
+    return $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+}
+
+if ($Mode -eq 'Full' -and -not (Test-IsAdministrator)) {
+    throw 'Full release signing requires an elevated Administrator PowerShell because exact temporary trust is added to LocalMachine\TrustedPeople. Re-run explicitly with UAC elevation.'
 }
 
 $repositoryRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
@@ -270,10 +287,11 @@ if ($Mode -eq 'Plan') {
         zipName = $zipName
         allowedWriteRoots = @($artifactsRoot, $distRoot, $localSigningBaseRoot)
         localSigningDirectory = $localSigningRunRoot
+        temporaryTrustStore = 'Cert:\LocalMachine\TrustedPeople'
         localCertificateWorkflow = if ([string]::IsNullOrWhiteSpace($CertificatePath)) { @(
-            'create:CurrentUser/My', 'export:owned-run-directory', 'sign:SHA256',
-            'import-if-absent:CurrentUser/TrustedPeople', 'verify:/pa',
-            'remove-if-owned:CurrentUser/TrustedPeople', 'remove:CurrentUser/My',
+            'require:elevated-administrator', 'create:CurrentUser/My', 'export:owned-run-directory', 'sign:SHA256',
+            'import-if-absent:LocalMachine/TrustedPeople', 'verify:/pa',
+            'remove-if-owned:LocalMachine/TrustedPeople', 'remove:CurrentUser/My',
             'verify:owned-store-cleanup', 'remove:owned-run-directory'
         ) } else { @() }
         localCertificateProfile = [ordered]@{
@@ -314,8 +332,8 @@ $createdCertificate = $null
 $certificate = $null
 $plainPassword = $CertificatePassword
 $pfxPath = $CertificatePath
-$trustedCertificateAdded = $false
-$trustedCertificatePath = $null
+$machineTrustedCertificateAdded = $false
+$machineTrustedCertificatePath = $null
 $transientThumbprint = $null
 Assert-PathUnderAllowedRoot -Path $localSigningRunRoot
 New-Item -ItemType Directory -Path $localSigningRunRoot -Force | Out-Null
@@ -353,10 +371,10 @@ try {
     & $tools.SignTool sign /fd SHA256 /f $pfxPath /p $plainPassword $msixPath
     if ($LASTEXITCODE -ne 0) { throw 'SignTool signing failed.' }
     if ($null -ne $createdCertificate) {
-        $trustedCertificatePath = 'Cert:\CurrentUser\TrustedPeople\' + $createdCertificate.Thumbprint
-        if (-not (Test-Path -LiteralPath $trustedCertificatePath)) {
-            $trustedCertificateAdded = $true
-            Import-Certificate -FilePath (Join-Path $localSigningRunRoot 'LumaTherm.cer') -CertStoreLocation 'Cert:\CurrentUser\TrustedPeople' | Out-Null
+        $machineTrustedCertificatePath = 'Cert:\LocalMachine\TrustedPeople\' + $createdCertificate.Thumbprint
+        if (-not (Test-Path -LiteralPath $machineTrustedCertificatePath)) {
+            $machineTrustedCertificateAdded = $true
+            Import-Certificate -FilePath (Join-Path $localSigningRunRoot 'LumaTherm.cer') -CertStoreLocation 'Cert:\LocalMachine\TrustedPeople' | Out-Null
         }
     }
     & $tools.SignTool verify /pa /v $msixPath
@@ -380,16 +398,16 @@ try {
     $CertificatePassword = $null
     if ($null -ne $certificate) { $certificate.Dispose() }
     $cleanupFailures = [System.Collections.Generic.List[string]]::new()
-    if ($trustedCertificateAdded -and -not [string]::IsNullOrWhiteSpace($trustedCertificatePath)) {
-        try { if (Test-Path -LiteralPath $trustedCertificatePath) { Remove-Item -LiteralPath $trustedCertificatePath -Force } }
-        catch { $cleanupFailures.Add("TrustedPeople cleanup failed: $($_.Exception.Message)") }
+    if ($machineTrustedCertificateAdded -and -not [string]::IsNullOrWhiteSpace($machineTrustedCertificatePath)) {
+        try { if (Test-Path -LiteralPath $machineTrustedCertificatePath) { Remove-Item -LiteralPath $machineTrustedCertificatePath -Force } }
+        catch { $cleanupFailures.Add("LocalMachine/TrustedPeople cleanup failed: $($_.Exception.Message)") }
     }
     if ($null -ne $createdCertificate) {
         $myCertificatePath = "Cert:\CurrentUser\My\" + $createdCertificate.Thumbprint
         try { if (Test-Path -LiteralPath $myCertificatePath) { Remove-Item -LiteralPath $myCertificatePath -Force } }
         catch { $cleanupFailures.Add("CurrentUser/My cleanup failed: $($_.Exception.Message)") }
         try {
-            if (($trustedCertificateAdded -and (Test-Path -LiteralPath $trustedCertificatePath)) -or (Test-Path -LiteralPath $myCertificatePath)) {
+            if (($machineTrustedCertificateAdded -and (Test-Path -LiteralPath $machineTrustedCertificatePath)) -or (Test-Path -LiteralPath $myCertificatePath)) {
                 throw 'Owned transient certificate remains in a certificate store.'
             }
         } catch { $cleanupFailures.Add("Certificate cleanup verification failed: $($_.Exception.Message)") }
@@ -403,6 +421,6 @@ try {
     } catch { $cleanupFailures.Add("Owned signing directory cleanup failed: $($_.Exception.Message)") }
     if ($cleanupFailures.Count -gt 0) { throw ($cleanupFailures -join [Environment]::NewLine) }
     if (-not [string]::IsNullOrWhiteSpace($transientThumbprint)) {
-        Write-Host "Removed transient signing certificate $transientThumbprint from owned CurrentUser stores and verified cleanup."
+        Write-Host "Removed transient signing certificate $transientThumbprint from owned CurrentUser/My and LocalMachine/TrustedPeople entries and verified cleanup."
     }
 }

@@ -108,15 +108,29 @@ public sealed class ReleaseScriptTests
         var steps = json.RootElement.GetProperty("localCertificateWorkflow").EnumerateArray().Select(e => e.GetString()).ToArray();
         Assert.Equal(new[]
         {
-            "create:CurrentUser/My", "export:owned-run-directory", "sign:SHA256",
-            "import-if-absent:CurrentUser/TrustedPeople", "verify:/pa",
-            "remove-if-owned:CurrentUser/TrustedPeople", "remove:CurrentUser/My",
+            "require:elevated-administrator", "create:CurrentUser/My", "export:owned-run-directory", "sign:SHA256",
+            "import-if-absent:LocalMachine/TrustedPeople", "verify:/pa",
+            "remove-if-owned:LocalMachine/TrustedPeople", "remove:CurrentUser/My",
             "verify:owned-store-cleanup", "remove:owned-run-directory",
         }, steps);
+        Assert.Equal("Cert:\\LocalMachine\\TrustedPeople", json.RootElement.GetProperty("temporaryTrustStore").GetString());
         var profile = json.RootElement.GetProperty("localCertificateProfile");
         Assert.Equal("CN=LumaTherm Local", profile.GetProperty("subject").GetString());
         Assert.Equal("1.3.6.1.5.5.7.3.3", profile.GetProperty("enhancedKeyUsage").GetString());
         Assert.Equal("DigitalSignature", profile.GetProperty("keyUsage").GetString());
+    }
+
+    [Fact]
+    public void FullRejectsNonAdministratorBeforeAnyReleaseMutation()
+    {
+        using var fixture = ReleaseFixture.Create();
+        var result = fixture.RunBuild("-Mode", "Full", "-AdministratorStatusForTest", "NonAdmin");
+
+        Assert.NotEqual(0, result.ExitCode);
+        Assert.Contains("administrator", result.StandardError + result.StandardOutput, StringComparison.OrdinalIgnoreCase);
+        Assert.False(Directory.Exists(Path.Combine(fixture.RepositoryRoot, "dist")));
+        Assert.False(Directory.Exists(Path.Combine(fixture.RepositoryRoot, "artifacts", "package-layout")));
+        Assert.False(Directory.Exists(Path.Combine(fixture.RepositoryRoot, "packaging", "local-signing")));
     }
 
     [Fact]

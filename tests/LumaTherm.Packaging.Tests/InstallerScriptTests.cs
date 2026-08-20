@@ -22,10 +22,11 @@ public sealed class InstallerScriptTests
         var events = json.RootElement.GetProperty("events").EnumerateArray().Select(e => e.GetString()).ToArray();
         Assert.Equal(new[]
         {
-            "checksumVerified", "signatureMatchedUntrusted", "certificateImportConfirmed",
+            "checksumVerified", "signatureMatchedUntrusted", "administratorPreflightPassed", "certificateImportConfirmed",
             "certificateImportPlanned", "signatureReverificationPlanned", "signatureReverified",
             "packageInstallPlanned", "certificateTrustRetentionPlanned",
         }, events);
+        Assert.Equal("Cert:\\LocalMachine\\TrustedPeople", json.RootElement.GetProperty("certificateStore").GetString());
     }
 
     [Fact]
@@ -43,7 +44,7 @@ public sealed class InstallerScriptTests
         var events = json.RootElement.GetProperty("events").EnumerateArray().Select(e => e.GetString()).ToArray();
         Assert.Equal(new[]
         {
-            "checksumVerified", "signatureMatchedUntrusted", "certificateImportConfirmed",
+            "checksumVerified", "signatureMatchedUntrusted", "administratorPreflightPassed", "certificateImportConfirmed",
             "certificateImportPlanned", "signatureReverificationPlanned",
             "signatureReverificationFailed", "certificateTrustCleanupPlanned",
         }, events);
@@ -66,10 +67,30 @@ public sealed class InstallerScriptTests
         var events = json.RootElement.GetProperty("events").EnumerateArray().Select(e => e.GetString()).ToArray();
         Assert.Equal(new[]
         {
-            "checksumVerified", "signatureMatchedUntrusted", "certificateImportConfirmed",
+            "checksumVerified", "signatureMatchedUntrusted", "administratorPreflightPassed", "certificateImportConfirmed",
             "certificateImportPlanned", "signatureReverificationPlanned", "signatureReverified",
             "packageInstallPlanned", "packageInstallFailed", "certificateTrustCleanupPlanned",
         }, events);
+    }
+
+    [Fact]
+    public void AuditRejectsNonAdministratorBeforeTrustConfirmationOrMutationPlan()
+    {
+        using var fixture = DistributionFixture.Create();
+        var result = fixture.RunInstall(
+            "-AuditOnly", "-AdministratorStatusForTest", "NonAdmin",
+            "-CertificateDecisionForTest", "Accept",
+            "-SignatureStatusForTest", "NotTrusted",
+            "-ReverifiedSignatureStatusForTest", "Valid",
+            "-SignatureThumbprintForTest", fixture.CertificateThumbprint);
+
+        Assert.NotEqual(0, result.ExitCode);
+        using var json = JsonDocument.Parse(result.StandardOutput);
+        var events = json.RootElement.GetProperty("events").EnumerateArray().Select(e => e.GetString()).ToArray();
+        Assert.Equal(new[] { "checksumVerified", "signatureMatchedUntrusted", "administratorPreflightFailed" }, events);
+        Assert.DoesNotContain("certificateImportConfirmed", events);
+        Assert.DoesNotContain("certificateImportPlanned", events);
+        Assert.DoesNotContain("packageInstallPlanned", events);
     }
 
     [Fact]
@@ -193,7 +214,7 @@ public sealed class InstallerScriptTests
         var events = root.GetProperty("events").EnumerateArray().Select(e => e.GetString()).ToArray();
         Assert.Equal(new[]
         {
-            "targetsPreflighted", "confirmationAccepted", "packageRemovalPlanned",
+            "administratorPreflightPassed", "targetsPreflighted", "confirmationAccepted", "packageRemovalPlanned",
             "runValueRemovalPlanned", "userDataRemovalPlanned", "certificateRemovalPlanned",
         }, events);
         Assert.Equal("LumaTherm_1.0.0.0_x64__test", root.GetProperty("packageFullName").GetString());
@@ -201,12 +222,32 @@ public sealed class InstallerScriptTests
         Assert.Equal("LumaTherm", root.GetProperty("runValue").GetString());
         Assert.EndsWith(Path.Combine("AppData", "Local", "LumaTherm"), root.GetProperty("userDataPath").GetString(), StringComparison.OrdinalIgnoreCase);
         Assert.Equal(fixture.CertificateThumbprint, root.GetProperty("certificateThumbprint").GetString());
+        Assert.Equal($"Cert:\\LocalMachine\\TrustedPeople\\{fixture.CertificateThumbprint}", root.GetProperty("certificateStorePath").GetString());
 
         var emptyResult = fixture.RunUninstall("-AuditOnly", "-Force", "-InstalledPackageForTest", "");
         Assert.Equal(0, emptyResult.ExitCode);
         Assert.Contains("alreadyAbsent", emptyResult.StandardOutput, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("userDataRemovalPlanned", emptyResult.StandardOutput, StringComparison.Ordinal);
         Assert.DoesNotContain("certificateRemovalPlanned", emptyResult.StandardOutput, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void UninstallCertificateRemovalRejectsNonAdministratorBeforeConfirmationOrMutationPlan()
+    {
+        using var fixture = DistributionFixture.Create();
+        var result = fixture.RunUninstall(
+            "-AuditOnly", "-RemoveCertificate", "-AdministratorStatusForTest", "NonAdmin",
+            "-ConfirmationDecisionForTest", "Accept",
+            "-InstalledPackageForTest", "LumaTherm_1.0.0.0_x64__test",
+            "-CertificateThumbprintForTest", fixture.CertificateThumbprint);
+
+        Assert.NotEqual(0, result.ExitCode);
+        using var json = JsonDocument.Parse(result.StandardOutput);
+        var events = json.RootElement.GetProperty("events").EnumerateArray().Select(e => e.GetString()).ToArray();
+        Assert.Equal(new[] { "administratorPreflightFailed" }, events);
+        Assert.DoesNotContain("confirmationAccepted", events);
+        Assert.DoesNotContain("packageRemovalPlanned", events);
+        Assert.DoesNotContain("certificateRemovalPlanned", events);
     }
 
     [Fact]

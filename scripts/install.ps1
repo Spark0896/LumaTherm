@@ -6,7 +6,8 @@ param(
     [ValidateSet('Valid', 'NotTrusted', 'Invalid', 'NotSigned', 'Exception')][string]$ReverifiedSignatureStatusForTest,
     [string]$SignatureThumbprintForTest,
     [ValidateSet('Success', 'Failure')][string]$InstallOutcomeForTest,
-    [switch]$TrustedCertificatePresentForTest
+    [switch]$TrustedCertificatePresentForTest,
+    [ValidateSet('Admin', 'NonAdmin')][string]$AdministratorStatusForTest
 )
 
 $ErrorActionPreference = 'Stop'
@@ -24,7 +25,11 @@ function Get-Sha256Hex {
 
 function Write-AuditResult {
     param([string[]]$Events, [string]$PackagePath)
-    [pscustomobject]@{ events = $Events; packagePath = $PackagePath } | ConvertTo-Json -Depth 3 -Compress | Write-Output
+    [pscustomobject]@{
+        events = $Events
+        packagePath = $PackagePath
+        certificateStore = 'Cert:\LocalMachine\TrustedPeople'
+    } | ConvertTo-Json -Depth 3 -Compress | Write-Output
 }
 
 $isTest = $env:LUMATHERM_PACKAGING_TEST -eq '1'
@@ -33,8 +38,19 @@ if ((-not [string]::IsNullOrWhiteSpace($SignatureStatusForTest) -or
      -not [string]::IsNullOrWhiteSpace($SignatureThumbprintForTest) -or
      -not [string]::IsNullOrWhiteSpace($CertificateDecisionForTest) -or
      -not [string]::IsNullOrWhiteSpace($InstallOutcomeForTest) -or
-     $TrustedCertificatePresentForTest) -and (-not $AuditOnly -or -not $isTest)) {
+     $TrustedCertificatePresentForTest -or
+     -not [string]::IsNullOrWhiteSpace($AdministratorStatusForTest)) -and (-not $AuditOnly -or -not $isTest)) {
     throw 'Test verification overrides require AuditOnly and LUMATHERM_PACKAGING_TEST=1.'
+}
+
+function Test-IsAdministrator {
+    if ($isTest -and $AuditOnly) {
+        if ([string]::IsNullOrWhiteSpace($AdministratorStatusForTest)) { return $true }
+        return $AdministratorStatusForTest -eq 'Admin'
+    }
+    $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+    $principal = [Security.Principal.WindowsPrincipal]::new($identity)
+    return $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 }
 
 $releaseRoot = [System.IO.Path]::GetFullPath($PSScriptRoot)
@@ -90,17 +106,22 @@ if ([string]::IsNullOrWhiteSpace($signatureThumbprint) -or
     -not $certificate.Thumbprint.Equals($signatureThumbprint, [System.StringComparison]::OrdinalIgnoreCase)) {
     throw 'MSIX signer certificate does not match sibling LumaTherm.cer.'
 }
-$trustedPath = 'Cert:\CurrentUser\TrustedPeople\' + $certificate.Thumbprint
+$trustedPath = 'Cert:\LocalMachine\TrustedPeople\' + $certificate.Thumbprint
 $ownedTrustedCertificate = $false
 $installSucceeded = $false
 $operationFailure = $null
 try {
     if ($signatureStatus -eq 'NotTrusted') {
         $events.Add('signatureMatchedUntrusted')
+        if (-not (Test-IsAdministrator)) {
+            $events.Add('administratorPreflightFailed')
+            throw 'Installing a matching untrusted LumaTherm package requires an elevated Administrator PowerShell to trust the exact certificate in LocalMachine\TrustedPeople.'
+        }
+        $events.Add('administratorPreflightPassed')
         if ($isTest -and $AuditOnly) {
             $accepted = $CertificateDecisionForTest -eq 'Accept'
         } else {
-            $answer = Read-Host "Import only certificate $($certificate.Thumbprint) ($($certificate.Subject)) into CurrentUser\TrustedPeople? Type YES"
+            $answer = Read-Host "Import only certificate $($certificate.Thumbprint) ($($certificate.Subject)) into LocalMachine\TrustedPeople? Type YES"
             $accepted = $answer -ceq 'YES'
         }
         if (-not $accepted) {
@@ -120,7 +141,7 @@ try {
             $events.Add('certificateAlreadyPresent')
         } else {
             $ownedTrustedCertificate = $true
-            Import-Certificate -FilePath $certificatePath -CertStoreLocation 'Cert:\CurrentUser\TrustedPeople' | Out-Null
+            Import-Certificate -FilePath $certificatePath -CertStoreLocation 'Cert:\LocalMachine\TrustedPeople' | Out-Null
             $events.Add('certificateImported')
         }
 
