@@ -94,3 +94,66 @@ PASS before commit; no whitespace errors.
 
 - Automated verification intentionally did not launch the production executable, write physical RGB, install a package, change real autostart, or exercise the real tray. Those are hardware/package acceptance gates for later tasks.
 - Package identity/background Dynamic Lighting behavior remains dependent on the Task 12 MSIX manifest/signing work.
+
+---
+
+## Fix round 1 — lifecycle and crash-safety review
+
+Implementation commit: `98e0a25b16f82756dc0142e035e188888922827c` (`fix: harden app lifecycle and crash safety`).
+
+### Verified findings and witnessed RED -> GREEN
+
+- **C1 dispatcher affinity:** RED first failed to compile without an awaitable dispatcher contract; the real STA regression then exposed tray warning and tray disposal on the test thread (`Actual 6`, dispatcher `Expected 9`). GREEN uses `WpfAppDispatcher`/`Application.Dispatcher.InvokeAsync` for UI, ViewModel, tray, power and discovery construction, window/warning display, tray disposal and UI disposal. The test delays ownership/settings asynchronously and verifies eight factory/show/warning/disposal observations on the real STA dispatcher.
+- **C2 atomic sentinel:** RED failed against the missing injected file-system seam. GREEN establishes a durable target marker with `FileMode.CreateNew` before any metadata update. Existing crash evidence is never moved or deleted during refresh; deterministic failure leaves the marker present. The redesign creates no temporary/update artifact, so cancellation/failure cannot strand one.
+- **C3 ownership overlap:** RED showed coordinator disposal preceding sentinel completion. GREEN holds single-instance ownership through marker deletion and logger finalization, then releases it last. The barrier regression starts the next marker at ownership release and proves the old session cannot subsequently delete it.
+- **I1 exception boundary:** RED failed against the missing dispatcher dependency; route/shutdown exceptions and off-dispatcher routing were then exercised. A canceled-dispatch regression also reproduced a stuck reentrancy gate (`routed 0`, expected `1`). GREEN contains route/shutdown failures, marshals foreground/background notification work, observes faulted/canceled dispatch tasks, releases gates, and requests foreground shutdown once from `finally` semantics without a notification storm.
+- **I2 queued SHOW:** RED executed the queued activation after stop (`ActivationCalls 1`). GREEN checks lifecycle both before enqueue and inside the callback, clears owned references, and contains synchronous dispatcher failures; queued callbacks cannot touch disposed UI.
+- **I3 startup cancellation:** RED timed out a blocked ownership stop at 250 ms and a blocked discovery start at the bounded deadline. GREEN uses one host-owned linked startup CTS: concurrent starters share one task, Stop cancels blocked acquisition/discovery, awaits startup termination, then performs uncancelled safety cleanup. The four focused concurrency/cancellation tests pass without release fallbacks or hangs.
+- **I4 recursive logging safety:** RED serialized nested `accessToken` value `must-not-leak`. GREEN recursively accepts bounded scalar/dictionary/enumerable structures, strips secret keys at every depth, sanitizes keys/strings/control characters, replaces unsupported DTOs with a type marker, and terminates cycles/depth/item overflow with explicit markers.
+- **M1 final stop diagnostics:** RED order assertions showed success logging before sentinel finalization. GREEN logs success only after successful sentinel completion and logs incomplete before logger disposal when sentinel finalization fails. Logger/single-instance disposal failures restore the crash marker while ownership is still held and remain reported.
+- **M2 artifact hygiene:** the sentinel no longer uses temporary files at all; injected metadata failure and cancellation-safe paths retain only the owned target marker.
+
+### Lifecycle ordering after review
+
+Startup ownership is acquired before sentinel/settings/hardware/tray work. After sentinel and settings, WPF-bound factories/display run on the application dispatcher; discovery and runtime start remain cancellation-aware. Stop cancels startup, awaits its termination, and then attempts every safety cleanup with `CancellationToken.None` in this order: runtime stop/release, discovery, power, dispatcher-bound tray disposal, dispatcher-bound UI/ViewModel disposal, sentinel finalization when all prior steps succeeded, final stop log/logger disposal, and single-instance release. If a post-sentinel logger/coordinator failure occurs, the marker is re-established before ownership release.
+
+### Sentinel outcomes after review
+
+| Path | Ownership while marker changes | Final marker |
+|---|---|---|
+| graceful stop | retained through deletion and final diagnostics | absent |
+| runtime/discovery/power/tray/UI failure | retained; deletion skipped | present |
+| sentinel metadata/finalization failure | retained; incomplete logged | present |
+| logger or coordinator disposal failure after deletion | retained during marker restoration | present |
+| next owner overlap | acquisition only after old finalization | new owner's marker remains |
+| non-owner | never reaches sentinel factory | unchanged |
+
+### Logger evidence
+
+- Nested dictionary/list regression removes token/password values and sanitizes embedded NUL/SOH controls.
+- Unsupported DTO property values are never reflected or serialized.
+- Cycles produce `[cycle]`, excessive depth produces `[max-depth]`, and collections are capped at 64 items; output remains finite valid JSONL.
+- Existing UTF-8 byte rotation, oversized-record truncation, concurrency, no-throw failure and idempotent-dispose coverage remains green.
+
+### Fresh verification after all fixes
+
+```text
+dotnet test LumaTherm.sln --filter "FullyQualifiedName~RollingFileLoggerTests|FullyQualifiedName~AppHostTests|FullyQualifiedName~SessionSentinel" --no-restore -p:NuGetAudit=false
+PASS: Infrastructure 13 + App 23 = 36 focused tests, 0 failed.
+
+dotnet test LumaTherm.sln --no-restore -p:NuGetAudit=false
+PASS: Core 71 + Infrastructure 90 + App 138 = 299 tests, 0 failed.
+
+dotnet build LumaTherm.sln -c Debug --no-restore -p:NuGetAudit=false
+PASS: 0 warnings, 0 errors.
+
+git diff --check / git diff --cached --check
+PASS: no whitespace errors.
+```
+
+### Fix-round self-review and concerns
+
+- Construction/cleanup ordering was re-read against the Task 11 brief and all review findings; owned references are cleared and every cleanup attempt remains failure-aggregating.
+- No `async void`, real install/autostart/tray action, physical hardware write, GCC/RGB Fusion dependency, vendor DLL integration, or raw-HID control was added. Production lighting remains direct Windows LampArray; temperature remains NVML primary with optional MSI Afterburner shared-memory fallback.
+- Tests use fakes/temp files plus bounded real STA dispatcher threads only; all waits have explicit deadlines or cancellation.
+- Remaining acceptance is intentionally hardware/package/manual UI validation in later gates; there is no unresolved lifecycle or startup-cancellation contract in this fix round.
