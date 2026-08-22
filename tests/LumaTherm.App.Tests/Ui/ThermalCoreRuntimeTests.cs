@@ -260,6 +260,21 @@ public sealed class ThermalCoreRuntimeTests
         Assert.Equal([0d, 1d / 6, 1d], bar.RenderedLabelOffsets);
     });
 
+    [Fact]
+    public void GradientBar_LegacyEqualOuterTemperaturesKeepLabelOffsetsAndRenderingFinite() => _sta.Run(() =>
+    {
+        var bar = Arrange(new ThermalGradientBar
+        {
+            ColdTemperature = 40,
+            WarmTemperature = 40,
+            HotTemperature = 40,
+        }, 600, 100);
+
+        Assert.All(bar.RenderedLabelOffsets, offset => Assert.True(double.IsFinite(offset)));
+        Assert.NotEqual(BlankChecksum(600, 100), RenderChecksum(bar, 600, 100));
+    });
+
+
 
     [Fact]
     public void Sparkline_UsesEveryPointFromItsProfileGradient() => _sta.Run(() =>

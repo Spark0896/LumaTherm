@@ -39,7 +39,7 @@ public partial class ThermalGradientBar : UserControl
         get
         {
             var points = ActivePoints;
-            return [.. points.Select(point => (point.Temperature - points[0].Temperature) / (points[^1].Temperature - points[0].Temperature))];
+            return [.. points.Select(point => NormalizedOffset(points, point.Temperature))];
         }
     }
 
@@ -74,12 +74,10 @@ public partial class ThermalGradientBar : UserControl
     private LinearGradientBrush CreateGradient()
     {
         var points = ActivePoints;
-        var cold = points[0].Temperature;
-        var hot = points[^1].Temperature;
         var stops = new GradientStopCollection();
         foreach (var point in points)
         {
-            var offset = hot > cold ? Math.Clamp((point.Temperature - cold) / (hot - cold), 0, 1) : 0;
+            var offset = NormalizedOffset(points, point.Temperature);
             stops.Add(new GradientStop(point.Color.ToMediaColor(), offset));
         }
 
@@ -94,6 +92,13 @@ public partial class ThermalGradientBar : UserControl
 
 
     private Color InterpolatedMarkerColor(double fraction) => fraction <= 0.5 ? ColdColor.ToMediaColor() : fraction < 0.82 ? WarmColor.ToMediaColor() : HotColor.ToMediaColor();
+    private static double NormalizedOffset(IReadOnlyList<ThermalPoint> points, double temperature)
+    {
+        var cold = points[0].Temperature;
+        var hot = points[^1].Temperature;
+        return hot > cold ? Math.Clamp((temperature - cold) / (hot - cold), 0, 1) : 0;
+    }
+
 
     private static DependencyProperty Register(string name, Type type, object defaultValue) => DependencyProperty.Register(
         name, type, typeof(ThermalGradientBar), new FrameworkPropertyMetadata(defaultValue, FrameworkPropertyMetadataOptions.AffectsRender));
