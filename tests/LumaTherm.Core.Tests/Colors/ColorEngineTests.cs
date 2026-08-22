@@ -7,11 +7,11 @@ public sealed class ColorEngineTests
     private static readonly ThermalProfile Profile = ThermalProfile.Default;
 
     [Theory]
-    [InlineData(0, 0x50, 0xC8, 0xFF)]
-    [InlineData(35, 0x50, 0xC8, 0xFF)]
-    [InlineData(65, 0xFF, 0xB0, 0x00)]
-    [InlineData(85, 0xFF, 0x56, 0x5D)]
-    [InlineData(110, 0xFF, 0x56, 0x5D)]
+    [InlineData(0, 0x00, 0x8C, 0xFF)]
+    [InlineData(35, 0x00, 0x8C, 0xFF)]
+    [InlineData(65, 0xFF, 0xD8, 0x00)]
+    [InlineData(85, 0xFF, 0x18, 0x00)]
+    [InlineData(110, 0xFF, 0x18, 0x00)]
     public void Map_ClampsAndHitsControlPoints(double temperature, byte r, byte g, byte b)
     {
         var engine = new ColorEngine(Profile, 35);
@@ -19,12 +19,28 @@ public sealed class ColorEngineTests
         Assert.Equal(new RgbColor(r, g, b), engine.Map(temperature));
     }
 
+    [Theory]
+    [InlineData(35)]
+    [InlineData(45)]
+    [InlineData(55)]
+    [InlineData(65)]
+    [InlineData(75)]
+    [InlineData(85)]
+    public void Map_DefaultProfileKeepsLedColorsFullyBrightAndSaturated(double temperature)
+    {
+        var color = new ColorEngine(Profile, 35).Map(temperature);
+        var channels = new[] { color.R, color.G, color.B };
+
+        Assert.Equal(255, channels.Max());
+        Assert.Equal(0, channels.Min());
+    }
+
     [Fact]
     public void Step_IsIndependentOfTickSize()
     {
         var oneStep = new ColorEngine(Profile, 35);
         var eightSteps = new ColorEngine(Profile, 35);
-        var expected = new RgbColor(255, 164, 7);
+        var expected = new RgbColor(255, 201, 0);
 
         var oneStepActual = oneStep.Step(85, TimeSpan.FromSeconds(0.8));
         RgbColor eightStepsActual = default;

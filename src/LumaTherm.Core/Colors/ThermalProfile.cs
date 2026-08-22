@@ -10,9 +10,9 @@ public sealed record ThermalProfile(
     double SmoothingSeconds)
 {
     public static ThermalProfile Default { get; } = new(
-        35, new RgbColor(0x50, 0xC8, 0xFF),
-        65, new RgbColor(0xFF, 0xB0, 0x00),
-        85, new RgbColor(0xFF, 0x56, 0x5D),
+        35, new RgbColor(0x00, 0x8C, 0xFF),
+        65, new RgbColor(0xFF, 0xD8, 0x00),
+        85, new RgbColor(0xFF, 0x18, 0x00),
         0.8);
 
     public ThermalProfile Validate()

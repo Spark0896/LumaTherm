@@ -379,9 +379,9 @@ public sealed class ThermalCoreRuntimeTests
         using var vm = new MainViewModel(new FakeRuntime());
         var view = Arrange(new DashboardView { DataContext = vm }, 1104, 652);
 
-        Assert.Equal("#50C8FF", Assert.IsType<TextBlock>(view.FindName("ColdColorText")).Text);
-        Assert.Equal("#FFB000", Assert.IsType<TextBlock>(view.FindName("WarmColorText")).Text);
-        Assert.Equal("#FF565D", Assert.IsType<TextBlock>(view.FindName("HotColorText")).Text);
+        Assert.Equal("#008CFF", Assert.IsType<TextBlock>(view.FindName("ColdColorText")).Text);
+        Assert.Equal("#FFD800", Assert.IsType<TextBlock>(view.FindName("WarmColorText")).Text);
+        Assert.Equal("#FF1800", Assert.IsType<TextBlock>(view.FindName("HotColorText")).Text);
     });
 
     [Fact]
