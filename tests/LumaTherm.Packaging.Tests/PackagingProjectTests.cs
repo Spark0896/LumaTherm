@@ -1,4 +1,5 @@
 using System.Xml.Linq;
+using System.Diagnostics;
 
 namespace LumaTherm.Packaging.Tests;
 
@@ -24,6 +25,16 @@ public sealed class PackagingProjectTests
         var solution = File.ReadAllText(Path.Combine(RepositoryLayout.Root, "LumaTherm.sln"));
         Assert.Contains("packaging\\LumaTherm.Packaging.csproj", solution, StringComparison.Ordinal);
         Assert.Contains("tests\\LumaTherm.Packaging.Tests\\LumaTherm.Packaging.Tests.csproj", solution, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void PackagingTestAssemblyUsesReleaseVersionMetadata()
+    {
+        var assembly = typeof(PackagingProjectTests).Assembly;
+        var fileVersion = FileVersionInfo.GetVersionInfo(assembly.Location);
+
+        Assert.Equal("1.1.0", fileVersion.ProductVersion);
+        Assert.Equal("1.1.0.0", fileVersion.FileVersion);
     }
 
 }
