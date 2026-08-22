@@ -21,6 +21,8 @@ public partial class ThermalProfileEditor : UserControl
     internal const double MinimumTemperature = 0;
     internal const double MaximumTemperature = 120;
 
+    private readonly HashSet<ThermalPointEditorViewModel> _subscribedPoints = [];
+    private ThermalProfileEditorViewModel? _subscribedEditor;
     private ThermalProfileEditorViewModel? _editor;
     private Guid? _draggedPointId;
     private UIElement? _dragCaptureElement;
@@ -29,6 +31,8 @@ public partial class ThermalProfileEditor : UserControl
     {
         InitializeComponent();
         DataContextChanged += OnDataContextChanged;
+        Loaded += OnLoaded;
+        Unloaded += OnUnloaded;
     }
 
     internal UIElement? DragCaptureElement => _dragCaptureElement;
@@ -79,10 +83,13 @@ public partial class ThermalProfileEditor : UserControl
             return;
         }
 
-        _editor.Select(id);
-        _draggedPointId = id;
-        _dragCaptureElement = captureElement;
-        Mouse.Capture(captureElement, CaptureMode.Element);
+        EndPointDrag();
+        if (Mouse.Capture(captureElement, CaptureMode.Element))
+        {
+            _editor.Select(id);
+            _draggedPointId = id;
+            _dragCaptureElement = captureElement;
+        }
     }
 
     internal void MoveDraggedPointAtPosition(double position, double trackWidth)
@@ -159,10 +166,27 @@ public partial class ThermalProfileEditor : UserControl
 
     private void OnDataContextChanged(object sender, DependencyPropertyChangedEventArgs e)
     {
-        DetachEditor(_editor);
+        EndPointDrag();
+        DetachEditor();
         _editor = e.NewValue as ThermalProfileEditorViewModel;
+        if (IsLoaded)
+        {
+            AttachEditor(_editor);
+        }
+
+        RefreshGradient();
+    }
+
+    private void OnLoaded(object sender, RoutedEventArgs e)
+    {
         AttachEditor(_editor);
         RefreshGradient();
+    }
+
+    private void OnUnloaded(object sender, RoutedEventArgs e)
+    {
+        EndPointDrag();
+        DetachEditor();
     }
 
     private void AttachEditor(ThermalProfileEditorViewModel? editor)
@@ -172,46 +196,57 @@ public partial class ThermalProfileEditor : UserControl
             return;
         }
 
-        editor.Points.CollectionChanged += OnPointsChanged;
-        foreach (var point in editor.Points)
+        if (!ReferenceEquals(_subscribedEditor, editor))
         {
-            point.PropertyChanged += OnPointPropertyChanged;
+            DetachEditor();
+            _subscribedEditor = editor;
+            editor.Points.CollectionChanged += OnPointsChanged;
         }
+
+        SyncPointSubscriptions();
     }
 
-    private void DetachEditor(ThermalProfileEditorViewModel? editor)
+    private void DetachEditor()
     {
-        if (editor is null)
+        if (_subscribedEditor is not null)
         {
-            return;
+            _subscribedEditor.Points.CollectionChanged -= OnPointsChanged;
         }
 
-        editor.Points.CollectionChanged -= OnPointsChanged;
-        foreach (var point in editor.Points)
+        foreach (var point in _subscribedPoints)
         {
             point.PropertyChanged -= OnPointPropertyChanged;
         }
+
+        _subscribedPoints.Clear();
+        _subscribedEditor = null;
     }
 
     private void OnPointsChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
-        if (e.OldItems is not null)
-        {
-            foreach (ThermalPointEditorViewModel point in e.OldItems)
-            {
-                point.PropertyChanged -= OnPointPropertyChanged;
-            }
-        }
-
-        if (e.NewItems is not null)
-        {
-            foreach (ThermalPointEditorViewModel point in e.NewItems)
-            {
-                point.PropertyChanged += OnPointPropertyChanged;
-            }
-        }
-
+        SyncPointSubscriptions();
         RefreshGradient();
+    }
+
+    private void SyncPointSubscriptions()
+    {
+        if (_subscribedEditor is null)
+        {
+            return;
+        }
+
+        var currentPoints = _subscribedEditor.Points.ToHashSet();
+        foreach (var removedPoint in _subscribedPoints.Where(point => !currentPoints.Contains(point)).ToArray())
+        {
+            removedPoint.PropertyChanged -= OnPointPropertyChanged;
+            _subscribedPoints.Remove(removedPoint);
+        }
+
+        foreach (var addedPoint in currentPoints.Where(point => !_subscribedPoints.Contains(point)))
+        {
+            addedPoint.PropertyChanged += OnPointPropertyChanged;
+            _subscribedPoints.Add(addedPoint);
+        }
     }
 
     private void OnPointPropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -224,8 +259,14 @@ public partial class ThermalProfileEditor : UserControl
 
     private void RefreshGradient()
     {
-        if (GradientTrack is null || _editor is null || _editor.Points.Count == 0)
+        if (GradientTrack is null)
         {
+            return;
+        }
+
+        if (_editor is null || _editor.Points.Count == 0)
+        {
+            GradientTrack.Background = System.Windows.Media.Brushes.Transparent;
             return;
         }
 

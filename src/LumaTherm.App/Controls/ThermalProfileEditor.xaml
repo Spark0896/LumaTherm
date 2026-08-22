@@ -98,9 +98,9 @@
                     <Button Style="{StaticResource ThermalPointMarkerStyle}"
                             automation:AutomationProperties.Name="{Binding Temperature, StringFormat=Temperature {0:0.#} degrees Celsius}"
                             PreviewKeyDown="PointMarker_PreviewKeyDown"
-                            MouseLeftButtonDown="PointMarker_MouseLeftButtonDown"
+                            PreviewMouseLeftButtonDown="PointMarker_MouseLeftButtonDown"
                             MouseMove="PointMarker_MouseMove"
-                            MouseLeftButtonUp="PointMarker_MouseLeftButtonUp"
+                            PreviewMouseLeftButtonUp="PointMarker_MouseLeftButtonUp"
                             LostMouseCapture="PointMarker_LostMouseCapture" />
                 </DataTemplate>
             </ItemsControl.ItemTemplate>
