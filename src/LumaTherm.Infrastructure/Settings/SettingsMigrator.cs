@@ -39,13 +39,21 @@ internal static class SettingsMigrator
     private static AppSettings MigrateLegacySettings(JsonElement root, JsonElement profileRoot)
     {
         var defaults = AppSettings.Default;
-        var profile = ThermalProfile.Create(
-        [
-            new ThermalPoint(GetRequiredDouble(profileRoot, "coldTemperature"), GetRequiredColor(profileRoot, "coldColor")),
-            new ThermalPoint(GetRequiredDouble(profileRoot, "warmTemperature"), GetRequiredColor(profileRoot, "warmColor")),
-            new ThermalPoint(GetRequiredDouble(profileRoot, "hotTemperature"), GetRequiredColor(profileRoot, "hotColor"))
-        ],
-        GetRequiredDouble(profileRoot, "smoothingSeconds"));
+        ThermalProfile profile;
+        try
+        {
+            profile = ThermalProfile.Create(
+            [
+                new ThermalPoint(GetRequiredDouble(profileRoot, "coldTemperature"), GetRequiredColor(profileRoot, "coldColor")),
+                new ThermalPoint(GetRequiredDouble(profileRoot, "warmTemperature"), GetRequiredColor(profileRoot, "warmColor")),
+                new ThermalPoint(GetRequiredDouble(profileRoot, "hotTemperature"), GetRequiredColor(profileRoot, "hotColor"))
+            ],
+            GetRequiredDouble(profileRoot, "smoothingSeconds"));
+        }
+        catch (ArgumentException exception)
+        {
+            throw new InvalidDataException("Settings contain invalid values.", exception);
+        }
         var settings = new AppSettings(
             2,
             profile,

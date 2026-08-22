@@ -139,6 +139,24 @@ public sealed class JsonSettingsStoreTests : IDisposable
         Assert.Null(settings.PreferredLightingDeviceId);
     }
 
+    [Theory]
+    [InlineData("""{"schemaVersion":0,"coldTemperature":70,"coldColor":"#008CFF","warmTemperature":60,"warmColor":"#FFD800","hotTemperature":85,"hotColor":"#FF1800","smoothingSeconds":0.8}""")]
+    [InlineData("""{"schemaVersion":1,"profile":{"coldTemperature":70,"coldColor":"#008CFF","warmTemperature":60,"warmColor":"#FFD800","hotTemperature":85,"hotColor":"#FF1800","smoothingSeconds":0.8}}""")]
+    public async Task LegacySchemaWithInvalidProfile_IsQuarantinedAndDefaultsAreReturned(string json)
+    {
+        Directory.CreateDirectory(_directory);
+        var path = Path.Combine(_directory, "settings.json");
+        await File.WriteAllTextAsync(path, json, TestContext.Current.CancellationToken);
+        var clock = new FakeTimeProvider(new DateTimeOffset(2026, 8, 19, 12, 0, 0, TimeSpan.Zero));
+        var store = new JsonSettingsStore(path, clock);
+
+        var result = await store.LoadAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(AppSettings.Default, result.Settings);
+        Assert.True(File.Exists(Path.Combine(_directory, "settings.corrupt-20260819-120000.json")));
+        Assert.Equal("Настройки были повреждены и сброшены", result.RecoveryMessage);
+    }
+
     [Fact]
     public async Task SchemaOne_IsMigratedToSchemaTwoWithDefaultPreferences()
     {
