@@ -1,5 +1,6 @@
 using System.IO;
 using System.Windows;
+using LumaTherm.App.Localization;
 using LumaTherm.App.Services;
 using LumaTherm.App.ViewModels;
 using LumaTherm.Core.Colors;
@@ -25,6 +26,7 @@ public static class ProductionAppServices
         IAppLogger? logger = null;
         ILightingController? lighting = null;
         ILightingDeviceDiscovery? lightingDiscovery = null;
+        var localization = new LocalizationService(application.Resources);
         var localData = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "LumaTherm");
 
         return new AppServices(
@@ -51,7 +53,11 @@ public static class ProductionAppServices
                     TimeProvider.System);
             },
             _ => new LoggingStartupService(CreateStartupService(), () => logger),
-            (runtime, startup, settings) => new WpfUiSession(runtime, startup, settings, lightingDiscovery ?? EmptyLightingDeviceDiscovery.Instance),
+            (runtime, startup, settings) =>
+            {
+                localization.Apply(settings.Language);
+                return new WpfUiSession(runtime, startup, settings, lightingDiscovery ?? EmptyLightingDeviceDiscovery.Instance);
+            },
             (ui, runtime) => new WpfTraySession((WpfUiSession)ui, runtime, application, exception => WriteFailure(logger, "app.unhandled", exception)),
             runtime => new PowerEventService(new WindowsPowerEventSource(), runtime, exception => WriteFailure(logger, "runtime.power_failed", exception)),
             (_, _) => new ReadOnlyDiscoverySession(lighting ?? throw new InvalidOperationException("Lighting composition is unavailable."), () => logger),
