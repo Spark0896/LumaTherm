@@ -540,6 +540,11 @@ public sealed class ThermalRuntime : IThermalRuntime
                 }
             }
 
+            if (_testTemperature is not null)
+            {
+                _releasedForMissing = false;
+            }
+
             _releasePending = false;
             return CreateSnapshot(RuntimeStatus.Active, _targetReading, _displayedColor, _targetRange, null);
         }
@@ -873,7 +878,29 @@ public sealed class ThermalRuntime : IThermalRuntime
                 return;
             }
 
-            if (!_settings.IsModeEnabled)
+            if (_suspended)
+            {
+                await _processGate.WaitAsync(CancellationToken.None).ConfigureAwait(false);
+                try
+                {
+                    _testTemperature = null;
+                    _lightingGate.Reset();
+                    var releaseMessage = _releasePending
+                        ? await TryReleaseLightingAsync().ConfigureAwait(false)
+                        : null;
+                    snapshot = CreateSnapshot(
+                        RuntimeStatus.Suspended,
+                        _targetReading,
+                        null,
+                        _targetRange,
+                        releaseMessage);
+                }
+                finally
+                {
+                    _processGate.Release();
+                }
+            }
+            else if (!_settings.IsModeEnabled)
             {
                 snapshot = await DisableCommittedModeAsync().ConfigureAwait(false);
             }

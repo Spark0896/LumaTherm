@@ -838,6 +838,223 @@ public sealed class ThermalRuntimeTests
         await using var replacement = await fixture.Runtime.BeginLightingTestAsync(CancellationToken.None);
     }
 
+    [Fact]
+    public async Task LightingTest_AfterSensorSafetyRelease_RearmsReleaseWhenSyntheticLightingWasReacquired()
+    {
+        await using var fixture = RuntimeFixture.Create(modeEnabled: true, temperatures: [68, null, null]);
+        await fixture.Runtime.ProcessOnceAsync(CancellationToken.None);
+        fixture.Advance(TimeSpan.FromMilliseconds(500));
+        await fixture.Runtime.ProcessOnceAsync(CancellationToken.None);
+        fixture.Advance(TimeSpan.FromSeconds(5));
+
+        var initiallyUnavailable = await fixture.Runtime.ProcessOnceAsync(CancellationToken.None);
+
+        Assert.Equal(RuntimeStatus.SensorUnavailable, initiallyUnavailable.Status);
+        Assert.Equal(1, fixture.Lighting.ReleaseCalls);
+        Assert.False(fixture.Lighting.IsConnected);
+
+        var session = await fixture.Runtime.BeginLightingTestAsync(CancellationToken.None);
+        await session.SetTemperatureAsync(80, CancellationToken.None);
+        var synthetic = await fixture.Runtime.ProcessOnceAsync(CancellationToken.None);
+
+        Assert.Equal(RuntimeStatus.Active, synthetic.Status);
+        Assert.True(fixture.Lighting.IsConnected);
+        await session.DisposeAsync();
+        Assert.Equal(1, fixture.Lighting.ReleaseCalls);
+
+        fixture.Advance(TimeSpan.FromMilliseconds(100));
+        var unavailableAgain = await fixture.Runtime.ProcessOnceAsync(CancellationToken.None);
+
+        Assert.Equal(RuntimeStatus.SensorUnavailable, unavailableAgain.Status);
+        Assert.Equal(2, fixture.Lighting.ReleaseCalls);
+        Assert.False(fixture.Lighting.IsConnected);
+        Assert.True(fixture.Runtime.CurrentSettings.IsModeEnabled);
+        Assert.Equal(0, fixture.SettingsStore.SaveCalls);
+    }
+
+    [Fact]
+    public async Task LightingTest_ModeOffSuspensionThenDisposal_PreservesSuspendedWithoutDuplicateRelease()
+    {
+        await using var fixture = RuntimeFixture.Create(modeEnabled: false, temperatures: [45]);
+        var releaseCallsBeforeTest = fixture.Lighting.ReleaseCalls;
+        var session = await fixture.Runtime.BeginLightingTestAsync(CancellationToken.None);
+        await session.SetTemperatureAsync(80, CancellationToken.None);
+        await fixture.Runtime.ProcessOnceAsync(CancellationToken.None);
+
+        Assert.Equal(1, fixture.Clock.ActiveTimerCount);
+        await fixture.Runtime.SuspendAsync(CancellationToken.None);
+        Assert.Equal(releaseCallsBeforeTest + 1, fixture.Lighting.ReleaseCalls);
+
+        await session.DisposeAsync();
+
+        Assert.Equal(RuntimeStatus.Suspended, fixture.Runtime.CurrentSnapshot.Status);
+        Assert.Equal(releaseCallsBeforeTest + 1, fixture.Lighting.ReleaseCalls);
+        Assert.Equal(0, fixture.Clock.ActiveTimerCount);
+        Assert.False(fixture.Lighting.IsConnected);
+        Assert.False(fixture.Runtime.CurrentSettings.IsModeEnabled);
+        Assert.Equal(0, fixture.SettingsStore.SaveCalls);
+
+        await using var replacement = await fixture.Runtime.BeginLightingTestAsync(CancellationToken.None);
+        Assert.Equal(0, fixture.Clock.ActiveTimerCount);
+    }
+
+    [Fact]
+    public async Task LightingTest_ModeOffSuspendResume_RestartsLoopAndFinalDisposalReleasesReacquiredLighting()
+    {
+        await using var fixture = RuntimeFixture.Create(modeEnabled: false, temperatures: [45]);
+        var releaseCallsBeforeTest = fixture.Lighting.ReleaseCalls;
+        var session = await fixture.Runtime.BeginLightingTestAsync(CancellationToken.None);
+        await session.SetTemperatureAsync(80, CancellationToken.None);
+        await fixture.Runtime.ProcessOnceAsync(CancellationToken.None);
+
+        Assert.Equal(1, fixture.Clock.ActiveTimerCount);
+        await fixture.Runtime.SuspendAsync(CancellationToken.None);
+
+        Assert.Equal(RuntimeStatus.Suspended, fixture.Runtime.CurrentSnapshot.Status);
+        Assert.Equal(0, fixture.Clock.ActiveTimerCount);
+        Assert.Equal(releaseCallsBeforeTest + 1, fixture.Lighting.ReleaseCalls);
+        Assert.False(fixture.Lighting.IsConnected);
+
+        await fixture.Runtime.ResumeAsync(CancellationToken.None);
+        Assert.Equal(RuntimeStatus.Connecting, fixture.Runtime.CurrentSnapshot.Status);
+        Assert.Equal(1, fixture.Clock.ActiveTimerCount);
+
+        var resumed = await fixture.Runtime.ProcessOnceAsync(CancellationToken.None);
+        Assert.Equal(RuntimeStatus.Active, resumed.Status);
+        Assert.True(fixture.Lighting.IsConnected);
+
+        await session.DisposeAsync();
+
+        Assert.Equal(RuntimeStatus.Disabled, fixture.Runtime.CurrentSnapshot.Status);
+        Assert.Equal(0, fixture.Clock.ActiveTimerCount);
+        Assert.Equal(releaseCallsBeforeTest + 2, fixture.Lighting.ReleaseCalls);
+        Assert.False(fixture.Lighting.IsConnected);
+        Assert.False(fixture.Runtime.CurrentSettings.IsModeEnabled);
+        Assert.Equal(0, fixture.SettingsStore.SaveCalls);
+    }
+
+    [Fact]
+    public async Task LightingTest_BeginWhileAlreadySuspended_DoesNotStartLoopOrReleaseAgainOnDisposal()
+    {
+        await using var fixture = RuntimeFixture.Create(modeEnabled: false, temperatures: [45]);
+        await fixture.Runtime.SuspendAsync(CancellationToken.None);
+        var releaseCallsBeforeTest = fixture.Lighting.ReleaseCalls;
+
+        var session = await fixture.Runtime.BeginLightingTestAsync(CancellationToken.None);
+        await session.SetTemperatureAsync(80, CancellationToken.None);
+        var snapshot = await fixture.Runtime.ProcessOnceAsync(CancellationToken.None);
+
+        Assert.Equal(RuntimeStatus.Suspended, snapshot.Status);
+        Assert.Equal(0, fixture.Clock.ActiveTimerCount);
+        Assert.Empty(fixture.Lighting.Colors);
+
+        await session.DisposeAsync();
+
+        Assert.Equal(RuntimeStatus.Suspended, fixture.Runtime.CurrentSnapshot.Status);
+        Assert.Equal(releaseCallsBeforeTest, fixture.Lighting.ReleaseCalls);
+        Assert.False(fixture.Lighting.IsConnected);
+        Assert.False(fixture.Runtime.CurrentSettings.IsModeEnabled);
+        Assert.Equal(0, fixture.SettingsStore.SaveCalls);
+
+        var replacement = await fixture.Runtime.BeginLightingTestAsync(CancellationToken.None);
+        await replacement.DisposeAsync();
+        Assert.Equal(releaseCallsBeforeTest, fixture.Lighting.ReleaseCalls);
+        Assert.Equal(RuntimeStatus.Suspended, fixture.Runtime.CurrentSnapshot.Status);
+    }
+
+    [Fact]
+    public async Task LightingTest_SuspendedDisposal_RetriesOnlyPendingReleaseAndPreservesSuspended()
+    {
+        await using var fixture = RuntimeFixture.Create(modeEnabled: false, temperatures: [45]);
+        var releaseCallsBeforeTest = fixture.Lighting.ReleaseCalls;
+        var session = await fixture.Runtime.BeginLightingTestAsync(CancellationToken.None);
+        await session.SetTemperatureAsync(80, CancellationToken.None);
+        await fixture.Runtime.ProcessOnceAsync(CancellationToken.None);
+        fixture.Lighting.ReleaseFailuresRemaining = 1;
+
+        await fixture.Runtime.SuspendAsync(CancellationToken.None);
+
+        Assert.Equal(RuntimeStatus.Suspended, fixture.Runtime.CurrentSnapshot.Status);
+        Assert.True(fixture.Lighting.IsConnected);
+        Assert.Equal(releaseCallsBeforeTest + 1, fixture.Lighting.ReleaseCalls);
+
+        await session.DisposeAsync();
+
+        Assert.Equal(RuntimeStatus.Suspended, fixture.Runtime.CurrentSnapshot.Status);
+        Assert.Equal(releaseCallsBeforeTest + 2, fixture.Lighting.ReleaseCalls);
+        Assert.False(fixture.Lighting.IsConnected);
+        Assert.Equal(0, fixture.Clock.ActiveTimerCount);
+        Assert.False(fixture.Runtime.CurrentSettings.IsModeEnabled);
+        Assert.Equal(0, fixture.SettingsStore.SaveCalls);
+    }
+
+    [Fact]
+    public async Task LightingTest_StopThenSessionDispose_DoesNotRepeatCleanupOrAllowReplacement()
+    {
+        var fixture = RuntimeFixture.Create(modeEnabled: false, temperatures: [45]);
+        var releaseCallsBeforeTest = fixture.Lighting.ReleaseCalls;
+        var session = await fixture.Runtime.BeginLightingTestAsync(CancellationToken.None);
+        await session.SetTemperatureAsync(80, CancellationToken.None);
+        await fixture.Runtime.ProcessOnceAsync(CancellationToken.None);
+
+        await fixture.Runtime.StopAsync(CancellationToken.None);
+        await session.DisposeAsync();
+
+        Assert.Equal(RuntimeStatus.Disabled, fixture.Runtime.CurrentSnapshot.Status);
+        Assert.Equal(releaseCallsBeforeTest + 1, fixture.Lighting.ReleaseCalls);
+        Assert.Equal(0, fixture.Clock.ActiveTimerCount);
+        Assert.False(fixture.Lighting.IsConnected);
+        Assert.Equal(1, fixture.Temperatures.DisposeCalls);
+        Assert.Equal(1, fixture.Lighting.DisposeCalls);
+        Assert.False(fixture.Runtime.CurrentSettings.IsModeEnabled);
+        Assert.Equal(0, fixture.SettingsStore.SaveCalls);
+        await Assert.ThrowsAsync<ObjectDisposedException>(() =>
+            fixture.Runtime.BeginLightingTestAsync(CancellationToken.None));
+        await fixture.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task LightingTest_CanceledBeginAndBlockedUpdate_LeaveLifecycleReusable()
+    {
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+        timeout.CancelAfter(TimeSpan.FromSeconds(5));
+        await using var fixture = RuntimeFixture.Create(modeEnabled: false, temperatures: [45]);
+        using var canceledBegin = new CancellationTokenSource();
+        canceledBegin.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            fixture.Runtime.BeginLightingTestAsync(canceledBegin.Token));
+
+        Assert.Equal(RuntimeStatus.Disabled, fixture.Runtime.CurrentSnapshot.Status);
+        Assert.Equal(0, fixture.Clock.ActiveTimerCount);
+        Assert.Equal(0, fixture.Lighting.ReleaseCalls);
+
+        var session = await fixture.Runtime.BeginLightingTestAsync(CancellationToken.None);
+        fixture.Temperatures.BlockReads = true;
+        var processing = fixture.Runtime.ProcessOnceAsync(CancellationToken.None);
+        await fixture.Temperatures.ReadEntered.WaitAsync(timeout.Token);
+        using var canceledUpdate = new CancellationTokenSource();
+        var setting = session.SetTemperatureAsync(80, canceledUpdate.Token);
+        canceledUpdate.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => setting);
+        fixture.Temperatures.ContinueRead();
+        await processing.WaitAsync(timeout.Token);
+
+        await session.SetTemperatureAsync(80, CancellationToken.None);
+        var active = await fixture.Runtime.ProcessOnceAsync(CancellationToken.None);
+        Assert.Equal(RuntimeStatus.Active, active.Status);
+
+        await session.DisposeAsync();
+
+        Assert.Equal(RuntimeStatus.Disabled, fixture.Runtime.CurrentSnapshot.Status);
+        Assert.Equal(0, fixture.Clock.ActiveTimerCount);
+        Assert.Equal(1, fixture.Lighting.ReleaseCalls);
+        Assert.False(fixture.Lighting.IsConnected);
+        Assert.False(fixture.Runtime.CurrentSettings.IsModeEnabled);
+        Assert.Equal(0, fixture.SettingsStore.SaveCalls);
+    }
+
     private sealed class RuntimeFixture : IAsyncDisposable
     {
         public static readonly DateTimeOffset Start = new(2026, 8, 19, 12, 0, 0, TimeSpan.Zero);
