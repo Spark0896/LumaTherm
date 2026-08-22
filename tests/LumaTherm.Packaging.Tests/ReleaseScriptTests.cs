@@ -76,8 +76,8 @@ public sealed class ReleaseScriptTests
         Assert.Contains("win-x64", restore);
         Assert.Contains(test, value => value!.StartsWith("-p:ArtifactsPath=", StringComparison.Ordinal));
         Assert.Contains("-p:UseArtifactsOutput=true", test);
-        Assert.Equal("LumaTherm-1.0.0-win-x64.msix", root.GetProperty("msixName").GetString());
-        Assert.Equal("LumaTherm-1.0.0-portable-win-x64.zip", root.GetProperty("zipName").GetString());
+        Assert.Equal("LumaTherm-1.0.1-win-x64.msix", root.GetProperty("msixName").GetString());
+        Assert.Equal("LumaTherm-1.0.1-portable-win-x64.zip", root.GetProperty("zipName").GetString());
     }
 
     [Fact]
@@ -278,7 +278,7 @@ public sealed class ReleaseScriptTests
         using var fixture = ReleaseFixture.Create();
         var dist = Path.Combine(fixture.RepositoryRoot, "dist");
         Directory.CreateDirectory(dist);
-        foreach (var name in new[] { "LumaTherm-1.0.0-win-x64.msix", "LumaTherm-1.0.0-portable-win-x64.zip", "LumaTherm.cer", "install.ps1", "uninstall.ps1" })
+        foreach (var name in new[] { "LumaTherm-1.0.1-win-x64.msix", "LumaTherm-1.0.1-portable-win-x64.zip", "LumaTherm.cer", "install.ps1", "uninstall.ps1" })
         {
             File.WriteAllText(Path.Combine(dist, name), name);
         }

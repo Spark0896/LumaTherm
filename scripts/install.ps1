@@ -72,8 +72,8 @@ function Test-IsAdministrator {
 $releaseRoot = [System.IO.Path]::GetFullPath($PSScriptRoot)
 $checksumPath = Join-Path $releaseRoot 'SHA256SUMS.txt'
 $certificatePath = Join-Path $releaseRoot 'LumaTherm.cer'
-$packageName = 'LumaTherm-1.0.0-win-x64.msix'
-$requiredArtifacts = @($packageName, 'LumaTherm-1.0.0-portable-win-x64.zip', 'LumaTherm.cer', 'install.ps1', 'uninstall.ps1')
+$packageName = 'LumaTherm-1.0.1-win-x64.msix'
+$requiredArtifacts = @($packageName, 'LumaTherm-1.0.1-portable-win-x64.zip', 'LumaTherm.cer', 'install.ps1', 'uninstall.ps1')
 $requiredReleaseEntries = @($requiredArtifacts) + @('SHA256SUMS.txt')
 $releaseEntries = @(Get-ChildItem -LiteralPath $releaseRoot -Force)
 if ($releaseEntries.Count -ne $requiredReleaseEntries.Count -or

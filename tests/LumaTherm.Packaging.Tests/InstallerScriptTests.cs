@@ -148,14 +148,14 @@ public sealed class InstallerScriptTests
         var events = json.RootElement.GetProperty("events").EnumerateArray().Select(e => e.GetString()).ToArray();
         Assert.Equal(new[] { "checksumVerified", "signatureVerified", "packageInstallPlanned" }, events);
         Assert.DoesNotContain(events, e => e!.Contains("autostart", StringComparison.OrdinalIgnoreCase) || e.Contains("Run", StringComparison.Ordinal));
-        Assert.Equal(Path.Combine(fixture.Directory, "LumaTherm-1.0.0-win-x64.msix"), json.RootElement.GetProperty("packagePath").GetString());
+        Assert.Equal(Path.Combine(fixture.Directory, "LumaTherm-1.0.1-win-x64.msix"), json.RootElement.GetProperty("packagePath").GetString());
     }
 
     [Fact]
     public void AuditStopsBeforeMutationPlanWhenChecksumIsInvalid()
     {
         using var fixture = DistributionFixture.Create();
-        File.AppendAllText(Path.Combine(fixture.Directory, "LumaTherm-1.0.0-win-x64.msix"), "tampered");
+        File.AppendAllText(Path.Combine(fixture.Directory, "LumaTherm-1.0.1-win-x64.msix"), "tampered");
 
         var result = fixture.RunInstall("-AuditOnly", "-CertificateDecisionForTest", "Accept", "-SignatureStatusForTest", "Valid", "-SignatureThumbprintForTest", fixture.CertificateThumbprint);
 
@@ -191,7 +191,7 @@ public sealed class InstallerScriptTests
     {
         using var wrongName = DistributionFixture.Create();
         File.Move(
-            Path.Combine(wrongName.Directory, "LumaTherm-1.0.0-win-x64.msix"),
+            Path.Combine(wrongName.Directory, "LumaTherm-1.0.1-win-x64.msix"),
             Path.Combine(wrongName.Directory, "LumaTherm-2.0.0-win-x64.msix"));
         DistributionFixture.RewriteChecksums(wrongName.Directory);
         var wrongPackage = wrongName.RunInstall("-AuditOnly", "-SignatureStatusForTest", "Valid", "-SignatureThumbprintForTest", wrongName.CertificateThumbprint);
@@ -204,7 +204,7 @@ public sealed class InstallerScriptTests
         Assert.NotEqual(0, extra.ExitCode);
 
         using var missingZip = DistributionFixture.Create();
-        File.Delete(Path.Combine(missingZip.Directory, "LumaTherm-1.0.0-portable-win-x64.zip"));
+        File.Delete(Path.Combine(missingZip.Directory, "LumaTherm-1.0.1-portable-win-x64.zip"));
         DistributionFixture.RewriteChecksums(missingZip.Directory);
         var missing = missingZip.RunInstall("-AuditOnly", "-SignatureStatusForTest", "Valid", "-SignatureThumbprintForTest", missingZip.CertificateThumbprint);
         Assert.NotEqual(0, missing.ExitCode);
@@ -361,8 +361,8 @@ public sealed class InstallerScriptTests
             System.IO.Directory.CreateDirectory(directory);
             File.Copy(Path.Combine(RepositoryLayout.Root, "scripts", "install.ps1"), Path.Combine(directory, "install.ps1"));
             File.Copy(Path.Combine(RepositoryLayout.Root, "scripts", "uninstall.ps1"), Path.Combine(directory, "uninstall.ps1"));
-            File.WriteAllText(Path.Combine(directory, "LumaTherm-1.0.0-win-x64.msix"), "fake signed package");
-            File.WriteAllText(Path.Combine(directory, "LumaTherm-1.0.0-portable-win-x64.zip"), "fake portable package");
+            File.WriteAllText(Path.Combine(directory, "LumaTherm-1.0.1-win-x64.msix"), "fake signed package");
+            File.WriteAllText(Path.Combine(directory, "LumaTherm-1.0.1-portable-win-x64.zip"), "fake portable package");
 
             using var rsa = RSA.Create(2048);
             var request = new CertificateRequest("CN=LumaTherm Local", rsa, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);

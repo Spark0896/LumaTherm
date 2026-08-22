@@ -42,8 +42,8 @@ $localSigningRunRoot = Join-Path $localSigningBaseRoot ('run-' + [Guid]::NewGuid
 $manifestPath = Join-Path $repositoryRoot 'packaging\AppxManifest.xml'
 $layoutRoot = Join-Path $artifactsRoot 'package-layout'
 $publishRoot = Join-Path $artifactsRoot 'publish\win-x64'
-$msixName = 'LumaTherm-1.0.0-win-x64.msix'
-$zipName = 'LumaTherm-1.0.0-portable-win-x64.zip'
+$msixName = 'LumaTherm-1.0.1-win-x64.msix'
+$zipName = 'LumaTherm-1.0.1-portable-win-x64.zip'
 $dotnetArtifactsRoot = Join-Path $artifactsRoot 'dotnet'
 $safeDotnetOutputArguments = @('-p:UseArtifactsOutput=true', "-p:ArtifactsPath=$dotnetArtifactsRoot")
 

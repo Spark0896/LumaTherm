@@ -19,7 +19,7 @@ public sealed class ManifestTests
         var identity = Assert.Single(package.Elements(Foundation + "Identity"));
         Assert.Equal("LumaTherm", (string?)identity.Attribute("Name"));
         Assert.Equal("CN=LumaTherm Local", (string?)identity.Attribute("Publisher"));
-        Assert.Equal("1.0.0.0", (string?)identity.Attribute("Version"));
+        Assert.Equal("1.0.1.0", (string?)identity.Attribute("Version"));
         Assert.Equal("x64", (string?)identity.Attribute("ProcessorArchitecture"));
 
         var app = Assert.Single(package.Descendants(Foundation + "Application"));
