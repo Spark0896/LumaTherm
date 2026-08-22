@@ -98,10 +98,12 @@ public sealed class ColorEngineTests
         var first = ThermalProfile.Create([new(20, new(0, 0, 255)), new(40, new(255, 0, 0))], 0.8);
         var sameContent = ThermalProfile.Create([new(20, new(0, 0, 255)), new(40, new(255, 0, 0))], 0.8);
         var differentSmoothing = ThermalProfile.Create([new(20, new(0, 0, 255)), new(40, new(255, 0, 0))], 1.0);
+        var differentPoint = ThermalProfile.Create([new(20, new(0, 0, 255)), new(40, new(255, 255, 0))], 0.8);
 
         Assert.True(first.ContentEquals(sameContent));
         Assert.Equal(first, sameContent);
         Assert.False(first.ContentEquals(differentSmoothing));
+        Assert.False(first.ContentEquals(differentPoint));
     }
 
     [Fact]

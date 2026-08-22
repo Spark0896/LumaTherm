@@ -34,6 +34,14 @@ public partial class ThermalGradientBar : UserControl
     public ThermalProfile? Profile { get => (ThermalProfile?)GetValue(ProfileProperty); set => SetValue(ProfileProperty, value); }
     internal IReadOnlyList<GradientStop> RenderedStops => [.. CreateGradient().GradientStops];
     internal IReadOnlyList<string> RenderedLabels => Profile is null ? [$"{ColdTemperature:0.#}° Холодно", $"{WarmTemperature:0.#}° Тепло", $"{HotTemperature:0.#}° Пик"] : [.. Profile.Points.Select(point => $"{point.Temperature:0.#}°")];
+    internal IReadOnlyList<double> RenderedLabelOffsets
+    {
+        get
+        {
+            var points = ActivePoints;
+            return [.. points.Select(point => (point.Temperature - points[0].Temperature) / (points[^1].Temperature - points[0].Temperature))];
+        }
+    }
 
     protected override void OnRender(DrawingContext drawingContext)
     {
@@ -42,11 +50,12 @@ public partial class ThermalGradientBar : UserControl
         drawingContext.DrawRoundedRectangle(CreateGradient(), null, barRect, 5, 5);
         var pixelsPerDip = VisualTreeHelper.GetDpi(this).PixelsPerDip;
         var labels = RenderedLabels;
+        var offsets = RenderedLabelOffsets;
         for (var i = 0; i < labels.Count; i++)
         {
             var text = new FormattedText(labels[i], CultureInfo.CurrentCulture, System.Windows.FlowDirection.LeftToRight,
                 new Typeface("Segoe UI Variable"), 9, new SolidColorBrush(Color.FromRgb(0x77, 0x82, 0x8C)), pixelsPerDip);
-            var x = labels.Count == 1 ? (ActualWidth - text.Width) / 2 : i * (ActualWidth - text.Width) / (labels.Count - 1);
+            var x = (ActualWidth - text.Width) * offsets[i];
             drawingContext.DrawText(text, new Point(Math.Max(0, x), 44));
         }
 
@@ -64,12 +73,7 @@ public partial class ThermalGradientBar : UserControl
 
     private LinearGradientBrush CreateGradient()
     {
-        IReadOnlyList<ThermalPoint> points = Profile?.Points ??
-        [
-            new ThermalPoint(ColdTemperature, ColdColor),
-            new ThermalPoint(WarmTemperature, WarmColor),
-            new ThermalPoint(HotTemperature, HotColor),
-        ];
+        var points = ActivePoints;
         var cold = points[0].Temperature;
         var hot = points[^1].Temperature;
         var stops = new GradientStopCollection();
@@ -81,6 +85,13 @@ public partial class ThermalGradientBar : UserControl
 
         return new LinearGradientBrush(stops, new Point(0, 0.5), new Point(1, 0.5));
     }
+    private IReadOnlyList<ThermalPoint> ActivePoints => Profile?.Points ??
+    [
+        new ThermalPoint(ColdTemperature, ColdColor),
+        new ThermalPoint(WarmTemperature, WarmColor),
+        new ThermalPoint(HotTemperature, HotColor),
+    ];
+
 
     private Color InterpolatedMarkerColor(double fraction) => fraction <= 0.5 ? ColdColor.ToMediaColor() : fraction < 0.82 ? WarmColor.ToMediaColor() : HotColor.ToMediaColor();
 

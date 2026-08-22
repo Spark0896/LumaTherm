@@ -251,6 +251,17 @@ public sealed class ThermalCoreRuntimeTests
     });
 
     [Fact]
+    public void GradientBar_PositionsProfileLabelsAtTheirTemperatureOffsets() => _sta.Run(() =>
+    {
+        var profile = ThermalProfile.Create(
+            [new(20, new(0, 0, 255)), new(30, new(0, 255, 255)), new(80, new(255, 0, 0))], 0.8);
+        var bar = Arrange(new ThermalGradientBar { Profile = profile }, 600, 100);
+
+        Assert.Equal([0d, 1d / 6, 1d], bar.RenderedLabelOffsets);
+    });
+
+
+    [Fact]
     public void Sparkline_UsesEveryPointFromItsProfileGradient() => _sta.Run(() =>
     {
         var profile = ThermalProfile.Create(
