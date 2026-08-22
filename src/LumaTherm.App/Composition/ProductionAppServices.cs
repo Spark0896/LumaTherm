@@ -125,6 +125,7 @@ public static class ProductionAppServices
         public void ShowForegroundError(string message) => System.Windows.MessageBox.Show(Window, message, "LumaTherm", MessageBoxButton.OK, MessageBoxImage.Error);
         public void Dispose()
         {
+            _settingsViewModel.Dispose();
             _mainViewModel.Dispose();
             ClosePolicy.RequestExplicitExit();
             Window.Close();

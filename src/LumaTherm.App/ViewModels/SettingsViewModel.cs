@@ -1,32 +1,36 @@
 using System.Collections.ObjectModel;
+using System.Collections.Specialized;
+using System.ComponentModel;
+using System.Globalization;
+using LumaTherm.App.Services;
 using LumaTherm.Core.Colors;
 using LumaTherm.Core.Lighting;
 using LumaTherm.Core.Runtime;
 using LumaTherm.Core.Settings;
 using LumaTherm.Core.System;
-using LumaTherm.App.Services;
 
 namespace LumaTherm.App.ViewModels;
 
-public sealed class SettingsViewModel : ObservableObject
+public sealed class SettingsViewModel : ObservableObject, IDisposable
 {
     private readonly IThermalRuntime _runtime;
     private readonly IStartupService _startupService;
     private readonly IColorPickerService _colorPickerService;
     private readonly ILightingDeviceDiscovery _lightingDeviceDiscovery;
+    private readonly SynchronizationContext? _synchronizationContext;
     private readonly SemaphoreSlim _settingsMutationGate = new(1, 1);
     private AppSettings _liveSettings;
-    private double _coldTemperature;
-    private RgbColor _coldColor;
-    private double _warmTemperature;
-    private RgbColor _warmColor;
-    private double _hotTemperature;
-    private RgbColor _hotColor;
+    private ThermalProfileEditorViewModel _profileEditor = null!;
+    private ThermalPointEditorViewModel? _selectedPoint;
     private double _smoothingSeconds;
-    private bool _isModeEnabled;
     private bool _isAutostartEnabled;
     private bool _minimizeToTray;
     private bool _notificationsEnabled;
+    private AppLanguage _selectedLanguage;
+    private bool _showTrayTemperature;
+    private bool _showTrayOpen;
+    private bool _showTrayModeToggle;
+    private string _trayTemperaturePreview = "—";
     private string _gpuName = "GPU не обнаружен";
     private string _lightingDeviceName = "Подсветка не обнаружена";
     private string _lightingHardwareStatus = "Устройства Windows LampArray не проверены.";
@@ -34,6 +38,7 @@ public sealed class SettingsViewModel : ObservableObject
     private string? _unavailableSavedDeviceId;
     private bool _isLightingDeviceSelectorVisible;
     private string? _validationMessage;
+    private bool _disposed;
 
     public SettingsViewModel(IThermalRuntime runtime, IStartupService startupService, AppSettings settings)
         : this(runtime, startupService, settings, NullColorPickerService.Instance, EmptyLightingDeviceDiscovery.Instance)
@@ -60,63 +65,72 @@ public sealed class SettingsViewModel : ObservableObject
         _startupService = startupService ?? throw new ArgumentNullException(nameof(startupService));
         _colorPickerService = colorPickerService ?? throw new ArgumentNullException(nameof(colorPickerService));
         _lightingDeviceDiscovery = lightingDeviceDiscovery ?? throw new ArgumentNullException(nameof(lightingDeviceDiscovery));
+        _synchronizationContext = SynchronizationContext.Current;
         _liveSettings = (settings ?? throw new ArgumentNullException(nameof(settings))).Validate();
         LoadEditableValues(_liveSettings);
-        var snapshot = runtime.CurrentSnapshot;
-        GpuName = snapshot.Temperature?.DeviceName ?? GpuName;
-        LightingDeviceName = snapshot.LightingDevice?.Name ?? LightingDeviceName;
+        ApplySnapshot(runtime.CurrentSnapshot);
+        runtime.SnapshotChanged += OnRuntimeSnapshotChanged;
+
         SaveCommand = new AsyncRelayCommand(() => RunSettingsMutationAsync(SaveAsync), onException: _ => ValidationMessage = "Не удалось сохранить настройки.");
-        PickColdColorCommand = new AsyncRelayCommand(() => RunSettingsMutationAsync(PickColdColorAsync), onException: _ => ValidationMessage = "Не удалось выбрать цвет.");
-        PickWarmColorCommand = new AsyncRelayCommand(() => RunSettingsMutationAsync(PickWarmColorAsync), onException: _ => ValidationMessage = "Не удалось выбрать цвет.");
-        PickHotColorCommand = new AsyncRelayCommand(() => RunSettingsMutationAsync(PickHotColorAsync), onException: _ => ValidationMessage = "Не удалось выбрать цвет.");
+        PickSelectedColorCommand = new RelayCommand(PickSelectedColor, () => SelectedPoint is not null);
         DiscoverLightingDevicesCommand = new AsyncRelayCommand(DiscoverLightingDevicesAsync);
         ResetDefaultsCommand = new RelayCommand(ResetDefaults);
+        OpenLightingTestCommand = new RelayCommand(() => LightingTestRequested?.Invoke(this, EventArgs.Empty));
     }
 
     internal event EventHandler<ThermalProfile>? ProfileSaved;
+    public event EventHandler? LightingTestRequested;
 
     public AppSettings LiveSettings => _liveSettings;
-    public double ColdTemperature { get => _coldTemperature; set => SetProperty(ref _coldTemperature, value); }
-    public RgbColor ColdColor
+    public ThermalProfileEditorViewModel ProfileEditor
     {
-        get => _coldColor;
-        set
+        get => _profileEditor;
+        private set
         {
-            if (SetProperty(ref _coldColor, value))
+            if (ReferenceEquals(_profileEditor, value))
             {
-                OnPropertyChanged(nameof(ColdColorHex));
+                return;
+            }
+
+            DetachProfileEditor();
+            _profileEditor = value;
+            AttachProfileEditor();
+            OnPropertyChanged();
+        }
+    }
+    public ThermalPointEditorViewModel? SelectedPoint
+    {
+        get => _selectedPoint;
+        private set
+        {
+            if (SetProperty(ref _selectedPoint, value))
+            {
+                PickSelectedColorCommand?.RaiseCanExecuteChanged();
             }
         }
     }
-    public string ColdColorHex => ColdColor.ToHex();
-    public double WarmTemperature { get => _warmTemperature; set => SetProperty(ref _warmTemperature, value); }
-    public RgbColor WarmColor
+    public IReadOnlyList<AppLanguage> AvailableLanguages { get; } = [AppLanguage.System, AppLanguage.Russian, AppLanguage.English];
+    public AppLanguage SelectedLanguage { get => _selectedLanguage; set => SetProperty(ref _selectedLanguage, value); }
+    public bool ShowTrayTemperature { get => _showTrayTemperature; set => SetProperty(ref _showTrayTemperature, value); }
+    public bool ShowTrayOpen { get => _showTrayOpen; set => SetProperty(ref _showTrayOpen, value); }
+    public bool ShowTrayModeToggle { get => _showTrayModeToggle; set => SetProperty(ref _showTrayModeToggle, value); }
+    public string TrayTemperaturePreview { get => _trayTemperaturePreview; private set => SetProperty(ref _trayTemperaturePreview, value); }
+    public double SelectedPointTemperature
     {
-        get => _warmColor;
+        get => SelectedPoint?.Temperature ?? 0;
         set
         {
-            if (SetProperty(ref _warmColor, value))
+            if (SelectedPoint is not { } point)
             {
-                OnPropertyChanged(nameof(WarmColorHex));
+                return;
             }
+
+            ProfileEditor.Move(point.Id, value);
+            OnPropertyChanged();
         }
     }
-    public string WarmColorHex => WarmColor.ToHex();
-    public double HotTemperature { get => _hotTemperature; set => SetProperty(ref _hotTemperature, value); }
-    public RgbColor HotColor
-    {
-        get => _hotColor;
-        set
-        {
-            if (SetProperty(ref _hotColor, value))
-            {
-                OnPropertyChanged(nameof(HotColorHex));
-            }
-        }
-    }
-    public string HotColorHex => HotColor.ToHex();
+    public string SelectedPointColorHex => SelectedPoint?.Color.ToHex() ?? string.Empty;
     public double SmoothingSeconds { get => _smoothingSeconds; set => SetProperty(ref _smoothingSeconds, value); }
-    public bool IsModeEnabled { get => _isModeEnabled; set => SetProperty(ref _isModeEnabled, value); }
     public bool IsAutostartEnabled { get => _isAutostartEnabled; set => SetProperty(ref _isAutostartEnabled, value); }
     public bool MinimizeToTray { get => _minimizeToTray; set => SetProperty(ref _minimizeToTray, value); }
     public bool NotificationsEnabled { get => _notificationsEnabled; set => SetProperty(ref _notificationsEnabled, value); }
@@ -154,11 +168,22 @@ public sealed class SettingsViewModel : ObservableObject
     public bool IsLightingDeviceSelectorVisible { get => _isLightingDeviceSelectorVisible; private set => SetProperty(ref _isLightingDeviceSelectorVisible, value); }
     public string? ValidationMessage { get => _validationMessage; private set => SetProperty(ref _validationMessage, value); }
     public AsyncRelayCommand SaveCommand { get; }
-    public AsyncRelayCommand PickColdColorCommand { get; }
-    public AsyncRelayCommand PickWarmColorCommand { get; }
-    public AsyncRelayCommand PickHotColorCommand { get; }
+    public RelayCommand PickSelectedColorCommand { get; }
     public AsyncRelayCommand DiscoverLightingDevicesCommand { get; }
     public RelayCommand ResetDefaultsCommand { get; }
+    public RelayCommand OpenLightingTestCommand { get; }
+
+    public void Dispose()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _disposed = true;
+        _runtime.SnapshotChanged -= OnRuntimeSnapshotChanged;
+        DetachProfileEditor();
+    }
 
     private async Task RunSettingsMutationAsync(Func<Task> mutation)
     {
@@ -173,40 +198,17 @@ public sealed class SettingsViewModel : ObservableObject
         }
     }
 
-    private async Task PickColdColorAsync()
+    private void PickSelectedColor()
     {
-        var selected = _colorPickerService.Pick(ColdColor);
-        if (selected is null)
+        if (SelectedPoint is not { } point)
         {
             return;
         }
 
-        ColdColor = selected.Value;
-        await SaveAsync();
-    }
-
-    private async Task PickWarmColorAsync()
-    {
-        var selected = _colorPickerService.Pick(WarmColor);
-        if (selected is null)
+        if (_colorPickerService.Pick(point.Color) is { } selected)
         {
-            return;
+            point.Color = selected;
         }
-
-        WarmColor = selected.Value;
-        await SaveAsync();
-    }
-
-    private async Task PickHotColorAsync()
-    {
-        var selected = _colorPickerService.Pick(HotColor);
-        if (selected is null)
-        {
-            return;
-        }
-
-        HotColor = selected.Value;
-        await SaveAsync();
     }
 
     private async Task DiscoverLightingDevicesAsync()
@@ -264,10 +266,11 @@ public sealed class SettingsViewModel : ObservableObject
 
     private async Task SaveAsync()
     {
-        var candidate = CreateCandidate();
+        AppSettings candidate;
 
         try
         {
+            candidate = CreateCandidate();
             await _runtime.UpdatePreferencesAsync(candidate, CancellationToken.None);
         }
         catch (ArgumentException exception)
@@ -295,7 +298,6 @@ public sealed class SettingsViewModel : ObservableObject
             }
         }
 
-
         Commit(_runtime.CurrentSettings, null);
     }
 
@@ -307,28 +309,33 @@ public sealed class SettingsViewModel : ObservableObject
 
     private AppSettings CreateCandidate() => _liveSettings with
     {
-        Profile = new ThermalProfile(ColdTemperature, ColdColor, WarmTemperature, WarmColor, HotTemperature, HotColor, SmoothingSeconds),
-        IsModeEnabled = IsModeEnabled,
+        Profile = ProfileEditor.BuildProfile(SmoothingSeconds),
         IsAutostartEnabled = IsAutostartEnabled,
         MinimizeToTray = MinimizeToTray,
         NotificationsEnabled = NotificationsEnabled,
         PreferredLightingDeviceId = SelectedLightingDeviceId,
+        Language = SelectedLanguage,
+        TrayMenu = new TrayMenuOptions(ShowTrayTemperature, ShowTrayOpen, ShowTrayModeToggle),
     };
 
     private void LoadEditableValues(AppSettings settings)
     {
-        ColdTemperature = settings.Profile.ColdTemperature;
-        ColdColor = settings.Profile.ColdColor;
-        WarmTemperature = settings.Profile.WarmTemperature;
-        WarmColor = settings.Profile.WarmColor;
-        HotTemperature = settings.Profile.HotTemperature;
-        HotColor = settings.Profile.HotColor;
+        ProfileEditor = new ThermalProfileEditorViewModel(settings.Profile);
+        if (ProfileEditor.Points.FirstOrDefault() is { } first)
+        {
+            ProfileEditor.Select(first.Id);
+            RefreshSelectedPoint();
+        }
+
         SmoothingSeconds = settings.Profile.SmoothingSeconds;
-        IsModeEnabled = settings.IsModeEnabled;
         IsAutostartEnabled = settings.IsAutostartEnabled;
         MinimizeToTray = settings.MinimizeToTray;
         NotificationsEnabled = settings.NotificationsEnabled;
         SelectedLightingDeviceId = settings.PreferredLightingDeviceId;
+        SelectedLanguage = settings.Language;
+        ShowTrayTemperature = settings.TrayMenu.ShowTemperature;
+        ShowTrayOpen = settings.TrayMenu.ShowOpenCommand;
+        ShowTrayModeToggle = settings.TrayMenu.ShowModeToggle;
     }
 
     private async Task<string> RollBackRuntimeAfterStartupFailureAsync()
@@ -356,11 +363,115 @@ public sealed class SettingsViewModel : ObservableObject
         ValidationMessage = observerFailed ? "Настройки сохранены, но обновление интерфейса выполнено не полностью." : warning;
     }
 
+    private void AttachProfileEditor()
+    {
+        ProfileEditor.Points.CollectionChanged += OnProfilePointsChanged;
+        foreach (var point in ProfileEditor.Points)
+        {
+            point.PropertyChanged += OnProfilePointChanged;
+        }
+    }
+
+    private void DetachProfileEditor()
+    {
+        if (_profileEditor is null)
+        {
+            return;
+        }
+
+        _profileEditor.Points.CollectionChanged -= OnProfilePointsChanged;
+        foreach (var point in _profileEditor.Points)
+        {
+            point.PropertyChanged -= OnProfilePointChanged;
+        }
+    }
+
+    private void OnProfilePointsChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        if (e.OldItems is not null)
+        {
+            foreach (ThermalPointEditorViewModel point in e.OldItems)
+            {
+                point.PropertyChanged -= OnProfilePointChanged;
+            }
+        }
+
+        if (e.NewItems is not null)
+        {
+            foreach (ThermalPointEditorViewModel point in e.NewItems)
+            {
+                point.PropertyChanged += OnProfilePointChanged;
+            }
+        }
+
+        RefreshSelectedPoint();
+    }
+
+    private void OnProfilePointChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(ThermalPointEditorViewModel.IsSelected))
+        {
+            RefreshSelectedPoint();
+        }
+        else if (e.PropertyName == nameof(ThermalPointEditorViewModel.Temperature)
+            && ReferenceEquals(sender, SelectedPoint))
+        {
+            OnPropertyChanged(nameof(SelectedPointTemperature));
+        }
+        else if (e.PropertyName == nameof(ThermalPointEditorViewModel.Color)
+            && ReferenceEquals(sender, SelectedPoint))
+        {
+            OnPropertyChanged(nameof(SelectedPointColorHex));
+        }
+    }
+
+    private void RefreshSelectedPoint()
+    {
+        SelectedPoint = ProfileEditor.Points.FirstOrDefault(point => point.IsSelected);
+        OnPropertyChanged(nameof(SelectedPointTemperature));
+        OnPropertyChanged(nameof(SelectedPointColorHex));
+    }
+
+    private void OnRuntimeSnapshotChanged(object? sender, RuntimeSnapshot snapshot)
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        if (_synchronizationContext is { } context && SynchronizationContext.Current != context)
+        {
+            context.Post(static state =>
+            {
+                var update = (SnapshotUpdate)state!;
+                if (!update.ViewModel._disposed)
+                {
+                    update.ViewModel.ApplySnapshot(update.Snapshot);
+                }
+            }, new SnapshotUpdate(this, snapshot));
+            return;
+        }
+
+        ApplySnapshot(snapshot);
+    }
+
+    private void ApplySnapshot(RuntimeSnapshot snapshot)
+    {
+        TrayTemperaturePreview = snapshot.Temperature is { } reading
+            ? string.Create(CultureInfo.InvariantCulture, $"{reading.Celsius:0}°C")
+            : "—";
+        GpuName = snapshot.Temperature?.DeviceName ?? GpuName;
+        LightingDeviceName = snapshot.LightingDevice?.Name ?? LightingDeviceName;
+    }
+
     private static string TranslateValidationError(ArgumentException exception) => exception.Message switch
     {
         "Temperatures must be between 0 and 120 °C." => "Температура должна быть от 0 до 120 °C.",
         "Expected ColdTemperature < WarmTemperature < HotTemperature with at least 1 °C between points." => "Температуры должны возрастать с шагом не менее 1 °C.",
+        "Temperatures must be at least 1 °C apart." => "Температуры должны возрастать с шагом не менее 1 °C.",
         "SmoothingSeconds must be between 0.1 and 5.0." => "Сглаживание должно быть от 0,1 до 5,0 секунд.",
         _ => "Проверьте параметры температурного профиля.",
     };
+
+    private sealed record SnapshotUpdate(SettingsViewModel ViewModel, RuntimeSnapshot Snapshot);
 }

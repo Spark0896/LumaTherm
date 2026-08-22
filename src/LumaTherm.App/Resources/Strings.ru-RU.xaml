@@ -113,4 +113,17 @@
     <sys:String x:Key="Installer.Description">Адаптивное управление подсветкой по температуре GPU для Windows.</sys:String>
     <sys:String x:Key="Installer.Publisher">LumaTherm</sys:String>
     <sys:String x:Key="Installer.ShortDescription">Термосинхронизация подсветки</sys:String>
+    <sys:String x:Key="Settings.SelectedPoint">Выбранная точка</sys:String>
+    <sys:String x:Key="Settings.PointTemperature">Температура выбранной точки</sys:String>
+    <sys:String x:Key="Settings.PointColor">Выбрать цвет выбранной точки</sys:String>
+    <sys:String x:Key="Settings.Language">Язык</sys:String>
+    <sys:String x:Key="Settings.LanguageSystem">Системный</sys:String>
+    <sys:String x:Key="Settings.LanguageRussian">Русский</sys:String>
+    <sys:String x:Key="Settings.LanguageEnglish">Английский</sys:String>
+    <sys:String x:Key="Settings.TrayShowTemperature">Показывать температуру GPU</sys:String>
+    <sys:String x:Key="Settings.TrayShowOpen">Показывать команду открытия</sys:String>
+    <sys:String x:Key="Settings.TrayShowModeToggle">Показывать переключатель режима</sys:String>
+    <sys:String x:Key="Settings.TrayExitAlwaysVisible">Выход всегда доступен для безопасного завершения.</sys:String>
+    <sys:String x:Key="Settings.OpenLightingTest">Проверить подсветку</sys:String>
+
 </ResourceDictionary>

@@ -2,7 +2,9 @@
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:automation="clr-namespace:System.Windows.Automation;assembly=PresentationCore"
+             xmlns:controls="clr-namespace:LumaTherm.App.Controls"
              xmlns:converters="clr-namespace:LumaTherm.App.Converters"
+             xmlns:settings="clr-namespace:LumaTherm.Core.Settings;assembly=LumaTherm.Core"
              Language="ru-RU"
              MinWidth="420" Background="Transparent"
              SizeChanged="SettingsView_SizeChanged">
@@ -15,6 +17,7 @@
         <Style x:Key="SectionHeadingStyle" TargetType="TextBlock">
             <Setter Property="FontSize" Value="15" />
             <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Foreground" Value="{StaticResource PrimaryTextBrush}" />
         </Style>
         <Style x:Key="SubheadingStyle" TargetType="TextBlock">
             <Setter Property="FontSize" Value="11" />
@@ -54,83 +57,15 @@
             <Setter Property="BorderBrush" Value="{StaticResource ColdColorBrush}" />
             <Setter Property="FontWeight" Value="SemiBold" />
         </Style>
-        <Style x:Key="ColorCardStyle" TargetType="Button">
-            <Setter Property="MinHeight" Value="96" />
-            <Setter Property="Margin" Value="0,0,8,0" />
-            <Setter Property="Padding" Value="12" />
-            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-            <Setter Property="Background" Value="{StaticResource PanelSecondaryBrush}" />
-            <Setter Property="BorderBrush" Value="#18FFFFFF" />
-            <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="Button">
-                        <Border x:Name="CardChrome" CornerRadius="9" Background="{TemplateBinding Background}"
-                                BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}"
-                                Padding="{TemplateBinding Padding}">
-                            <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}" VerticalAlignment="Center" />
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="CardChrome" Property="Background" Value="#242C32" /><Setter TargetName="CardChrome" Property="BorderBrush" Value="#4050C8FF" /></Trigger>
-                            <Trigger Property="IsPressed" Value="True"><Setter TargetName="CardChrome" Property="Background" Value="#15191D" /></Trigger>
-                            <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="CardChrome" Property="BorderBrush" Value="{StaticResource ColdColorBrush}" /><Setter TargetName="CardChrome" Property="BorderThickness" Value="2" /></Trigger>
-                            <Trigger Property="IsEnabled" Value="False"><Setter TargetName="CardChrome" Property="Opacity" Value="0.35" /></Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
-        <Style TargetType="Slider">
-            <Setter Property="Height" Value="20" />
-            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="Slider">
-                        <Grid x:Name="SliderRoot" Background="Transparent">
-                            <Border x:Name="ThermalSliderTrack" Height="5" CornerRadius="4" Background="#FF363D43" VerticalAlignment="Center" />
-                            <Track x:Name="PART_Track" VerticalAlignment="Center">
-                                <Track.DecreaseRepeatButton>
-                                    <RepeatButton Command="{x:Static Slider.DecreaseLarge}" Focusable="False">
-                                        <RepeatButton.Template><ControlTemplate TargetType="RepeatButton"><Border Height="5" CornerRadius="4" Background="{StaticResource ColdColorBrush}" /></ControlTemplate></RepeatButton.Template>
-                                    </RepeatButton>
-                                </Track.DecreaseRepeatButton>
-                                <Track.IncreaseRepeatButton>
-                                    <RepeatButton Command="{x:Static Slider.IncreaseLarge}" Focusable="False" Background="Transparent" Opacity="0" />
-                                </Track.IncreaseRepeatButton>
-                                <Track.Thumb>
-                                    <Thumb Width="14" Height="14">
-                                        <Thumb.Template>
-                                            <ControlTemplate TargetType="Thumb">
-                                                <Ellipse Fill="{StaticResource ColdColorBrush}" Stroke="#FFDAE4E9" StrokeThickness="2" />
-                                                <ControlTemplate.Triggers>
-                                                    <Trigger Property="IsMouseOver" Value="True"><Setter Property="Effect"><Setter.Value><DropShadowEffect Color="#50C8FF" BlurRadius="9" ShadowDepth="0" /></Setter.Value></Setter></Trigger>
-                                                    <Trigger Property="IsDragging" Value="True"><Setter Property="Opacity" Value="0.72" /></Trigger>
-                                                </ControlTemplate.Triggers>
-                                            </ControlTemplate>
-                                        </Thumb.Template>
-                                    </Thumb>
-                                </Track.Thumb>
-                            </Track>
-                        </Grid>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="ThermalSliderTrack" Property="Background" Value="#FF424B52" /></Trigger>
-                            <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="ThermalSliderTrack" Property="BorderBrush" Value="{StaticResource ColdColorBrush}" /><Setter TargetName="ThermalSliderTrack" Property="BorderThickness" Value="1" /></Trigger>
-                            <Trigger Property="IsEnabled" Value="False"><Setter TargetName="SliderRoot" Property="Opacity" Value="0.35" /></Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
         <Style x:Key="TemperatureEditorStyle" TargetType="TextBox">
             <Setter Property="Width" Value="64" />
-            <Setter Property="Height" Value="31" />
+            <Setter Property="Height" Value="32" />
             <Setter Property="Margin" Value="12,0,0,0" />
-            <Setter Property="Padding" Value="7,4" />
-            <Setter Property="TextAlignment" Value="Right" />
+            <Setter Property="Padding" Value="8,5" />
+            <Setter Property="HorizontalContentAlignment" Value="Right" />
             <Setter Property="Foreground" Value="{StaticResource PrimaryTextBrush}" />
             <Setter Property="Background" Value="#FF171B20" />
-            <Setter Property="BorderBrush" Value="#22FFFFFF" />
+            <Setter Property="BorderBrush" Value="#557E8994" />
             <Setter Property="BorderThickness" Value="1" />
             <Setter Property="FocusVisualStyle" Value="{x:Null}" />
             <Setter Property="Template">
@@ -141,9 +76,8 @@
                             <ScrollViewer x:Name="PART_ContentHost" Margin="{TemplateBinding Padding}" />
                         </Border>
                         <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="EditorChrome" Property="BorderBrush" Value="#557E8994" /></Trigger>
+                            <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="EditorChrome" Property="BorderBrush" Value="#FF7E8994" /></Trigger>
                             <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="EditorChrome" Property="BorderBrush" Value="{StaticResource ColdColorBrush}" /><Setter TargetName="EditorChrome" Property="BorderThickness" Value="2" /></Trigger>
-                            <Trigger Property="IsEnabled" Value="False"><Setter TargetName="EditorChrome" Property="Opacity" Value="0.35" /></Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
                 </Setter.Value>
@@ -191,105 +125,106 @@
             <Grid Grid.Row="0" Grid.ColumnSpan="3" Margin="0,0,0,15">
                 <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
                 <StackPanel>
-                    <TextBlock Text="Настройки" FontSize="21" FontWeight="SemiBold" />
-                    <TextBlock Text="Температурная шкала, плавность и поведение приложения" Margin="0,5,0,0" FontSize="11" Foreground="{StaticResource MutedTextBrush}" />
+                    <TextBlock Text="{DynamicResource Settings.Title}" FontSize="21" FontWeight="SemiBold" />
+                    <TextBlock Text="{DynamicResource Settings.Subtitle}" Margin="0,5,0,0" FontSize="11" Foreground="{StaticResource MutedTextBrush}" />
                 </StackPanel>
                 <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                    <TextBlock Text="Изменения применяются после сохранения" FontSize="11" Foreground="{StaticResource MutedTextBrush}" />
+                    <TextBlock Text="{DynamicResource Settings.ApplyAfterSave}" FontSize="11" Foreground="{StaticResource MutedTextBrush}" />
                     <Ellipse Width="7" Height="7" Margin="8,0,0,0" Fill="{StaticResource SuccessColorBrush}" />
                 </StackPanel>
             </Grid>
 
             <TextBlock x:Name="ValidationText" Grid.Row="1" Grid.ColumnSpan="3" MinHeight="22" Margin="0,0,0,8"
-                       Text="{Binding ValidationMessage}" Foreground="#FF858B" FontSize="12" TextWrapping="Wrap"
+                       Text="{Binding ValidationMessage}" Foreground="#FFFF858B" FontSize="12" TextWrapping="Wrap"
                        automation:AutomationProperties.Name="{Binding ValidationMessage}"
                        automation:AutomationProperties.LiveSetting="Assertive" />
 
             <StackPanel x:Name="LeftSettingsStack" Grid.Row="2" Grid.Column="0">
                 <Border Style="{StaticResource SettingsPanelStyle}">
                     <StackPanel>
-                        <TextBlock Style="{StaticResource SectionHeadingStyle}" Text="Цветовая шкала" />
-                        <TextBlock Style="{StaticResource SubheadingStyle}" Text="Три опорные точки образуют непрерывный градиент" />
-                        <Grid>
-                            <Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition /><ColumnDefinition /></Grid.ColumnDefinitions>
-                            <Button x:Name="ColdColorButton" Grid.Column="0" Style="{StaticResource ColorCardStyle}" Command="{Binding PickColdColorCommand}" automation:AutomationProperties.Name="Выбрать цвет холодной зоны">
-                                <StackPanel><TextBlock Text="Холодно" FontSize="11" Foreground="{StaticResource MutedTextBrush}" /><Border Height="28" Margin="0,9,0,8" CornerRadius="7" Background="{Binding ColdColor, Converter={StaticResource RgbColorBrushConverter}}" /><TextBlock Text="{Binding ColdColorHex}" FontWeight="SemiBold" /></StackPanel>
-                            </Button>
-                            <Button x:Name="WarmColorButton" Grid.Column="1" Style="{StaticResource ColorCardStyle}" Command="{Binding PickWarmColorCommand}" automation:AutomationProperties.Name="Выбрать цвет тёплой зоны">
-                                <StackPanel><TextBlock Text="Тепло" FontSize="11" Foreground="{StaticResource MutedTextBrush}" /><Border Height="28" Margin="0,9,0,8" CornerRadius="7" Background="{Binding WarmColor, Converter={StaticResource RgbColorBrushConverter}}" /><TextBlock Text="{Binding WarmColorHex}" FontWeight="SemiBold" /></StackPanel>
-                            </Button>
-                            <Button x:Name="HotColorButton" Grid.Column="2" Style="{StaticResource ColorCardStyle}" Margin="0" Command="{Binding PickHotColorCommand}" automation:AutomationProperties.Name="Выбрать цвет пиковой зоны">
-                                <StackPanel><TextBlock Text="Горячо" FontSize="11" Foreground="{StaticResource MutedTextBrush}" /><Border Height="28" Margin="0,9,0,8" CornerRadius="7" Background="{Binding HotColor, Converter={StaticResource RgbColorBrushConverter}}" /><TextBlock Text="{Binding HotColorHex}" FontWeight="SemiBold" /></StackPanel>
-                            </Button>
-                        </Grid>
+                        <TextBlock x:Name="ColorScaleHeading" Style="{StaticResource SectionHeadingStyle}" Text="{DynamicResource Settings.ColorScale}" />
+                        <TextBlock Style="{StaticResource SubheadingStyle}" Text="{DynamicResource Settings.ColorScaleHint}" />
+                        <controls:ThermalProfileEditor x:Name="ProfileEditorControl" DataContext="{Binding ProfileEditor}" />
+                        <Border Margin="0,10,0,0" Padding="12" CornerRadius="8" Background="{StaticResource PanelSecondaryBrush}">
+                            <Grid>
+                                <Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                <StackPanel>
+                                    <TextBlock Text="{DynamicResource Settings.SelectedPoint}" FontWeight="SemiBold" />
+                                    <TextBlock Text="{Binding SelectedPointColorHex}" Margin="0,4,0,0" FontSize="10" Foreground="{StaticResource MutedTextBrush}" />
+                                </StackPanel>
+                                <TextBox x:Name="SelectedPointTemperatureEditor" Grid.Column="1" Style="{StaticResource TemperatureEditorStyle}"
+                                         Text="{Binding SelectedPointTemperature, UpdateSourceTrigger=LostFocus, ValidatesOnExceptions=True, StringFormat={}{0:0.#}}"
+                                         automation:AutomationProperties.Name="{DynamicResource Settings.PointTemperature}" />
+                                <Button x:Name="SelectedPointColorButton" Grid.Column="2" Width="54" Height="32" Margin="10,0,0,0"
+                                        Background="{Binding SelectedPoint.Color, Converter={StaticResource RgbColorBrushConverter}}"
+                                        Command="{Binding PickSelectedColorCommand}"
+                                        automation:AutomationProperties.Name="{DynamicResource Settings.PointColor}" />
+                            </Grid>
+                        </Border>
                     </StackPanel>
                 </Border>
 
                 <Border Style="{StaticResource SettingsPanelStyle}">
                     <StackPanel>
-                        <TextBlock Style="{StaticResource SectionHeadingStyle}" Text="Температурные пределы" />
-                        <TextBlock Style="{StaticResource SubheadingStyle}" Text="Значения проверяются и не могут пересекаться" />
-                        <TextBlock Text="Холодная зона" Margin="0,0,0,5" />
-                        <Grid Margin="0,0,0,12"><Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-                            <Slider x:Name="ColdTemperatureSlider" Minimum="0" Maximum="120" Value="{Binding ColdTemperature}" automation:AutomationProperties.Name="Температура холодной зоны" />
-                            <TextBox x:Name="ColdTemperatureEditor" Grid.Column="1" Style="{StaticResource TemperatureEditorStyle}" Text="{Binding ColdTemperature, UpdateSourceTrigger=LostFocus, ValidatesOnExceptions=True, StringFormat={}{0:0.#}}" automation:AutomationProperties.Name="Температура холодной зоны, градусов Цельсия" />
-                        </Grid>
-                        <TextBlock Text="Тёплая зона" Margin="0,0,0,5" />
-                        <Grid Margin="0,0,0,12"><Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-                            <Slider x:Name="WarmTemperatureSlider" Minimum="0" Maximum="120" Value="{Binding WarmTemperature}" automation:AutomationProperties.Name="Температура тёплой зоны" />
-                            <TextBox x:Name="WarmTemperatureEditor" Grid.Column="1" Style="{StaticResource TemperatureEditorStyle}" Text="{Binding WarmTemperature, UpdateSourceTrigger=LostFocus, ValidatesOnExceptions=True, StringFormat={}{0:0.#}}" automation:AutomationProperties.Name="Температура тёплой зоны, градусов Цельсия" />
-                        </Grid>
-                        <TextBlock Text="Пиковая зона" Margin="0,0,0,5" />
-                        <Grid Margin="0,0,0,18"><Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-                            <Slider x:Name="HotTemperatureSlider" Minimum="0" Maximum="120" Value="{Binding HotTemperature}" automation:AutomationProperties.Name="Температура пиковой зоны" />
-                            <TextBox x:Name="HotTemperatureEditor" Grid.Column="1" Style="{StaticResource TemperatureEditorStyle}" Text="{Binding HotTemperature, UpdateSourceTrigger=LostFocus, ValidatesOnExceptions=True, StringFormat={}{0:0.#}}" automation:AutomationProperties.Name="Температура пиковой зоны, градусов Цельсия" />
-                        </Grid>
-                        <Grid><Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-                            <StackPanel><TextBlock Text="Плавность перехода" FontWeight="SemiBold" /><Slider x:Name="SmoothingSlider" Margin="0,8,0,0" Minimum="0.1" Maximum="5" TickFrequency="0.1" Value="{Binding SmoothingSeconds}" automation:AutomationProperties.Name="Плавность перехода в секундах" /></StackPanel>
-                            <TextBox x:Name="SmoothingEditor" Grid.Column="1" Style="{StaticResource TemperatureEditorStyle}" VerticalAlignment="Bottom" Text="{Binding SmoothingSeconds, UpdateSourceTrigger=LostFocus, ValidatesOnExceptions=True, StringFormat={}{0:0.0}}" automation:AutomationProperties.Name="Плавность перехода, секунд" />
+                        <TextBlock Style="{StaticResource SectionHeadingStyle}" Text="{DynamicResource Settings.SmoothingSeconds}" />
+                        <Grid Margin="0,14,0,0">
+                            <Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                            <Slider x:Name="SmoothingSlider" Minimum="0.1" Maximum="5" TickFrequency="0.1" Value="{Binding SmoothingSeconds}"
+                                    automation:AutomationProperties.Name="{DynamicResource Settings.SmoothingSeconds}" />
+                            <TextBox x:Name="SmoothingEditor" Grid.Column="1" Style="{StaticResource TemperatureEditorStyle}"
+                                     Text="{Binding SmoothingSeconds, UpdateSourceTrigger=LostFocus, ValidatesOnExceptions=True, StringFormat={}{0:0.0}}"
+                                     automation:AutomationProperties.Name="{DynamicResource Settings.SmoothingSeconds}" />
                         </Grid>
                     </StackPanel>
                 </Border>
 
                 <StackPanel x:Name="EditorActions" Orientation="Horizontal" HorizontalAlignment="Right">
-                    <Button x:Name="ResetButton" Style="{StaticResource SecondaryButtonStyle}" Margin="0,0,9,0" Content="Сбросить" Command="{Binding ResetDefaultsCommand}" automation:AutomationProperties.Name="Сбросить значения по умолчанию" />
-                    <Button x:Name="SaveButton" Style="{StaticResource PrimaryButtonStyle}" Content="Сохранить" Command="{Binding SaveCommand}" automation:AutomationProperties.Name="Сохранить настройки" />
+                    <Button x:Name="ResetButton" Style="{StaticResource SecondaryButtonStyle}" Margin="0,0,9,0"
+                            Content="{DynamicResource Settings.Reset}" Command="{Binding ResetDefaultsCommand}"
+                            automation:AutomationProperties.Name="{DynamicResource Settings.Reset}" />
+                    <Button x:Name="SaveButton" Style="{StaticResource PrimaryButtonStyle}"
+                            Content="{DynamicResource Settings.Save}" Command="{Binding SaveCommand}"
+                            automation:AutomationProperties.Name="{DynamicResource Accessibility.SaveSettings}" />
                 </StackPanel>
             </StackPanel>
 
             <StackPanel x:Name="RightSettingsStack" Grid.Row="2" Grid.Column="2">
                 <Border Style="{StaticResource SettingsPanelStyle}">
                     <StackPanel>
-                        <TextBlock Style="{StaticResource SectionHeadingStyle}" Text="Приложение" Margin="0,0,0,8" />
-                        <Grid Margin="0,8"><Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><StackPanel><TextBlock Text="Запускать вместе с Windows" FontWeight="SemiBold" /><TextBlock Text="По умолчанию выключено" FontSize="10" Foreground="{StaticResource MutedTextBrush}" /></StackPanel><CheckBox x:Name="AutostartToggle" Grid.Column="1" Style="{StaticResource ApplicationToggleStyle}" IsChecked="{Binding IsAutostartEnabled}" automation:AutomationProperties.Name="Запускать вместе с Windows" /></Grid>
-                        <Grid Margin="0,8"><Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><StackPanel><TextBlock Text="Сворачивать при закрытии" FontWeight="SemiBold" /><TextBlock Text="Приложение продолжит работу в трее" FontSize="10" Foreground="{StaticResource MutedTextBrush}" /></StackPanel><CheckBox x:Name="MinimizeToTrayToggle" Grid.Column="1" Style="{StaticResource ApplicationToggleStyle}" IsChecked="{Binding MinimizeToTray}" automation:AutomationProperties.Name="Сворачивать приложение в трей при закрытии" /></Grid>
-                        <Grid Margin="0,8"><Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><StackPanel><TextBlock Text="Показывать уведомления" FontWeight="SemiBold" /><TextBlock Text="Ошибки датчика и потеря устройства" FontSize="10" Foreground="{StaticResource MutedTextBrush}" /></StackPanel><CheckBox x:Name="NotificationsToggle" Grid.Column="1" Style="{StaticResource ApplicationToggleStyle}" IsChecked="{Binding NotificationsEnabled}" automation:AutomationProperties.Name="Показывать уведомления" /></Grid>
+                        <TextBlock Style="{StaticResource SectionHeadingStyle}" Text="{DynamicResource Settings.Application}" Margin="0,0,0,8" />
+                        <Grid Margin="0,8"><Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="{DynamicResource Settings.Language}" FontWeight="SemiBold" VerticalAlignment="Center" /><ComboBox x:Name="LanguageSelector" Grid.Column="1" MinWidth="132" SelectedValuePath="Tag" SelectedValue="{Binding SelectedLanguage}" automation:AutomationProperties.Name="{DynamicResource Settings.Language}"><ComboBoxItem Tag="{x:Static settings:AppLanguage.System}" Content="{DynamicResource Settings.LanguageSystem}" /><ComboBoxItem Tag="{x:Static settings:AppLanguage.Russian}" Content="{DynamicResource Settings.LanguageRussian}" /><ComboBoxItem Tag="{x:Static settings:AppLanguage.English}" Content="{DynamicResource Settings.LanguageEnglish}" /></ComboBox></Grid>
+                        <Grid Margin="0,8"><Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="{DynamicResource Settings.LaunchWithWindows}" FontWeight="SemiBold" /><CheckBox x:Name="AutostartToggle" Grid.Column="1" Style="{StaticResource ApplicationToggleStyle}" IsChecked="{Binding IsAutostartEnabled}" automation:AutomationProperties.Name="{DynamicResource Settings.LaunchWithWindows}" /></Grid>
+                        <Grid Margin="0,8"><Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="{DynamicResource Settings.MinimizeOnClose}" FontWeight="SemiBold" /><CheckBox x:Name="MinimizeToTrayToggle" Grid.Column="1" Style="{StaticResource ApplicationToggleStyle}" IsChecked="{Binding MinimizeToTray}" automation:AutomationProperties.Name="{DynamicResource Settings.MinimizeOnClose}" /></Grid>
+                        <Grid Margin="0,8"><Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="{DynamicResource Settings.Notifications}" FontWeight="SemiBold" /><CheckBox x:Name="NotificationsToggle" Grid.Column="1" Style="{StaticResource ApplicationToggleStyle}" IsChecked="{Binding NotificationsEnabled}" automation:AutomationProperties.Name="{DynamicResource Settings.Notifications}" /></Grid>
                     </StackPanel>
                 </Border>
 
                 <Border Style="{StaticResource SettingsPanelStyle}">
                     <StackPanel>
-                        <TextBlock Style="{StaticResource SectionHeadingStyle}" Text="Оборудование" Margin="0,0,0,10" />
-                        <Grid Margin="0,5"><Grid.ColumnDefinitions><ColumnDefinition Width="30" /><ColumnDefinition /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="&#xE7F8;" FontFamily="Segoe Fluent Icons" Foreground="{StaticResource ColdColorBrush}" VerticalAlignment="Center" /><StackPanel Grid.Column="1"><TextBlock Text="{Binding LightingDeviceName}" FontWeight="SemiBold" /><TextBlock Text="{Binding LightingHardwareStatus}" TextWrapping="Wrap" FontSize="10" Foreground="{StaticResource MutedTextBrush}" /></StackPanel><TextBlock Grid.Column="2" Text="LampArray" Margin="10,0,0,0" Foreground="{StaticResource SuccessColorBrush}" VerticalAlignment="Center" /></Grid>
-                        <ComboBox x:Name="LightingDeviceSelector" Margin="30,10,0,8" MinHeight="32" ItemsSource="{Binding LightingDevices}" DisplayMemberPath="Name" SelectedValuePath="Id" SelectedValue="{Binding SelectedLightingDeviceId}" automation:AutomationProperties.Name="Предпочтительное устройство Windows LampArray">
-                            <ComboBox.Style><Style TargetType="ComboBox"><Setter Property="Visibility" Value="Collapsed" /><Style.Triggers><DataTrigger Binding="{Binding IsLightingDeviceSelectorVisible}" Value="True"><Setter Property="Visibility" Value="Visible" /></DataTrigger></Style.Triggers></Style></ComboBox.Style>
-                        </ComboBox>
-                        <Grid Margin="0,9,0,0"><Grid.ColumnDefinitions><ColumnDefinition Width="30" /><ColumnDefinition /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="&#xE950;" FontFamily="Segoe Fluent Icons" Foreground="{StaticResource WarmColorBrush}" VerticalAlignment="Center" /><StackPanel Grid.Column="1"><TextBlock Text="{Binding GpuName}" FontWeight="SemiBold" /><TextBlock Text="NVIDIA NVML · резерв: MSI Afterburner" FontSize="10" Foreground="{StaticResource MutedTextBrush}" /></StackPanel><TextBlock Grid.Column="2" Text="GPU" Margin="10,0,0,0" Foreground="{StaticResource MutedTextBrush}" VerticalAlignment="Center" /></Grid>
-                    </StackPanel>
-                </Border>
-
-                <Border Style="{StaticResource SettingsPanelStyle}">
-                    <StackPanel>
-                        <TextBlock Style="{StaticResource SectionHeadingStyle}" Text="Меню в трее" Margin="0,0,0,10" />
-                        <Border Background="{StaticResource RailBackgroundBrush}" CornerRadius="10" Padding="13">
+                        <TextBlock Style="{StaticResource SectionHeadingStyle}" Text="{DynamicResource Settings.TrayMenu}" Margin="0,0,0,8" />
+                        <Grid Margin="0,7"><Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="{DynamicResource Settings.TrayShowTemperature}" /><CheckBox x:Name="TrayTemperatureToggle" Grid.Column="1" Style="{StaticResource ApplicationToggleStyle}" IsChecked="{Binding ShowTrayTemperature}" automation:AutomationProperties.Name="{DynamicResource Settings.TrayShowTemperature}" /></Grid>
+                        <Grid Margin="0,7"><Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="{DynamicResource Settings.TrayShowOpen}" /><CheckBox x:Name="TrayOpenToggle" Grid.Column="1" Style="{StaticResource ApplicationToggleStyle}" IsChecked="{Binding ShowTrayOpen}" automation:AutomationProperties.Name="{DynamicResource Settings.TrayShowOpen}" /></Grid>
+                        <Grid Margin="0,7"><Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="{DynamicResource Settings.TrayShowModeToggle}" /><CheckBox x:Name="TrayModeToggle" Grid.Column="1" Style="{StaticResource ApplicationToggleStyle}" IsChecked="{Binding ShowTrayModeToggle}" automation:AutomationProperties.Name="{DynamicResource Settings.TrayShowModeToggle}" /></Grid>
+                        <Border Margin="0,10,0,0" Padding="12" CornerRadius="8" Background="{StaticResource RailBackgroundBrush}">
                             <StackPanel>
-                                <Grid Margin="0,0,0,8"><Grid.ColumnDefinitions><ColumnDefinition Width="34" /><ColumnDefinition /></Grid.ColumnDefinitions><Image Width="28" Height="28" Source="{StaticResource LogoDrawingImage}" /><StackPanel Grid.Column="1"><TextBlock Text="LumaTherm" FontWeight="SemiBold" /><TextBlock Text="Термосинхронизация активна" FontSize="10" Foreground="{StaticResource MutedTextBrush}" /></StackPanel></Grid>
-                                <TextBlock Text="Температура GPU                         68°C" Margin="0,5" />
-                                <TextBlock Text="Открыть LumaTherm                         ↗" Margin="0,5" />
-                                <TextBlock Text="Выключить режим                           ●" Margin="0,5" />
-                                <TextBlock Text="Выход" Margin="0,5" />
+                                <Grid><Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="GPU" FontWeight="SemiBold" /><TextBlock x:Name="TrayTemperaturePreviewText" Grid.Column="1" Text="{Binding TrayTemperaturePreview}" Foreground="{StaticResource ColdColorBrush}" FontWeight="SemiBold" /></Grid>
+                                <TextBlock Text="{DynamicResource Tray.Open}" Margin="0,8,0,0" />
+                                <TextBlock Text="{DynamicResource Tray.DisableMode}" Margin="0,6,0,0" />
+                                <TextBlock Text="{DynamicResource Tray.Exit}" Margin="0,6,0,0" FontWeight="SemiBold" />
+                                <TextBlock Text="{DynamicResource Settings.TrayExitAlwaysVisible}" Margin="0,6,0,0" FontSize="10" Foreground="{StaticResource MutedTextBrush}" TextWrapping="Wrap" />
                             </StackPanel>
                         </Border>
+                    </StackPanel>
+                </Border>
+
+                <Border Style="{StaticResource SettingsPanelStyle}">
+                    <StackPanel>
+                        <TextBlock Style="{StaticResource SectionHeadingStyle}" Text="{DynamicResource Settings.Hardware}" Margin="0,0,0,10" />
+                        <Grid Margin="0,5"><Grid.ColumnDefinitions><ColumnDefinition Width="30" /><ColumnDefinition /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="&#xE7F8;" FontFamily="Segoe Fluent Icons" Foreground="{StaticResource ColdColorBrush}" /><StackPanel Grid.Column="1"><TextBlock Text="{Binding LightingDeviceName}" FontWeight="SemiBold" /><TextBlock Text="{Binding LightingHardwareStatus}" TextWrapping="Wrap" FontSize="10" Foreground="{StaticResource MutedTextBrush}" /></StackPanel><TextBlock Grid.Column="2" Text="LampArray" Foreground="{StaticResource SuccessColorBrush}" /></Grid>
+                        <ComboBox x:Name="LightingDeviceSelector" Margin="30,10,0,8" MinHeight="32" ItemsSource="{Binding LightingDevices}" DisplayMemberPath="Name" SelectedValuePath="Id" SelectedValue="{Binding SelectedLightingDeviceId}" automation:AutomationProperties.Name="{DynamicResource Settings.PreferredLightingDevice}"><ComboBox.Style><Style TargetType="ComboBox"><Setter Property="Visibility" Value="Collapsed" /><Style.Triggers><DataTrigger Binding="{Binding IsLightingDeviceSelectorVisible}" Value="True"><Setter Property="Visibility" Value="Visible" /></DataTrigger></Style.Triggers></Style></ComboBox.Style></ComboBox>
+                        <Button x:Name="OpenLightingTestButton" Margin="0,14,0,0" Style="{StaticResource SecondaryButtonStyle}" HorizontalAlignment="Left"
+                                Content="{DynamicResource Settings.OpenLightingTest}" Command="{Binding OpenLightingTestCommand}"
+                                automation:AutomationProperties.Name="{DynamicResource Settings.OpenLightingTest}" />
                     </StackPanel>
                 </Border>
             </StackPanel>

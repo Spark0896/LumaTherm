@@ -11,111 +11,85 @@ namespace LumaTherm.App.Tests.ViewModels;
 public sealed class SettingsViewModelTests
 {
     [Fact]
-    public async Task PickColdColor_SelectedColorChangesOnlyColdStopAndUsesRuntimeSaveOnce()
+    public async Task Save_BuildsUnlimitedProfileAndPersistsLanguageAndTrayWithoutChangingLiveMode()
     {
         var recorder = new OperationRecorder();
         var runtime = new FakeThermalRuntime(recorder);
-        var startup = new FakeStartupService(recorder);
-        var picker = new FakeColorPicker(new RgbColor(1, 2, 3));
-        var vm = new SettingsViewModel(runtime, startup, AppSettings.Default, picker);
+        var vm = new SettingsViewModel(runtime, new FakeStartupService(recorder), AppSettings.Default);
+        vm.ProfileEditor.AddAt(50);
+        vm.ProfileEditor.Move(vm.ProfileEditor.Points[0].Id, 10);
+        vm.SelectedLanguage = AppLanguage.English;
+        vm.ShowTrayTemperature = false;
+        vm.ShowTrayOpen = false;
+        vm.ShowTrayModeToggle = true;
+        await runtime.SetModeEnabledAsync(true, CancellationToken.None);
 
-        await vm.PickColdColorCommand.ExecuteAsync();
+        await vm.SaveCommand.ExecuteAsync();
 
-        Assert.Equal(new RgbColor(1, 2, 3), vm.ColdColor);
-        Assert.Equal("#010203", vm.ColdColorHex);
-        Assert.Equal(ThermalProfile.Default.WarmColor, vm.WarmColor);
-        Assert.Equal(ThermalProfile.Default.HotColor, vm.HotColor);
-        Assert.Equal(ThermalProfile.Default.ColdColor, picker.CurrentColor);
-        Assert.Equal(1, runtime.UpdateCalls);
-        Assert.Equal(vm.LiveSettings, runtime.CurrentSettings);
-        Assert.Equal(new RgbColor(1, 2, 3), runtime.CurrentSettings.Profile.ColdColor);
+        Assert.Equal([10, 50, 65, 85], runtime.CurrentSettings.Profile.Points.Select(point => point.Temperature));
+        Assert.Equal(AppLanguage.English, runtime.CurrentSettings.Language);
+        Assert.Equal(new TrayMenuOptions(false, false, true), runtime.CurrentSettings.TrayMenu);
+        Assert.True(runtime.CurrentSettings.IsModeEnabled);
+        Assert.True(vm.LiveSettings.IsModeEnabled);
     }
 
     [Fact]
-    public async Task PickWarmColor_SelectedColorChangesOnlyWarmStopAndUsesRuntimeSaveOnce()
+    public void ResetDefaults_RestoresThreeDefaultPointsAndTrayPreferencesWithoutPersisting()
     {
         var recorder = new OperationRecorder();
-        var runtime = new FakeThermalRuntime(recorder);
-        var startup = new FakeStartupService(recorder);
-        var picker = new FakeColorPicker(new RgbColor(4, 5, 6));
-        var vm = new SettingsViewModel(runtime, startup, AppSettings.Default, picker);
+        var vm = new SettingsViewModel(new FakeThermalRuntime(recorder), new FakeStartupService(recorder), AppSettings.Default);
+        vm.ProfileEditor.AddAt(50);
+        vm.SelectedLanguage = AppLanguage.English;
+        vm.ShowTrayTemperature = false;
 
-        await vm.PickWarmColorCommand.ExecuteAsync();
+        vm.ResetDefaultsCommand.Execute(null);
 
-        Assert.Equal(ThermalProfile.Default.ColdColor, vm.ColdColor);
-        Assert.Equal(new RgbColor(4, 5, 6), vm.WarmColor);
-        Assert.Equal("#040506", vm.WarmColorHex);
-        Assert.Equal(ThermalProfile.Default.HotColor, vm.HotColor);
-        Assert.Equal(ThermalProfile.Default.WarmColor, picker.CurrentColor);
-        Assert.Equal(1, runtime.UpdateCalls);
-    }
-
-    [Fact]
-    public async Task PickHotColor_SelectedColorChangesOnlyHotStopAndUsesRuntimeSaveOnce()
-    {
-        var recorder = new OperationRecorder();
-        var runtime = new FakeThermalRuntime(recorder);
-        var startup = new FakeStartupService(recorder);
-        var picker = new FakeColorPicker(new RgbColor(7, 8, 9));
-        var vm = new SettingsViewModel(runtime, startup, AppSettings.Default, picker);
-
-        await vm.PickHotColorCommand.ExecuteAsync();
-
-        Assert.Equal(ThermalProfile.Default.ColdColor, vm.ColdColor);
-        Assert.Equal(ThermalProfile.Default.WarmColor, vm.WarmColor);
-        Assert.Equal(new RgbColor(7, 8, 9), vm.HotColor);
-        Assert.Equal("#070809", vm.HotColorHex);
-        Assert.Equal(ThermalProfile.Default.HotColor, picker.CurrentColor);
-        Assert.Equal(1, runtime.UpdateCalls);
-    }
-
-    [Fact]
-    public async Task PickColdColor_CancelChangesNothingAndDoesNotSave()
-    {
-        var recorder = new OperationRecorder();
-        var runtime = new FakeThermalRuntime(recorder);
-        var picker = new FakeColorPicker(null);
-        var vm = new SettingsViewModel(runtime, new FakeStartupService(recorder), AppSettings.Default, picker);
-
-        await vm.PickColdColorCommand.ExecuteAsync();
-
-        Assert.Equal(ThermalProfile.Default.ColdColor, vm.ColdColor);
-        Assert.Equal(ThermalProfile.Default.ColdColor, picker.CurrentColor);
-        Assert.Equal(0, runtime.UpdateCalls);
+        Assert.Equal(3, vm.ProfileEditor.Points.Count);
+        Assert.Equal([35, 65, 85], vm.ProfileEditor.Points.Select(point => point.Temperature));
+        Assert.Equal(AppLanguage.System, vm.SelectedLanguage);
+        Assert.True(vm.ShowTrayTemperature);
         Assert.Empty(recorder.Events);
     }
 
     [Fact]
-    public async Task SaveAndPicker_ShareOneSerializedMutationPipelineWithoutOverlappingPersistence()
+    public void RuntimeSnapshot_UpdatesTrayTemperaturePreviewUntilSettingsViewModelIsDisposed()
     {
         var recorder = new OperationRecorder();
-        var runtime = new BlockingThermalRuntime();
-        var picker = new FakeColorPicker(new RgbColor(1, 2, 3));
-        var vm = new SettingsViewModel(runtime, new FakeStartupService(recorder), AppSettings.Default, picker)
-        {
-            ColdTemperature = 40,
-        };
+        var runtime = new FakeThermalRuntime(recorder);
+        var vm = new SettingsViewModel(runtime, new FakeStartupService(recorder), AppSettings.Default);
 
-        var save = vm.SaveCommand.ExecuteAsync();
-        await runtime.FirstUpdateEntered.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
-        var pick = vm.PickColdColorCommand.ExecuteAsync();
+        runtime.Publish(Snapshot(51.4));
 
-        Assert.Equal(0, picker.PickCalls);
-        Assert.Equal(1, runtime.UpdateCalls);
-        Assert.Equal(1, runtime.MaxConcurrentUpdates);
-
-        runtime.ReleaseFirstUpdate();
-        await Task.WhenAll(save, pick).WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
-
-        Assert.Equal(1, picker.PickCalls);
-        Assert.Equal(2, runtime.UpdateCalls);
-        Assert.Equal(1, runtime.MaxConcurrentUpdates);
-        Assert.Equal(2, runtime.PersistedCandidates.Count);
-        Assert.Equal(40, runtime.PersistedCandidates[0].Profile.ColdTemperature);
-        Assert.Equal(ThermalProfile.Default.ColdColor, runtime.PersistedCandidates[0].Profile.ColdColor);
-        Assert.Equal(new RgbColor(1, 2, 3), runtime.PersistedCandidates[1].Profile.ColdColor);
-        Assert.Equal(runtime.PersistedCandidates[1], vm.LiveSettings);
+        Assert.Equal("51°C", vm.TrayTemperaturePreview);
+        vm.Dispose();
+        runtime.Publish(Snapshot(74));
+        Assert.Equal("51°C", vm.TrayTemperaturePreview);
     }
+
+    [Fact]
+    public void OpenLightingTestCommand_RaisesOneRequestWithoutStartingRuntimeTestInSettings()
+    {
+        var recorder = new OperationRecorder();
+        var runtime = new FakeThermalRuntime(recorder);
+        var vm = new SettingsViewModel(runtime, new FakeStartupService(recorder), AppSettings.Default);
+        var requests = 0;
+        vm.LightingTestRequested += (_, _) => requests++;
+
+        vm.OpenLightingTestCommand.Execute(null);
+
+        Assert.Equal(1, requests);
+        Assert.Equal(0, runtime.LightingTestCalls);
+    }
+
+    private static RuntimeSnapshot Snapshot(double temperature) => new(
+        RuntimeStatus.Active,
+        new LumaTherm.Core.Sensors.TemperatureReading(temperature, "Test GPU", "test", DateTimeOffset.UtcNow),
+        null,
+        null,
+        null,
+        null,
+        DateTimeOffset.UtcNow,
+        true);
 
     [Fact]
     public async Task DiscoverLighting_MultipleDevicesShowsSelectorAndSavesSelectedStableId()
@@ -259,11 +233,11 @@ public sealed class SettingsViewModelTests
             AppSettings.Default,
             new FakeColorPicker(null),
             new ThrowingLightingDeviceDiscovery());
-        vm.ColdTemperature = 40;
+        MovePoint(vm, 0, 40);
 
         await vm.DiscoverLightingDevicesCommand.ExecuteAsync();
 
-        Assert.Equal(40, vm.ColdTemperature);
+        Assert.Equal(40, vm.ProfileEditor.Points[0].Temperature);
         Assert.Equal(AppSettings.Default, vm.LiveSettings);
         Assert.Equal("Не удалось получить устройства Windows LampArray. Подсветка может быть занята другим контроллером.", vm.LightingHardwareStatus);
         Assert.Null(vm.ValidationMessage);
@@ -276,7 +250,8 @@ public sealed class SettingsViewModelTests
         var recorder = new OperationRecorder();
         var runtime = new FakeThermalRuntime(recorder);
         var startup = new FakeStartupService(recorder);
-        var vm = new SettingsViewModel(runtime, startup, AppSettings.Default) { ColdTemperature = 65 };
+        var vm = new SettingsViewModel(runtime, startup, AppSettings.Default);
+        vm.ProfileEditor.Points[0].Temperature = 65;
         using var dashboard = new MainViewModel(runtime);
         dashboard.SynchronizeProfile(vm);
 
@@ -290,22 +265,19 @@ public sealed class SettingsViewModelTests
     }
 
     [Fact]
-    public async Task Save_InvalidCandidate_IsRejectedByRuntimeBeforeAnyStartupSideEffect()
+    public async Task Save_InvalidCandidate_IsRejectedBeforeRuntimeOrStartupSideEffects()
     {
         var recorder = new OperationRecorder();
         var runtime = new FakeThermalRuntime(recorder);
         var startup = new FakeStartupService(recorder);
-        var vm = new SettingsViewModel(runtime, startup, AppSettings.Default)
-        {
-            ColdTemperature = 65,
-            IsAutostartEnabled = true,
-        };
+        var vm = new SettingsViewModel(runtime, startup, AppSettings.Default) { IsAutostartEnabled = true };
+        vm.ProfileEditor.Points[0].Temperature = 65;
         using var dashboard = new MainViewModel(runtime);
         dashboard.SynchronizeProfile(vm);
 
         await vm.SaveCommand.ExecuteAsync();
 
-        Assert.Equal(1, runtime.UpdateCalls);
+        Assert.Equal(0, runtime.UpdateCalls);
         Assert.Empty(recorder.Events);
         Assert.Equal("Температуры должны возрастать с шагом не менее 1 °C.", vm.ValidationMessage);
         Assert.Equal(AppSettings.Default, runtime.CurrentSettings);
@@ -320,12 +292,10 @@ public sealed class SettingsViewModelTests
         var recorder = new OperationRecorder();
         var runtime = new FakeThermalRuntime(recorder);
         var startup = new FakeStartupService(recorder);
-        var vm = new SettingsViewModel(runtime, startup, AppSettings.Default)
-        {
-            ColdTemperature = 40,
-            WarmTemperature = 67,
-            HotTemperature = 88,
-        };
+        var vm = new SettingsViewModel(runtime, startup, AppSettings.Default);
+        MovePoint(vm, 0, 40);
+        MovePoint(vm, 1, 67);
+        MovePoint(vm, 2, 88);
         vm.ProfileSaved += (_, _) => recorder.Record("vm.commit");
 
         await vm.SaveCommand.ExecuteAsync();
@@ -440,7 +410,8 @@ public sealed class SettingsViewModelTests
         var recorder = new OperationRecorder();
         var runtime = new FakeThermalRuntime(recorder) { Failure = new InvalidOperationException("write failed") };
         var startup = new FakeStartupService(recorder);
-        var vm = new SettingsViewModel(runtime, startup, AppSettings.Default) { ColdTemperature = 40, IsAutostartEnabled = true };
+        var vm = new SettingsViewModel(runtime, startup, AppSettings.Default) { IsAutostartEnabled = true };
+        MovePoint(vm, 0, 40);
         vm.ProfileSaved += (_, _) => recorder.Record("vm.commit");
 
         await vm.SaveCommand.ExecuteAsync();
@@ -475,7 +446,8 @@ public sealed class SettingsViewModelTests
         var recorder = new OperationRecorder();
         var runtime = new FakeThermalRuntime(recorder);
         var startup = new FakeStartupService(recorder);
-        var vm = new SettingsViewModel(runtime, startup, AppSettings.Default) { ColdTemperature = 40 };
+        var vm = new SettingsViewModel(runtime, startup, AppSettings.Default);
+        MovePoint(vm, 0, 40);
         vm.ProfileSaved += (_, _) => throw new InvalidOperationException("view failed");
 
         await vm.SaveCommand.ExecuteAsync();
@@ -491,7 +463,8 @@ public sealed class SettingsViewModelTests
         var recorder = new OperationRecorder();
         var runtime = new FakeThermalRuntime(recorder);
         var startup = new FakeStartupService(recorder);
-        var settings = new SettingsViewModel(runtime, startup, AppSettings.Default) { ColdTemperature = 40 };
+        var settings = new SettingsViewModel(runtime, startup, AppSettings.Default);
+        MovePoint(settings, 0, 40);
         var context = new QueuedSynchronizationContext();
         var dashboard = new MainViewModel(runtime, context);
         dashboard.SynchronizeProfile(settings);
@@ -509,7 +482,8 @@ public sealed class SettingsViewModelTests
         var recorder = new OperationRecorder();
         var runtime = new FakeThermalRuntime(recorder) { GateUpdates = true };
         var startup = new FakeStartupService(recorder);
-        var vm = new SettingsViewModel(runtime, startup, AppSettings.Default) { ColdTemperature = 40 };
+        var vm = new SettingsViewModel(runtime, startup, AppSettings.Default);
+        MovePoint(vm, 0, 40);
 
         var first = vm.SaveCommand.ExecuteAsync();
         await runtime.UpdateEntered.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
@@ -537,7 +511,8 @@ public sealed class SettingsViewModelTests
         var recorder = new OperationRecorder();
         var runtime = new FakeThermalRuntime(recorder);
         var startup = new FakeStartupService(recorder);
-        var settings = new SettingsViewModel(runtime, startup, AppSettings.Default) { ColdTemperature = 40 };
+        var settings = new SettingsViewModel(runtime, startup, AppSettings.Default);
+        MovePoint(settings, 0, 40);
         using var dashboard = new MainViewModel(runtime);
         dashboard.SynchronizeProfile(settings);
 
@@ -552,7 +527,8 @@ public sealed class SettingsViewModelTests
         var recorder = new OperationRecorder();
         var runtime = new FakeThermalRuntime(recorder);
         var startup = new FakeStartupService(recorder);
-        var settings = new SettingsViewModel(runtime, startup, AppSettings.Default) { ColdTemperature = 40 };
+        var settings = new SettingsViewModel(runtime, startup, AppSettings.Default);
+        MovePoint(settings, 0, 40);
         var dashboard = new MainViewModel(runtime);
         dashboard.Dispose();
 
@@ -568,11 +544,12 @@ public sealed class SettingsViewModelTests
         var recorder = new OperationRecorder();
         var runtime = new FakeThermalRuntime(recorder);
         var startup = new FakeStartupService(recorder);
-        var vm = new SettingsViewModel(runtime, startup, AppSettings.Default) { ColdTemperature = 40, IsAutostartEnabled = true };
+        var vm = new SettingsViewModel(runtime, startup, AppSettings.Default) { IsAutostartEnabled = true };
+        MovePoint(vm, 0, 40);
 
         vm.ResetDefaultsCommand.Execute(null);
 
-        Assert.Equal(35, vm.ColdTemperature);
+        Assert.Equal(35, vm.ProfileEditor.Points[0].Temperature);
         Assert.False(vm.IsAutostartEnabled);
         Assert.Empty(recorder.Events);
     }
@@ -592,7 +569,7 @@ public sealed class SettingsViewModelTests
 
         vm.ResetDefaultsCommand.Execute(null);
 
-        Assert.Equal(ThermalProfile.Default, new ThermalProfile(vm.ColdTemperature, vm.ColdColor, vm.WarmTemperature, vm.WarmColor, vm.HotTemperature, vm.HotColor, vm.SmoothingSeconds));
+        Assert.True(ThermalProfile.Default.ContentEquals(vm.ProfileEditor.BuildProfile(vm.SmoothingSeconds)));
         Assert.True(vm.NotificationsEnabled);
         Assert.Equal(0, runtime.UpdateCalls);
 
@@ -622,6 +599,9 @@ public sealed class SettingsViewModelTests
         Assert.True(vm.SaveCommand.CanExecute(null));
     }
 
+    private static void MovePoint(SettingsViewModel viewModel, int index, double temperature) =>
+        viewModel.ProfileEditor.Move(viewModel.ProfileEditor.Points[index].Id, temperature);
+
     private sealed class OperationRecorder
     {
         public List<string> Events { get; } = [];
@@ -632,8 +612,8 @@ public sealed class SettingsViewModelTests
     {
         private readonly TaskCompletionSource _updateEntered = new(TaskCreationOptions.RunContinuationsAsynchronously);
         private readonly TaskCompletionSource _updateGate = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        public event EventHandler<RuntimeSnapshot>? SnapshotChanged { add { } remove { } }
-        public RuntimeSnapshot CurrentSnapshot { get; } = new(RuntimeStatus.Disabled, null, null, null, null, null, DateTimeOffset.MinValue);
+        public event EventHandler<RuntimeSnapshot>? SnapshotChanged;
+        public RuntimeSnapshot CurrentSnapshot { get; private set; } = new(RuntimeStatus.Disabled, null, null, null, null, null, DateTimeOffset.MinValue);
         public Exception? Failure { get; init; }
         public int? FailOnUpdateCall { get; init; }
         public bool ThrowAfterCommit { get; init; }
@@ -641,8 +621,20 @@ public sealed class SettingsViewModelTests
         public bool GateUpdates { get; init; }
         public int UpdateCalls { get; private set; }
         public int PersistenceCount { get; private set; }
+        public int LightingTestCalls { get; private set; }
         public Task UpdateEntered => _updateEntered.Task;
+        public void Publish(RuntimeSnapshot snapshot)
+        {
+            CurrentSnapshot = snapshot;
+            SnapshotChanged?.Invoke(this, snapshot);
+        }
+
         public Task StartAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+        public Task<ILightingTestSession> BeginLightingTestAsync(CancellationToken cancellationToken)
+        {
+            LightingTestCalls++;
+            throw new NotSupportedException();
+        }
         public Task SetModeEnabledAsync(bool enabled, CancellationToken cancellationToken)
         {
             CurrentSettings = CurrentSettings with { IsModeEnabled = enabled };

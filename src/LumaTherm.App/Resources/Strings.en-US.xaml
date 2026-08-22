@@ -113,4 +113,17 @@
     <sys:String x:Key="Installer.Description">Adaptive GPU-temperature lighting control for Windows.</sys:String>
     <sys:String x:Key="Installer.Publisher">LumaTherm</sys:String>
     <sys:String x:Key="Installer.ShortDescription">Thermal lighting control</sys:String>
+    <sys:String x:Key="Settings.SelectedPoint">Selected point</sys:String>
+    <sys:String x:Key="Settings.PointTemperature">Selected point temperature</sys:String>
+    <sys:String x:Key="Settings.PointColor">Choose selected point color</sys:String>
+    <sys:String x:Key="Settings.Language">Language</sys:String>
+    <sys:String x:Key="Settings.LanguageSystem">System</sys:String>
+    <sys:String x:Key="Settings.LanguageRussian">Russian</sys:String>
+    <sys:String x:Key="Settings.LanguageEnglish">English</sys:String>
+    <sys:String x:Key="Settings.TrayShowTemperature">Show GPU temperature</sys:String>
+    <sys:String x:Key="Settings.TrayShowOpen">Show Open command</sys:String>
+    <sys:String x:Key="Settings.TrayShowModeToggle">Show mode toggle</sys:String>
+    <sys:String x:Key="Settings.TrayExitAlwaysVisible">Exit is always available for safe shutdown.</sys:String>
+    <sys:String x:Key="Settings.OpenLightingTest">Test lighting</sys:String>
+
 </ResourceDictionary>
