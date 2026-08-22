@@ -93,9 +93,15 @@
                             </StackPanel>
                         </Border>
                         <StackPanel Grid.Column="2" Orientation="Horizontal" Margin="7,0,0,0" shell:WindowChrome.IsHitTestVisibleInChrome="True">
-                            <Button x:Name="MinimizeButton" Style="{StaticResource WindowButtonStyle}" Content="&#xE921;" Click="MinimizeButton_Click" automation:AutomationProperties.Name="Свернуть окно" />
-                            <Button x:Name="MaximizeButton" Style="{StaticResource WindowButtonStyle}" Content="&#xE922;" Click="MaximizeButton_Click" automation:AutomationProperties.Name="Развернуть или восстановить окно" />
-                            <Button x:Name="CloseButton" Style="{StaticResource WindowButtonStyle}" Content="&#xE8BB;" Click="CloseButton_Click" automation:AutomationProperties.Name="Закрыть окно" />
+                            <Button x:Name="MinimizeButton" Style="{StaticResource WindowButtonStyle}" Click="MinimizeButton_Click" automation:AutomationProperties.Name="Свернуть окно">
+                                <TextBlock x:Name="MinimizeButtonContent" Text="&#xE921;" FontFamily="Segoe MDL2 Assets" FontSize="11" />
+                            </Button>
+                            <Button x:Name="MaximizeButton" Style="{StaticResource WindowButtonStyle}" Click="MaximizeButton_Click" automation:AutomationProperties.Name="Развернуть или восстановить окно">
+                                <TextBlock x:Name="MaximizeButtonContent" Text="&#xE922;" FontFamily="Segoe MDL2 Assets" FontSize="11" />
+                            </Button>
+                            <Button x:Name="CloseButton" Style="{StaticResource WindowButtonStyle}" Click="CloseButton_Click" automation:AutomationProperties.Name="Закрыть окно">
+                                <TextBlock x:Name="CloseButtonContent" Text="&#xE8BB;" FontFamily="Segoe MDL2 Assets" FontSize="11" />
+                            </Button>
                         </StackPanel>
                     </Grid>
                 </Border>

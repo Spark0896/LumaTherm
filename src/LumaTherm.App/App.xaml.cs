@@ -9,18 +9,30 @@ public partial class App : System.Windows.Application
     private static readonly TimeSpan ShutdownTimeout = TimeSpan.FromSeconds(8);
     private readonly CancellationTokenSource _lifetime = new();
     private AppHost? _host;
+    private readonly string[]? _activationArguments;
     private WpfExceptionSource? _exceptionSource;
     private AppExceptionBoundary? _exceptionBoundary;
     private Task? _startupObserver;
 
     public App()
-        : this(startHost: true)
+        : this(startHost: true, activationArguments: null)
     {
     }
 
     internal App(bool startHost)
+        : this(startHost, activationArguments: null)
+    {
+    }
+
+    internal App(IEnumerable<string> activationArguments)
+        : this(startHost: true, activationArguments?.ToArray() ?? throw new ArgumentNullException(nameof(activationArguments)))
+    {
+    }
+
+    private App(bool startHost, string[]? activationArguments)
     {
         StartHost = startHost;
+        _activationArguments = activationArguments;
     }
 
     private bool StartHost { get; }
@@ -30,7 +42,7 @@ public partial class App : System.Windows.Application
         base.OnStartup(e);
         ShutdownMode = ShutdownMode.OnExplicitShutdown;
         if (!StartHost) return;
-        _host = new AppHost(ProductionAppServices.Create(this), e.Args, RequestShutdown);
+        _host = new AppHost(ProductionAppServices.Create(this), _activationArguments ?? e.Args, RequestShutdown);
         _exceptionSource = new WpfExceptionSource(this);
         _exceptionBoundary = new AppExceptionBoundary(
             _exceptionSource,

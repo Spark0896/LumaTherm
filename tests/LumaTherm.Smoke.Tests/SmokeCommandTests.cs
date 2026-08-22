@@ -89,7 +89,7 @@ public sealed class SmokeCommandTests
         var result = await RunAsync(["cycle", "--confirm-light-write"], new FakeTemperatureProvider(null), new FakeTemperatureProvider(null), lights);
 
         Assert.Equal(0, result.ExitCode);
-        Assert.Equal(["#50C8FF", "#FFC64A", "#FF565D"], lights.Colors.Select(color => color.ToHex()));
+        Assert.Equal(["#50C8FF", "#FFB000", "#FF565D"], lights.Colors.Select(color => color.ToHex()));
         Assert.Equal(1, lights.ReleaseCount);
     }
 
@@ -101,7 +101,7 @@ public sealed class SmokeCommandTests
         var result = await RunAsync(["cycle", "--confirm-light-write"], new FakeTemperatureProvider(null), new FakeTemperatureProvider(null), lights);
 
         Assert.Equal(1, result.ExitCode);
-        Assert.Equal(["#50C8FF", "#FFC64A"], lights.Colors.Select(color => color.ToHex()));
+        Assert.Equal(["#50C8FF", "#FFB000"], lights.Colors.Select(color => color.ToHex()));
         Assert.Equal(1, lights.ReleaseCount);
     }
 
@@ -114,7 +114,7 @@ public sealed class SmokeCommandTests
 
         Assert.Equal(0, result.ExitCode);
         // A cold-forever engine must fail this: the literal HSV/smoothing calculation yields these frames.
-        Assert.Equal(["#50C8FF", "#50DFFF", "#4FFFF2"], lights.Colors.Select(color => color.ToHex()));
+        Assert.Equal(["#50C8FF", "#4CDEFF", "#44FFF1"], lights.Colors.Select(color => color.ToHex()));
         Assert.Equal(1, lights.ReleaseCount);
     }
 

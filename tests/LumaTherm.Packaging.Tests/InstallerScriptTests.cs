@@ -8,6 +8,32 @@ namespace LumaTherm.Packaging.Tests;
 public sealed class InstallerScriptTests
 {
     [Fact]
+    public void AuditTreatsOnlyExactUntrustedRootUnknownErrorAsMatchingUntrustedSignature()
+    {
+        using var accepted = DistributionFixture.Create();
+        var acceptedResult = accepted.RunInstall(
+            "-AuditOnly", "-CertificateDecisionForTest", "Accept",
+            "-SignatureStatusForTest", "UnknownError",
+            "-SignatureTrustIssueForTest", "UntrustedRoot",
+            "-ReverifiedSignatureStatusForTest", "Valid",
+            "-SignatureThumbprintForTest", accepted.CertificateThumbprint);
+
+        Assert.True(acceptedResult.ExitCode == 0, acceptedResult.StandardError + acceptedResult.StandardOutput);
+        Assert.Contains("signatureMatchedUntrusted", acceptedResult.StandardOutput, StringComparison.Ordinal);
+
+        using var rejected = DistributionFixture.Create();
+        var rejectedResult = rejected.RunInstall(
+            "-AuditOnly", "-CertificateDecisionForTest", "Accept",
+            "-SignatureStatusForTest", "UnknownError",
+            "-SignatureTrustIssueForTest", "Other",
+            "-ReverifiedSignatureStatusForTest", "Valid",
+            "-SignatureThumbprintForTest", rejected.CertificateThumbprint);
+
+        Assert.NotEqual(0, rejectedResult.ExitCode);
+        Assert.DoesNotContain("certificateImportPlanned", rejectedResult.StandardOutput, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void AuditAcceptsMatchingNotTrustedSignatureOnlyAfterPlannedTrustAndReverification()
     {
         using var fixture = DistributionFixture.Create();

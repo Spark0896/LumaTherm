@@ -2,7 +2,8 @@
 param(
     [switch]$AuditOnly,
     [ValidateSet('Accept', 'Decline')][string]$CertificateDecisionForTest,
-    [ValidateSet('Valid', 'NotTrusted', 'Invalid', 'NotSigned')][string]$SignatureStatusForTest,
+    [ValidateSet('Valid', 'NotTrusted', 'UnknownError', 'Invalid', 'NotSigned')][string]$SignatureStatusForTest,
+    [ValidateSet('UntrustedRoot', 'Other')][string]$SignatureTrustIssueForTest,
     [ValidateSet('Valid', 'NotTrusted', 'Invalid', 'NotSigned', 'Exception')][string]$ReverifiedSignatureStatusForTest,
     [string]$SignatureThumbprintForTest,
     [ValidateSet('Success', 'Failure')][string]$InstallOutcomeForTest,
@@ -22,6 +23,20 @@ function Get-Sha256Hex {
         finally { $algorithm.Dispose() }
     } finally { $stream.Dispose() }
 }
+function Test-OnlyUntrustedRootChainIssue {
+    param([Parameter(Mandatory = $true)][System.Security.Cryptography.X509Certificates.X509Certificate2]$Certificate)
+    $chain = [System.Security.Cryptography.X509Certificates.X509Chain]::new()
+    try {
+        $chain.ChainPolicy.RevocationMode = [System.Security.Cryptography.X509Certificates.X509RevocationMode]::NoCheck
+        $chain.ChainPolicy.VerificationFlags = [System.Security.Cryptography.X509Certificates.X509VerificationFlags]::NoFlag
+        [void]$chain.Build($Certificate)
+        $statuses = @($chain.ChainStatus | ForEach-Object { [string]$_.Status } | Sort-Object -Unique)
+        return $statuses.Count -eq 1 -and $statuses[0] -eq 'UntrustedRoot'
+    } finally {
+        $chain.Dispose()
+    }
+}
+
 
 function Write-AuditResult {
     param([string[]]$Events, [string]$PackagePath)
@@ -36,6 +51,7 @@ $isTest = $env:LUMATHERM_PACKAGING_TEST -eq '1'
 if ((-not [string]::IsNullOrWhiteSpace($SignatureStatusForTest) -or
      -not [string]::IsNullOrWhiteSpace($ReverifiedSignatureStatusForTest) -or
      -not [string]::IsNullOrWhiteSpace($SignatureThumbprintForTest) -or
+     -not [string]::IsNullOrWhiteSpace($SignatureTrustIssueForTest) -or
      -not [string]::IsNullOrWhiteSpace($CertificateDecisionForTest) -or
      -not [string]::IsNullOrWhiteSpace($InstallOutcomeForTest) -or
      $TrustedCertificatePresentForTest -or
@@ -101,10 +117,21 @@ if ($isTest -and $AuditOnly) {
     $signatureThumbprint = if ($null -eq $signature.SignerCertificate) { '' } else { $signature.SignerCertificate.Thumbprint }
 }
 $certificate = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2($certificatePath)
-if ($signatureStatus -ne 'Valid' -and $signatureStatus -ne 'NotTrusted') { throw "MSIX Authenticode signature is not acceptable: $signatureStatus" }
+if ($signatureStatus -ne 'Valid' -and $signatureStatus -ne 'NotTrusted' -and $signatureStatus -ne 'UnknownError') {
+    throw "MSIX Authenticode signature is not acceptable: $signatureStatus"
+}
 if ([string]::IsNullOrWhiteSpace($signatureThumbprint) -or
     -not $certificate.Thumbprint.Equals($signatureThumbprint, [System.StringComparison]::OrdinalIgnoreCase)) {
     throw 'MSIX signer certificate does not match sibling LumaTherm.cer.'
+}
+if ($signatureStatus -eq 'UnknownError') {
+    $onlyUntrustedRoot = if ($isTest -and $AuditOnly) {
+        $SignatureTrustIssueForTest -eq 'UntrustedRoot'
+    } else {
+        $null -ne $signature.SignerCertificate -and (Test-OnlyUntrustedRootChainIssue -Certificate $signature.SignerCertificate)
+    }
+    if (-not $onlyUntrustedRoot) { throw 'MSIX Authenticode signature has an unsupported UnknownError.' }
+    $signatureStatus = 'NotTrusted'
 }
 $trustedPath = 'Cert:\LocalMachine\TrustedPeople\' + $certificate.Thumbprint
 $ownedTrustedCertificate = $false

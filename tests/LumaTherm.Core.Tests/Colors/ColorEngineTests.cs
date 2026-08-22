@@ -9,7 +9,7 @@ public sealed class ColorEngineTests
     [Theory]
     [InlineData(0, 0x50, 0xC8, 0xFF)]
     [InlineData(35, 0x50, 0xC8, 0xFF)]
-    [InlineData(65, 0xFF, 0xC6, 0x4A)]
+    [InlineData(65, 0xFF, 0xB0, 0x00)]
     [InlineData(85, 0xFF, 0x56, 0x5D)]
     [InlineData(110, 0xFF, 0x56, 0x5D)]
     public void Map_ClampsAndHitsControlPoints(double temperature, byte r, byte g, byte b)
@@ -24,7 +24,7 @@ public sealed class ColorEngineTests
     {
         var oneStep = new ColorEngine(Profile, 35);
         var eightSteps = new ColorEngine(Profile, 35);
-        var expected = new RgbColor(255, 188, 75);
+        var expected = new RgbColor(255, 164, 7);
 
         var oneStepActual = oneStep.Step(85, TimeSpan.FromSeconds(0.8));
         RgbColor eightStepsActual = default;

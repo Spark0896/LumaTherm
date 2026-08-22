@@ -11,7 +11,7 @@ public sealed record ThermalProfile(
 {
     public static ThermalProfile Default { get; } = new(
         35, new RgbColor(0x50, 0xC8, 0xFF),
-        65, new RgbColor(0xFF, 0xC6, 0x4A),
+        65, new RgbColor(0xFF, 0xB0, 0x00),
         85, new RgbColor(0xFF, 0x56, 0x5D),
         0.8);
 

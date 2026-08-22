@@ -86,6 +86,9 @@ public sealed class ThermalCoreRuntimeTests
             Assert.Equal("Включить или выключить термосинхронизацию", AutomationProperties.GetName(toggle));
             Assert.NotEmpty(shell.IconOnlyButtons.Select(AutomationProperties.GetName));
             Assert.All(shell.IconOnlyButtons, button => Assert.Matches("[А-Яа-яЁё]", AutomationProperties.GetName(button)));
+            Assert.All(
+                new[] { shell.MinimizeButtonContent, shell.MaximizeButtonContent, shell.CloseButtonContent },
+                icon => Assert.Equal("Segoe MDL2 Assets", icon.FontFamily.Source));
         }
         finally
         {
@@ -377,7 +380,7 @@ public sealed class ThermalCoreRuntimeTests
         var view = Arrange(new DashboardView { DataContext = vm }, 1104, 652);
 
         Assert.Equal("#50C8FF", Assert.IsType<TextBlock>(view.FindName("ColdColorText")).Text);
-        Assert.Equal("#FFC64A", Assert.IsType<TextBlock>(view.FindName("WarmColorText")).Text);
+        Assert.Equal("#FFB000", Assert.IsType<TextBlock>(view.FindName("WarmColorText")).Text);
         Assert.Equal("#FF565D", Assert.IsType<TextBlock>(view.FindName("HotColorText")).Text);
     });
 
