@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace LumaTherm.Core.Colors;
 
 public sealed record ThermalProfile : IEquatable<ThermalProfile>
@@ -10,9 +12,10 @@ public sealed record ThermalProfile : IEquatable<ThermalProfile>
         SmoothingSeconds = smoothingSeconds;
     }
 
-    private ThermalProfile(ThermalPoint[] points, double smoothingSeconds)
+    [JsonConstructor]
+    private ThermalProfile(IReadOnlyList<ThermalPoint> points, double smoothingSeconds)
     {
-        _points = points;
+        _points = points?.ToArray() ?? [];
         SmoothingSeconds = smoothingSeconds;
     }
 

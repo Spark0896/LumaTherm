@@ -109,14 +109,14 @@ public sealed class JsonSettingsStoreTests : IDisposable
         var store = new JsonSettingsStore(path, TimeProvider.System);
 
         var result = await store.LoadAsync(TestContext.Current.CancellationToken);
-        var expected = new AppSettings(1, new ThermalProfile(30, new RgbColor(0x10, 0x20, 0x30), 62, new RgbColor(0x40, 0x50, 0x60), 91, new RgbColor(0x70, 0x80, 0x90), 1.2), true, true, false, false, "device-1");
+        var expected = new AppSettings(2, new ThermalProfile(30, new RgbColor(0x10, 0x20, 0x30), 62, new RgbColor(0x40, 0x50, 0x60), 91, new RgbColor(0x70, 0x80, 0x90), 1.2), true, true, false, false, "device-1", AppLanguage.System, TrayMenuOptions.Default);
 
         Assert.Equal(expected, result.Settings);
         Assert.Null(result.RecoveryMessage);
 
         await store.SaveAsync(result.Settings, TestContext.Current.CancellationToken);
         using var document = JsonDocument.Parse(await File.ReadAllTextAsync(path, TestContext.Current.CancellationToken));
-        Assert.Equal(1, document.RootElement.GetProperty("SchemaVersion").GetInt32());
+        Assert.Equal(2, document.RootElement.GetProperty("SchemaVersion").GetInt32());
         Assert.True(document.RootElement.TryGetProperty("Profile", out _));
     }
 
@@ -137,6 +137,63 @@ public sealed class JsonSettingsStoreTests : IDisposable
         Assert.True(settings.MinimizeToTray);
         Assert.True(settings.NotificationsEnabled);
         Assert.Null(settings.PreferredLightingDeviceId);
+    }
+
+    [Fact]
+    public async Task SchemaOne_IsMigratedToSchemaTwoWithDefaultPreferences()
+    {
+        Directory.CreateDirectory(_directory);
+        var path = Path.Combine(_directory, "settings.json");
+        await File.WriteAllTextAsync(path, """
+            {"schemaVersion":1,"profile":{"coldTemperature":35,"coldColor":"#008CFF","warmTemperature":65,"warmColor":"#FFD800","hotTemperature":85,"hotColor":"#FF1800","smoothingSeconds":0.8},"isModeEnabled":true,"isAutostartEnabled":true,"minimizeToTray":false,"notificationsEnabled":false,"preferredLightingDeviceId":"device-1"}
+            """, TestContext.Current.CancellationToken);
+        var store = new JsonSettingsStore(path, TimeProvider.System);
+
+        var result = await store.LoadAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(2, result.Settings.SchemaVersion);
+        Assert.Equal(3, result.Settings.Profile.Points.Count);
+        Assert.Equal(new RgbColor(0x00, 0x8C, 0xFF), result.Settings.Profile.Points[0].Color);
+        Assert.True(result.Settings.IsModeEnabled);
+        Assert.True(result.Settings.IsAutostartEnabled);
+        Assert.False(result.Settings.MinimizeToTray);
+        Assert.False(result.Settings.NotificationsEnabled);
+        Assert.Equal("device-1", result.Settings.PreferredLightingDeviceId);
+        Assert.Equal(AppLanguage.System, result.Settings.Language);
+        Assert.Equal(TrayMenuOptions.Default, result.Settings.TrayMenu);
+        Assert.Null(result.RecoveryMessage);
+    }
+
+    [Fact]
+    public async Task SchemaTwo_SaveThenLoad_RoundTripsArbitraryProfilePointsAndLanguage()
+    {
+        var path = Path.Combine(_directory, "settings.json");
+        var store = new JsonSettingsStore(path, TimeProvider.System);
+        var expected = new AppSettings(
+            2,
+            ThermalProfile.Create(
+            [
+                new ThermalPoint(20, new RgbColor(0x00, 0x00, 0xFF)),
+                new ThermalPoint(36, new RgbColor(0x00, 0xFF, 0xFF)),
+                new ThermalPoint(59, new RgbColor(0x00, 0xFF, 0x00)),
+                new ThermalPoint(77, new RgbColor(0xFF, 0xFF, 0x00)),
+                new ThermalPoint(95, new RgbColor(0xFF, 0x00, 0x00))
+            ],
+            1.3),
+            true,
+            true,
+            false,
+            false,
+            "device-1",
+            AppLanguage.Russian,
+            new TrayMenuOptions(false, true, false));
+
+        await store.SaveAsync(expected, TestContext.Current.CancellationToken);
+        var actual = (await store.LoadAsync(TestContext.Current.CancellationToken)).Settings;
+
+        Assert.Equal(expected, actual);
+        Assert.Equal(5, actual.Profile.Points.Count);
+        Assert.Equal(AppLanguage.Russian, actual.Language);
     }
 
     [Fact]

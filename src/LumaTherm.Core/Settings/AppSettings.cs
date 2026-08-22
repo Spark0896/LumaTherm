@@ -9,13 +9,20 @@ public sealed record AppSettings(
     bool IsAutostartEnabled,
     bool MinimizeToTray,
     bool NotificationsEnabled,
-    string? PreferredLightingDeviceId)
+    string? PreferredLightingDeviceId,
+    AppLanguage Language,
+    TrayMenuOptions TrayMenu)
 {
-    public static AppSettings Default { get; } = new(1, ThermalProfile.Default, false, false, true, true, null);
+    public static AppSettings Default { get; } = new(
+        2, ThermalProfile.Default, false, false, true, true, null,
+        AppLanguage.System, TrayMenuOptions.Default);
 
     public AppSettings Validate()
     {
-        if (SchemaVersion != 1) throw new InvalidDataException($"Unsupported settings schema {SchemaVersion}.");
+        if (SchemaVersion != 2) throw new InvalidDataException($"Unsupported settings schema {SchemaVersion}.");
+        if (Profile is null) throw new InvalidDataException("Settings profile is missing.");
+        if (!Enum.IsDefined(Language)) throw new InvalidDataException($"Unsupported application language {Language}.");
+        if (TrayMenu is null) throw new InvalidDataException("Settings tray menu options are missing.");
         Profile.Validate();
         return this;
     }
