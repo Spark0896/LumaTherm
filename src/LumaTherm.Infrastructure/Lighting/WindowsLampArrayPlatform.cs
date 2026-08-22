@@ -51,7 +51,7 @@ public sealed class WindowsLampArrayPlatform : ILampArrayPlatform
                     handles.Add(new WindowsLampArrayHandle(
                         lampArray,
                         device.Name,
-                        () => _availability.IsAvailable(device.Id)));
+                        () => lampArray.IsAvailable));
                 }
             }
 
