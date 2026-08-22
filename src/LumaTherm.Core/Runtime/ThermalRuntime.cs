@@ -39,6 +39,9 @@ public sealed class ThermalRuntime : IThermalRuntime
     private DateTimeOffset? _nextSensorAttemptAt;
     private TemperatureReading? _targetReading;
     private ThermalRange? _targetRange;
+    private LightingTestSession? _activeTestSession;
+    private double? _testTemperature;
+    private volatile bool _testSessionActive;
     private RgbColor? _displayedColor;
     private int _missingRetryIndex;
     private bool _releasedForMissing;
@@ -102,7 +105,7 @@ public sealed class ThermalRuntime : IThermalRuntime
             {
                 snapshot = CreateSnapshot(RuntimeStatus.Suspended, _targetReading, _displayedColor, _targetRange, null);
             }
-            else if (!_settings.IsModeEnabled)
+            else if (!_settings.IsModeEnabled && !_testSessionActive)
             {
                 snapshot = CreateSnapshot(RuntimeStatus.Disabled, null, null, null, null);
             }
@@ -123,6 +126,34 @@ public sealed class ThermalRuntime : IThermalRuntime
         }
     }
 
+    public async Task<ILightingTestSession> BeginLightingTestAsync(CancellationToken cancellationToken)
+    {
+        await _lifecycleGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            ThrowIfStopped();
+            if (_testSessionActive)
+            {
+                throw new InvalidOperationException("A lighting test is already active.");
+            }
+
+            var session = new LightingTestSession(this);
+            _activeTestSession = session;
+            _testTemperature = null;
+            _testSessionActive = true;
+            if (!_suspended)
+            {
+                StartLoopNoLock();
+            }
+
+            return session;
+        }
+        finally
+        {
+            _lifecycleGate.Release();
+        }
+    }
+
     public async Task SetModeEnabledAsync(bool enabled, CancellationToken cancellationToken)
     {
         RuntimeSnapshot? snapshot = null;
@@ -131,7 +162,7 @@ public sealed class ThermalRuntime : IThermalRuntime
         {
             ThrowIfStopped();
             var modeChanged = _settings.IsModeEnabled != enabled;
-            if (!modeChanged && (enabled || !_releasePending))
+            if (!modeChanged && (enabled || _testSessionActive || !_releasePending))
             {
                 return;
             }
@@ -149,7 +180,7 @@ public sealed class ThermalRuntime : IThermalRuntime
 
             try
             {
-                if (!enabled)
+                if (!enabled && !_testSessionActive)
                 {
                     snapshot = await DisableCommittedModeAsync().ConfigureAwait(false);
                 }
@@ -282,7 +313,7 @@ public sealed class ThermalRuntime : IThermalRuntime
             }
 
             _suspended = false;
-            if (_settings.IsModeEnabled)
+            if (_settings.IsModeEnabled || _testSessionActive)
             {
                 _lightingGate.Reset();
                 StartLoopNoLock();
@@ -317,10 +348,13 @@ public sealed class ThermalRuntime : IThermalRuntime
             }
 
             _stopped = true;
+            _testSessionActive = false;
+            _activeTestSession = null;
             await StopLoopNoLockAsync().ConfigureAwait(false);
             await _processGate.WaitAsync(CancellationToken.None).ConfigureAwait(false);
             try
             {
+                _testTemperature = null;
                 try
                 {
                     await ReleaseLightingAsync(CancellationToken.None).ConfigureAwait(false);
@@ -388,7 +422,7 @@ public sealed class ThermalRuntime : IThermalRuntime
     private async Task<RuntimeSnapshot> ProcessOnceCoreAsync(CancellationToken cancellationToken)
     {
         var now = _timeProvider.GetUtcNow();
-        if (_stopped || !_settings.IsModeEnabled)
+        if (_stopped || (!_settings.IsModeEnabled && !_testSessionActive))
         {
             return CreateSnapshot(RuntimeStatus.Disabled, null, null, null, null);
         }
@@ -434,7 +468,9 @@ public sealed class ThermalRuntime : IThermalRuntime
             }
         }
 
-        if (_firstMissingAt is { } missingSince)
+        var renderTemperature = _testTemperature ?? _targetReading?.Celsius;
+
+        if (_testTemperature is null && _firstMissingAt is { } missingSince)
         {
             if (now - missingSince >= MissingHoldDuration)
             {
@@ -472,12 +508,12 @@ public sealed class ThermalRuntime : IThermalRuntime
             return CreateSnapshot(RuntimeStatus.SensorUnavailable, null, null, null, sensorMessage ?? "Temperature sources are unavailable.");
         }
 
-        if (_targetReading is null)
+        if (renderTemperature is null)
         {
             return CreateSnapshot(RuntimeStatus.SensorUnavailable, null, null, null, sensorMessage ?? "Temperature sources are unavailable.");
         }
 
-        var nextColor = _colorEngine.Step(_targetReading.Celsius, renderElapsed);
+        var nextColor = _colorEngine.Step(renderTemperature.Value, renderElapsed);
         try
         {
             if (!_lightingController.IsConnected)
@@ -703,6 +739,7 @@ public sealed class ThermalRuntime : IThermalRuntime
     {
         _lastSensorPollAt = null;
         _lastRenderAt = null;
+        _testTemperature = null;
         _firstMissingAt = null;
         _nextSensorAttemptAt = null;
         _targetReading = null;
@@ -720,7 +757,7 @@ public sealed class ThermalRuntime : IThermalRuntime
             return RuntimeStatus.Suspended;
         }
 
-        if (!_settings.IsModeEnabled || _stopped)
+        if ((!_settings.IsModeEnabled && !_testSessionActive) || _stopped)
         {
             return RuntimeStatus.Disabled;
         }
@@ -777,6 +814,114 @@ public sealed class ThermalRuntime : IThermalRuntime
             catch (Exception)
             {
             }
+        }
+    }
+
+    private async Task SetLightingTestTemperatureAsync(
+        LightingTestSession session,
+        double celsius,
+        CancellationToken cancellationToken)
+    {
+        if (!double.IsFinite(celsius) || celsius is < 0 or > 120)
+        {
+            throw new ArgumentOutOfRangeException(nameof(celsius), "Temperature must be between 0 and 120 °C.");
+        }
+
+        await _lifecycleGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            ThrowIfStopped();
+            if (!ReferenceEquals(_activeTestSession, session))
+            {
+                throw new ObjectDisposedException(nameof(LightingTestSession));
+            }
+
+            await _processGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                _testTemperature = celsius;
+                _colorEngine = new ColorEngine(_settings.Profile, celsius);
+                _lightingGate.Reset();
+            }
+            finally
+            {
+                _processGate.Release();
+            }
+        }
+        finally
+        {
+            _lifecycleGate.Release();
+        }
+    }
+
+    private async Task EndLightingTestAsync(LightingTestSession session)
+    {
+        RuntimeSnapshot? snapshot = null;
+        await _lifecycleGate.WaitAsync(CancellationToken.None).ConfigureAwait(false);
+        try
+        {
+            if (!ReferenceEquals(_activeTestSession, session))
+            {
+                return;
+            }
+
+            _activeTestSession = null;
+            _testSessionActive = false;
+            if (_stopped)
+            {
+                _testTemperature = null;
+                return;
+            }
+
+            if (!_settings.IsModeEnabled)
+            {
+                snapshot = await DisableCommittedModeAsync().ConfigureAwait(false);
+            }
+            else
+            {
+                await _processGate.WaitAsync(CancellationToken.None).ConfigureAwait(false);
+                try
+                {
+                    _testTemperature = null;
+                    _lightingGate.Reset();
+                    snapshot = CreateSnapshot(StatusForCurrentState(), _targetReading, _displayedColor, _targetRange, null);
+                }
+                finally
+                {
+                    _processGate.Release();
+                }
+            }
+        }
+        finally
+        {
+            _lifecycleGate.Release();
+        }
+
+        if (snapshot is not null)
+        {
+            Publish(snapshot);
+        }
+    }
+
+    private sealed class LightingTestSession(ThermalRuntime owner) : ILightingTestSession
+    {
+        private int _disposed;
+
+        public Task SetTemperatureAsync(double celsius, CancellationToken cancellationToken)
+        {
+            return Volatile.Read(ref _disposed) == 0
+                ? owner.SetLightingTestTemperatureAsync(this, celsius, cancellationToken)
+                : Task.FromException(new ObjectDisposedException(nameof(LightingTestSession)));
+        }
+
+        public async ValueTask DisposeAsync()
+        {
+            if (Interlocked.Exchange(ref _disposed, 1) != 0)
+            {
+                return;
+            }
+
+            await owner.EndLightingTestAsync(this).ConfigureAwait(false);
         }
     }
 

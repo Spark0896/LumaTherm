@@ -690,6 +690,154 @@ public sealed class ThermalRuntimeTests
         await fixture.DisposeAsync();
     }
 
+    [Fact]
+    public async Task LightingTest_WhenModeIsOff_RendersSyntheticTemperatureWithoutPersistingMode()
+    {
+        await using var fixture = RuntimeFixture.Create(modeEnabled: false, temperatures: [45]);
+        var releaseCallsBeforeTest = fixture.Lighting.ReleaseCalls;
+
+        await using (var session = await fixture.Runtime.BeginLightingTestAsync(CancellationToken.None))
+        {
+            await session.SetTemperatureAsync(80, CancellationToken.None);
+            var snapshot = await fixture.Runtime.ProcessOnceAsync(CancellationToken.None);
+
+            Assert.Equal(new ColorEngine(fixture.Runtime.CurrentSettings.Profile, 80).Map(80), fixture.Lighting.Colors[^1]);
+            Assert.Equal(45, snapshot.Temperature!.Celsius);
+            Assert.False(fixture.Runtime.CurrentSettings.IsModeEnabled);
+            Assert.Equal(0, fixture.SettingsStore.SaveCalls);
+        }
+
+        Assert.Equal(releaseCallsBeforeTest + 1, fixture.Lighting.ReleaseCalls);
+        Assert.Equal(RuntimeStatus.Disabled, fixture.Runtime.CurrentSnapshot.Status);
+        Assert.False(fixture.Runtime.CurrentSettings.IsModeEnabled);
+        Assert.Equal(0, fixture.SettingsStore.SaveCalls);
+    }
+
+    [Fact]
+    public async Task LightingTest_WhenModeIsOn_DisposalReturnsToLiveRenderingWithoutReleasing()
+    {
+        await using var fixture = RuntimeFixture.Create(modeEnabled: true, temperatures: [45]);
+        await fixture.Runtime.ProcessOnceAsync(CancellationToken.None);
+        var releaseCallsBeforeTest = fixture.Lighting.ReleaseCalls;
+
+        RgbColor testColor;
+        await using (var session = await fixture.Runtime.BeginLightingTestAsync(CancellationToken.None))
+        {
+            await session.SetTemperatureAsync(80, CancellationToken.None);
+            fixture.Advance(TimeSpan.FromMilliseconds(100));
+            await fixture.Runtime.ProcessOnceAsync(CancellationToken.None);
+            testColor = fixture.Lighting.Colors[^1];
+        }
+
+        fixture.Advance(TimeSpan.FromMilliseconds(100));
+        var liveSnapshot = await fixture.Runtime.ProcessOnceAsync(CancellationToken.None);
+
+        Assert.Equal(RuntimeStatus.Active, liveSnapshot.Status);
+        Assert.Equal(45, liveSnapshot.Temperature!.Celsius);
+        Assert.NotEqual(testColor, fixture.Lighting.Colors[^1]);
+        Assert.Equal(releaseCallsBeforeTest, fixture.Lighting.ReleaseCalls);
+        Assert.True(fixture.Runtime.CurrentSettings.IsModeEnabled);
+    }
+
+    [Fact]
+    public async Task LightingTest_SyntheticRenderingDoesNotStopRealSensorPolling()
+    {
+        await using var fixture = RuntimeFixture.Create(modeEnabled: false, temperatures: [45, 55]);
+        await using var session = await fixture.Runtime.BeginLightingTestAsync(CancellationToken.None);
+        await session.SetTemperatureAsync(80, CancellationToken.None);
+
+        await fixture.Runtime.ProcessOnceAsync(CancellationToken.None);
+        fixture.Advance(TimeSpan.FromMilliseconds(500));
+        var snapshot = await fixture.Runtime.ProcessOnceAsync(CancellationToken.None);
+
+        Assert.Equal(2, fixture.Temperatures.ReadCalls);
+        Assert.Equal(55, snapshot.Temperature!.Celsius);
+        Assert.Equal(new ColorEngine(fixture.Runtime.CurrentSettings.Profile, 80).Map(80), fixture.Lighting.Colors[^1]);
+    }
+
+    [Theory]
+    [InlineData(double.NaN)]
+    [InlineData(double.NegativeInfinity)]
+    [InlineData(double.PositiveInfinity)]
+    [InlineData(-0.1)]
+    [InlineData(120.1)]
+    public async Task LightingTest_InvalidTemperatureIsRejected(double invalidTemperature)
+    {
+        await using var fixture = RuntimeFixture.Create(modeEnabled: false, temperatures: []);
+        await using var session = await fixture.Runtime.BeginLightingTestAsync(CancellationToken.None);
+
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() =>
+            session.SetTemperatureAsync(invalidTemperature, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task LightingTest_SecondBeginIsRejectedWithoutInvalidatingFirstSession()
+    {
+        await using var fixture = RuntimeFixture.Create(modeEnabled: false, temperatures: [45]);
+        await using var first = await fixture.Runtime.BeginLightingTestAsync(CancellationToken.None);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            fixture.Runtime.BeginLightingTestAsync(CancellationToken.None));
+
+        await first.SetTemperatureAsync(80, CancellationToken.None);
+        var snapshot = await fixture.Runtime.ProcessOnceAsync(CancellationToken.None);
+        Assert.Equal(RuntimeStatus.Active, snapshot.Status);
+    }
+
+    [Fact]
+    public async Task LightingTest_DisposeIsIdempotentAndDisposedSessionRejectsUpdates()
+    {
+        await using var fixture = RuntimeFixture.Create(modeEnabled: false, temperatures: [45]);
+        var releaseCallsBeforeTest = fixture.Lighting.ReleaseCalls;
+        var session = await fixture.Runtime.BeginLightingTestAsync(CancellationToken.None);
+        await session.SetTemperatureAsync(80, CancellationToken.None);
+        await fixture.Runtime.ProcessOnceAsync(CancellationToken.None);
+
+        await session.DisposeAsync();
+        await session.DisposeAsync();
+
+        Assert.Equal(releaseCallsBeforeTest + 1, fixture.Lighting.ReleaseCalls);
+        await Assert.ThrowsAsync<ObjectDisposedException>(() =>
+            session.SetTemperatureAsync(70, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task LightingTest_ExceptionInScopeStillRestoresModeOffState()
+    {
+        await using var fixture = RuntimeFixture.Create(modeEnabled: false, temperatures: [45]);
+        var releaseCallsBeforeTest = fixture.Lighting.ReleaseCalls;
+
+        var failure = await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+        {
+            await using var session = await fixture.Runtime.BeginLightingTestAsync(CancellationToken.None);
+            await session.SetTemperatureAsync(80, CancellationToken.None);
+            await fixture.Runtime.ProcessOnceAsync(CancellationToken.None);
+            throw new InvalidOperationException("test body failed");
+        });
+
+        Assert.Equal("test body failed", failure.Message);
+        Assert.Equal(releaseCallsBeforeTest + 1, fixture.Lighting.ReleaseCalls);
+        Assert.Equal(RuntimeStatus.Disabled, fixture.Runtime.CurrentSnapshot.Status);
+        Assert.False(fixture.Runtime.CurrentSettings.IsModeEnabled);
+        await using var nextSession = await fixture.Runtime.BeginLightingTestAsync(CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task LightingTest_ReleaseFailureStillEndsSessionAndAllowsAReplacement()
+    {
+        await using var fixture = RuntimeFixture.Create(modeEnabled: false, temperatures: [45]);
+        var session = await fixture.Runtime.BeginLightingTestAsync(CancellationToken.None);
+        await session.SetTemperatureAsync(80, CancellationToken.None);
+        await fixture.Runtime.ProcessOnceAsync(CancellationToken.None);
+        fixture.Lighting.ReleaseFailuresRemaining = 1;
+
+        await session.DisposeAsync();
+
+        Assert.Equal(RuntimeStatus.Disabled, fixture.Runtime.CurrentSnapshot.Status);
+        Assert.Contains("release failed", fixture.Runtime.CurrentSnapshot.Message);
+        await using var replacement = await fixture.Runtime.BeginLightingTestAsync(CancellationToken.None);
+    }
+
     private sealed class RuntimeFixture : IAsyncDisposable
     {
         public static readonly DateTimeOffset Start = new(2026, 8, 19, 12, 0, 0, TimeSpan.Zero);
