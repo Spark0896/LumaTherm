@@ -40,8 +40,16 @@ public sealed class ThermalProfileEditorViewModel
             return;
         }
 
-        var minimum = index == 0 ? MinimumTemperature : Points[index - 1].Temperature + MinimumGap;
-        var maximum = index == Points.Count - 1 ? MaximumTemperature : Points[index + 1].Temperature - MinimumGap;
+        var otherPoints = Points.Where(point => point.Id != id).ToArray();
+        var insertionIndex = otherPoints.TakeWhile(point => point.Temperature < temperature).Count();
+        var minimum = insertionIndex == 0 ? MinimumTemperature : otherPoints[insertionIndex - 1].Temperature + MinimumGap;
+        var maximum = insertionIndex == otherPoints.Length ? MaximumTemperature : otherPoints[insertionIndex].Temperature - MinimumGap;
+
+        if (minimum > maximum)
+        {
+            throw new ArgumentException("No valid temperature slot is available.", nameof(temperature));
+        }
+
         Points[index].Temperature = Math.Clamp(temperature, minimum, maximum);
         SortPoints();
     }
