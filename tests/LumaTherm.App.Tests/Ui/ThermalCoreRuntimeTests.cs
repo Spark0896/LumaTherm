@@ -239,6 +239,29 @@ public sealed class ThermalCoreRuntimeTests
     });
 
     [Fact]
+    public void GradientBar_RendersEveryPointFromItsProfile() => _sta.Run(() =>
+    {
+        var profile = ThermalProfile.Create(
+            [new(20, new(0, 0, 255)), new(40, new(0, 255, 255)), new(60, new(0, 255, 0)), new(80, new(255, 0, 0))], 0.8);
+        var bar = Arrange(new ThermalGradientBar { Profile = profile }, 600, 100);
+
+        Assert.Equal(4, bar.RenderedStops.Count);
+        Assert.Equal([0d, 1d / 3, 2d / 3, 1d], bar.RenderedStops.Select(stop => stop.Offset));
+        Assert.Equal([Color.FromRgb(0, 0, 255), Color.FromRgb(0, 255, 255), Color.FromRgb(0, 255, 0), Color.FromRgb(255, 0, 0)], bar.RenderedStops.Select(stop => stop.Color));
+    });
+
+    [Fact]
+    public void Sparkline_UsesEveryPointFromItsProfileGradient() => _sta.Run(() =>
+    {
+        var profile = ThermalProfile.Create(
+            [new(20, new(0, 0, 255)), new(40, new(0, 255, 255)), new(60, new(0, 255, 0)), new(80, new(255, 0, 0))], 0.8);
+        var sparkline = new TemperatureSparkline { Profile = profile };
+
+        Assert.Equal(4, sparkline.RenderedStops.Count);
+        Assert.Equal([Color.FromRgb(0, 0, 255), Color.FromRgb(0, 255, 255), Color.FromRgb(0, 255, 0), Color.FromRgb(255, 0, 0)], sparkline.RenderedStops.Select(stop => stop.Color));
+    });
+
+    [Fact]
     public void Sparkline_TracksCurrentCollectionOnlyAndHandlesDegenerateHistories() => _sta.Run(() =>
     {
         var oldItems = new SubscriberCountingSequence();

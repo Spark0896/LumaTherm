@@ -26,18 +26,31 @@ public sealed class ColorEngine
         Profile = profile.Validate();
     }
 
-    public ThermalRange Classify(double temperature) => temperature <= Profile.ColdTemperature
+    public ThermalRange Classify(double temperature) => temperature <= Profile.ColdPoint.Temperature
         ? ThermalRange.Cold
-        : temperature >= Profile.HotTemperature
+        : temperature >= Profile.HotPoint.Temperature
             ? ThermalRange.Hot
             : ThermalRange.Warm;
 
     public RgbColor Map(double temperature)
     {
-        var clamped = Math.Clamp(temperature, Profile.ColdTemperature, Profile.HotTemperature);
-        return clamped <= Profile.WarmTemperature
-            ? Interpolate(Profile.ColdColor, Profile.WarmColor, (clamped - Profile.ColdTemperature) / (Profile.WarmTemperature - Profile.ColdTemperature))
-            : Interpolate(Profile.WarmColor, Profile.HotColor, (clamped - Profile.WarmTemperature) / (Profile.HotTemperature - Profile.WarmTemperature));
+        var points = Profile.Points;
+        var clamped = Math.Clamp(temperature, Profile.ColdPoint.Temperature, Profile.HotPoint.Temperature);
+        var index = FindUpperPoint(points, clamped);
+        var lower = points[index - 1];
+        var upper = points[index];
+        var amount = (clamped - lower.Temperature) / (upper.Temperature - lower.Temperature);
+        return Interpolate(lower.Color, upper.Color, amount);
+    }
+
+    private static int FindUpperPoint(IReadOnlyList<ThermalPoint> points, double temperature)
+    {
+        for (var index = 1; index < points.Count; index++)
+        {
+            if (temperature <= points[index].Temperature) return index;
+        }
+
+        return points.Count - 1;
     }
 
     public RgbColor Step(double temperature, TimeSpan elapsed)

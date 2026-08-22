@@ -36,6 +36,83 @@ public sealed class ColorEngineTests
     }
 
     [Fact]
+    public void Map_InterpolatesWithinTheContainingPairOfAnUnlimitedPointProfile()
+    {
+        var profile = ThermalProfile.Create(
+            [new(20, new(0, 0, 255)), new(40, new(0, 255, 255)),
+             new(60, new(0, 255, 0)), new(80, new(255, 0, 0))], 0.8);
+        var engine = new ColorEngine(profile, 20);
+
+        Assert.Equal(new RgbColor(0, 255, 0), engine.Map(60));
+        Assert.Equal(new RgbColor(255, 255, 0), engine.Map(70));
+    }
+
+    [Fact]
+    public void Create_RequiresAtLeastTwoPoints()
+    {
+        Assert.Throws<ArgumentException>(() => ThermalProfile.Create([new(20, new(0, 0, 255))], 0.8));
+    }
+
+    [Theory]
+    [InlineData(20, 20)]
+    [InlineData(40, 20)]
+    public void Create_RejectsDuplicateOrCrossedTemperatures(double first, double second)
+    {
+        Assert.Throws<ArgumentException>(() => ThermalProfile.Create(
+            [new(first, new(0, 0, 255)), new(second, new(255, 0, 0))], 0.8));
+    }
+
+    [Theory]
+    [InlineData(double.NaN)]
+    [InlineData(double.PositiveInfinity)]
+    public void Create_RejectsNonFiniteTemperatures(double temperature)
+    {
+        Assert.Throws<ArgumentException>(() => ThermalProfile.Create(
+            [new(20, new(0, 0, 255)), new(temperature, new(255, 0, 0))], 0.8));
+    }
+
+    [Theory]
+    [InlineData(20, 20.9)]
+    [InlineData(-0.1, 20)]
+    [InlineData(20, 120.1)]
+    public void Create_EnforcesPointSpacingAndSupportedTemperatureRange(double first, double second)
+    {
+        Assert.Throws<ArgumentException>(() => ThermalProfile.Create(
+            [new(first, new(0, 0, 255)), new(second, new(255, 0, 0))], 0.8));
+    }
+
+    [Fact]
+    public void Create_OwnsAnImmutableSnapshotOfPoints()
+    {
+        var points = new[] { new ThermalPoint(20, new RgbColor(0, 0, 255)), new(40, new(255, 0, 0)) };
+        var profile = ThermalProfile.Create(points, 0.8);
+        points[0] = new ThermalPoint(20, new RgbColor(255, 255, 255));
+
+        Assert.Equal(new ThermalPoint(20, new RgbColor(0, 0, 255)), profile.Points[0]);
+        Assert.Throws<NotSupportedException>(() => ((IList<ThermalPoint>)profile.Points)[0] = new(20, new(255, 255, 255)));
+    }
+
+    [Fact]
+    public void ContentEquals_UsesEveryPointAndTheSmoothingValue()
+    {
+        var first = ThermalProfile.Create([new(20, new(0, 0, 255)), new(40, new(255, 0, 0))], 0.8);
+        var sameContent = ThermalProfile.Create([new(20, new(0, 0, 255)), new(40, new(255, 0, 0))], 0.8);
+        var differentSmoothing = ThermalProfile.Create([new(20, new(0, 0, 255)), new(40, new(255, 0, 0))], 1.0);
+
+        Assert.True(first.ContentEquals(sameContent));
+        Assert.Equal(first, sameContent);
+        Assert.False(first.ContentEquals(differentSmoothing));
+    }
+
+    [Fact]
+    public void Default_ContainsTheThreeHardwareValidatedSaturatedPoints()
+    {
+        Assert.Equal(
+            [new ThermalPoint(35, new RgbColor(0x00, 0x8C, 0xFF)), new(65, new(0xFF, 0xD8, 0x00)), new(85, new(0xFF, 0x18, 0x00))],
+            ThermalProfile.Default.Points);
+    }
+
+    [Fact]
     public void Step_IsIndependentOfTickSize()
     {
         var oneStep = new ColorEngine(Profile, 35);

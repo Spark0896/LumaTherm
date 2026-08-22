@@ -3,6 +3,8 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 using LumaTherm.App.ViewModels;
+using LumaTherm.App.Converters;
+using LumaTherm.Core.Colors;
 using Color = System.Windows.Media.Color;
 using Point = System.Windows.Point;
 using Pen = System.Windows.Media.Pen;
@@ -16,6 +18,8 @@ public partial class TemperatureSparkline : UserControl
         nameof(ItemsSource), typeof(IEnumerable<TemperaturePoint>), typeof(TemperatureSparkline),
         new FrameworkPropertyMetadata(null, FrameworkPropertyMetadataOptions.AffectsRender, OnItemsSourceChanged));
 
+    public static readonly DependencyProperty ProfileProperty = DependencyProperty.Register(
+        nameof(Profile), typeof(ThermalProfile), typeof(TemperatureSparkline), new FrameworkPropertyMetadata(null, FrameworkPropertyMetadataOptions.AffectsRender));
     private INotifyCollectionChanged? _observedCollection;
 
     public TemperatureSparkline()
@@ -30,6 +34,8 @@ public partial class TemperatureSparkline : UserControl
         get => (IEnumerable<TemperaturePoint>?)GetValue(ItemsSourceProperty);
         set => SetValue(ItemsSourceProperty, value);
     }
+    public ThermalProfile? Profile { get => (ThermalProfile?)GetValue(ProfileProperty); set => SetValue(ProfileProperty, value); }
+    internal IReadOnlyList<GradientStop> RenderedStops => [.. CreateStroke().GradientStops];
 
     protected override void OnRender(DrawingContext drawingContext)
     {
@@ -47,13 +53,7 @@ public partial class TemperatureSparkline : UserControl
             points.Length == 1 ? ActualWidth / 2 : index * ActualWidth / (points.Length - 1),
             5 + ((maximum - points[index].Celsius) / range * Math.Max(0, ActualHeight - 10)));
 
-        var stroke = new LinearGradientBrush(
-            new GradientStopCollection
-            {
-                new(Color.FromRgb(0x50, 0xC8, 0xFF), 0),
-                new(Color.FromRgb(0xFF, 0xC6, 0x4A), 0.68),
-                new(Color.FromRgb(0xFF, 0x56, 0x5D), 1),
-            }, new Point(0, 0.5), new Point(1, 0.5));
+        var stroke = CreateStroke();
 
         if (points.Length == 1)
         {
@@ -95,6 +95,26 @@ public partial class TemperatureSparkline : UserControl
         control.Detach(args.OldValue as INotifyCollectionChanged);
         if (control.IsLoaded) control.Attach(args.NewValue as INotifyCollectionChanged);
         control.InvalidateVisual();
+    }
+    private LinearGradientBrush CreateStroke()
+    {
+        var points = Profile?.Points;
+        if (points is null)
+        {
+            return new LinearGradientBrush(
+                [new(Color.FromRgb(0x50, 0xC8, 0xFF), 0), new(Color.FromRgb(0xFF, 0xC6, 0x4A), 0.68), new(Color.FromRgb(0xFF, 0x56, 0x5D), 1)],
+                new Point(0, 0.5), new Point(1, 0.5));
+        }
+
+        var cold = points[0].Temperature;
+        var hot = points[^1].Temperature;
+        var stops = new GradientStopCollection();
+        foreach (var point in points)
+        {
+            stops.Add(new GradientStop(point.Color.ToMediaColor(), (point.Temperature - cold) / (hot - cold)));
+        }
+
+        return new LinearGradientBrush(stops, new Point(0, 0.5), new Point(1, 0.5));
     }
 
     private void Attach(INotifyCollectionChanged? collection)

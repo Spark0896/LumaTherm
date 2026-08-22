@@ -130,12 +130,7 @@
                                     Background="{Binding DisplayColor, Converter={StaticResource RgbColorBrushConverter}}" />
                         </Grid>
                         <controls:ThermalGradientBar x:Name="ProfileGradientBar" Grid.Row="1" Height="76" VerticalAlignment="Center"
-                                                     ColdTemperature="{Binding Profile.ColdTemperature}"
-                                                     WarmTemperature="{Binding Profile.WarmTemperature}"
-                                                     HotTemperature="{Binding Profile.HotTemperature}"
-                                                     ColdColor="{Binding Profile.ColdColor}"
-                                                     WarmColor="{Binding Profile.WarmColor}"
-                                                     HotColor="{Binding Profile.HotColor}"
+                                                     Profile="{Binding Profile}"
                                                      CurrentTemperature="{Binding CurrentTemperature}" />
                         <Grid Grid.Row="2">
                             <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
@@ -176,6 +171,7 @@
                         </Grid>
                         <controls:TemperatureSparkline x:Name="HistorySparkline" Grid.Row="2" MinHeight="82" Margin="0,10,0,0"
                                                        ItemsSource="{Binding History}"
+                                                       Profile="{Binding Profile}"
                                                        automation:AutomationProperties.Name="График температуры GPU за последнюю минуту" />
                         <Grid Grid.Row="3" Margin="0,4,0,0">
                             <TextBlock Text="60 секунд назад" Style="{StaticResource CaptionStyle}" FontSize="8" />
