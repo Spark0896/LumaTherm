@@ -81,6 +81,28 @@ public sealed class SettingsUiRuntimeTests
     });
 
     [Fact]
+    public void SettingsView_TrayPreviewHidesOptionalEntriesIndividuallyButNeverExit() => _sta.Run(() =>
+    {
+        using var vm = CreateViewModel();
+        var view = Arrange(new SettingsView { DataContext = vm }, 1104, 900);
+        var temperature = Assert.IsType<Grid>(view.FindName("TrayTemperaturePreviewEntry"));
+        var open = Assert.IsType<TextBlock>(view.FindName("TrayOpenPreviewEntry"));
+        var mode = Assert.IsType<TextBlock>(view.FindName("TrayModePreviewEntry"));
+        var exit = Assert.IsType<TextBlock>(view.FindName("TrayExitPreviewEntry"));
+
+        vm.ShowTrayTemperature = false;
+        vm.ShowTrayOpen = false;
+        vm.ShowTrayModeToggle = false;
+        view.UpdateLayout();
+
+        Assert.Equal(Visibility.Collapsed, temperature.Visibility);
+        Assert.Equal(Visibility.Collapsed, open.Visibility);
+        Assert.Equal(Visibility.Collapsed, mode.Visibility);
+        Assert.Equal(Visibility.Visible, exit.Visibility);
+        Assert.Null(BindingOperations.GetBindingExpression(exit, UIElement.VisibilityProperty));
+    });
+
+    [Fact]
     public void MainWindow_NavigationCommandsSwitchCompiledContentAndSelectedAccessibilityState() => _sta.Run(() =>
     {
         using var dashboard = new MainViewModel(new FakeRuntime());

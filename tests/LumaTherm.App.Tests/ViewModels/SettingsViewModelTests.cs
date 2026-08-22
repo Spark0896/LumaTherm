@@ -11,6 +11,92 @@ namespace LumaTherm.App.Tests.ViewModels;
 public sealed class SettingsViewModelTests
 {
     [Fact]
+    public async Task AutostartInitialization_SystemEnabledOverridesStaleDisabledJsonAndProfileSavePersistsTruth()
+    {
+        var recorder = new OperationRecorder();
+        var runtime = new FakeThermalRuntime(recorder);
+        var startup = new FakeStartupService(recorder, initialEnabled: true);
+        using var vm = new SettingsViewModel(runtime, startup, AppSettings.Default);
+
+        await vm.AutostartInitialization;
+        MovePoint(vm, 0, 40);
+        await vm.SaveCommand.ExecuteAsync();
+
+        Assert.True(vm.IsAutostartEnabled);
+        Assert.True(runtime.CurrentSettings.IsAutostartEnabled);
+        Assert.True(startup.IsEnabled);
+        Assert.Equal(1, startup.GetCalls);
+        Assert.Equal(0, startup.SetCalls);
+    }
+
+    [Fact]
+    public async Task AutostartInitialization_SystemDisabledOverridesStaleEnabledJsonAndProfileSaveDoesNotReenableIt()
+    {
+        var recorder = new OperationRecorder();
+        var saved = AppSettings.Default with { IsAutostartEnabled = true };
+        var runtime = new FakeThermalRuntime(recorder);
+        var startup = new FakeStartupService(recorder, initialEnabled: false);
+        using var vm = new SettingsViewModel(runtime, startup, saved);
+
+        await vm.AutostartInitialization;
+        MovePoint(vm, 0, 40);
+        await vm.SaveCommand.ExecuteAsync();
+
+        Assert.False(vm.IsAutostartEnabled);
+        Assert.False(runtime.CurrentSettings.IsAutostartEnabled);
+        Assert.False(startup.IsEnabled);
+        Assert.Equal(1, startup.GetCalls);
+        Assert.Equal(0, startup.SetCalls);
+    }
+
+    [Fact]
+    public async Task PickSelectedColor_SuccessUpdatesOnlyDraftSelectedPoint()
+    {
+        var recorder = new OperationRecorder();
+        var picker = new FakeColorPicker(new RgbColor(1, 2, 3));
+        using var vm = new SettingsViewModel(new FakeThermalRuntime(recorder), new FakeStartupService(recorder), AppSettings.Default, picker);
+        var originalOtherColor = vm.ProfileEditor.Points[1].Color;
+
+        await vm.PickSelectedColorCommand.ExecuteAsync();
+
+        Assert.Equal(new RgbColor(1, 2, 3), vm.ProfileEditor.Points[0].Color);
+        Assert.Equal(originalOtherColor, vm.ProfileEditor.Points[1].Color);
+        Assert.Equal(ThermalProfile.Default.Points[0].Color, picker.CurrentColor);
+        Assert.Null(vm.ValidationMessage);
+    }
+
+    [Fact]
+    public async Task PickSelectedColor_CancelPreservesColorWithoutValidationError()
+    {
+        var recorder = new OperationRecorder();
+        var picker = new FakeColorPicker(null);
+        using var vm = new SettingsViewModel(new FakeThermalRuntime(recorder), new FakeStartupService(recorder), AppSettings.Default, picker);
+        var original = vm.ProfileEditor.Points[0].Color;
+
+        await vm.PickSelectedColorCommand.ExecuteAsync();
+
+        Assert.Equal(original, vm.ProfileEditor.Points[0].Color);
+        Assert.Null(vm.ValidationMessage);
+    }
+
+    [Fact]
+    public async Task PickSelectedColor_PickerFailurePreservesColorAndShowsNonfatalError()
+    {
+        var recorder = new OperationRecorder();
+        using var vm = new SettingsViewModel(
+            new FakeThermalRuntime(recorder),
+            new FakeStartupService(recorder),
+            AppSettings.Default,
+            new ThrowingColorPicker());
+        var original = vm.ProfileEditor.Points[0].Color;
+
+        await vm.PickSelectedColorCommand.ExecuteAsync();
+
+        Assert.Equal(original, vm.ProfileEditor.Points[0].Color);
+        Assert.Equal("Не удалось выбрать цвет.", vm.ValidationMessage);
+        Assert.True(vm.PickSelectedColorCommand.CanExecute(null));
+    }
+    [Fact]
     public async Task Save_BuildsUnlimitedProfileAndPersistsLanguageAndTrayWithoutChangingLiveMode()
     {
         var recorder = new OperationRecorder();
@@ -714,14 +800,17 @@ public sealed class SettingsViewModelTests
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
 
-    private sealed class FakeStartupService(OperationRecorder recorder) : IStartupService
+    private sealed class FakeStartupService(OperationRecorder recorder, bool initialEnabled = false) : IStartupService
     {
         public bool FailWhenDisabled { get; init; }
         public bool FailWhenEnabled { get; init; }
-        public bool IsEnabled { get; private set; }
-        public Task<bool> GetEnabledAsync(CancellationToken cancellationToken) => Task.FromResult(IsEnabled);
+        public bool IsEnabled { get; private set; } = initialEnabled;
+        public int GetCalls { get; private set; }
+        public int SetCalls { get; private set; }
+        public Task<bool> GetEnabledAsync(CancellationToken cancellationToken) { GetCalls++; return Task.FromResult(IsEnabled); }
         public Task SetEnabledAsync(bool enabled, CancellationToken cancellationToken)
         {
+            SetCalls++;
             recorder.Record($"startup:{enabled.ToString().ToLowerInvariant()}");
             if ((!enabled && FailWhenDisabled) || (enabled && FailWhenEnabled))
             {
@@ -746,6 +835,11 @@ public sealed class SettingsViewModelTests
             CurrentColor = current;
             return result;
         }
+    }
+
+    private sealed class ThrowingColorPicker : IColorPickerService
+    {
+        public RgbColor? Pick(RgbColor current) => throw new InvalidOperationException("dialog failed");
     }
 
     private sealed class FakeLightingDeviceDiscovery(params LightingDeviceInfo[] devices) : ILightingDeviceDiscovery

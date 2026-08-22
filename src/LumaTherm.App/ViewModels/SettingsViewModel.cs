@@ -19,6 +19,7 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
     private readonly ILightingDeviceDiscovery _lightingDeviceDiscovery;
     private readonly SynchronizationContext? _synchronizationContext;
     private readonly SemaphoreSlim _settingsMutationGate = new(1, 1);
+    private readonly CancellationTokenSource _disposeCancellation = new();
     private AppSettings _liveSettings;
     private ThermalProfileEditorViewModel _profileEditor = null!;
     private ThermalPointEditorViewModel? _selectedPoint;
@@ -39,6 +40,10 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
     private bool _isLightingDeviceSelectorVisible;
     private string? _validationMessage;
     private bool _disposed;
+    private bool _isApplyingAuthoritativeAutostart;
+    private bool _isAutostartDirty;
+    private bool _hasAuthoritativeAutostart;
+    private bool _authoritativeAutostartEnabled;
 
     public SettingsViewModel(IThermalRuntime runtime, IStartupService startupService, AppSettings settings)
         : this(runtime, startupService, settings, NullColorPickerService.Instance, EmptyLightingDeviceDiscovery.Instance)
@@ -72,10 +77,11 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
         runtime.SnapshotChanged += OnRuntimeSnapshotChanged;
 
         SaveCommand = new AsyncRelayCommand(() => RunSettingsMutationAsync(SaveAsync), onException: _ => ValidationMessage = "Не удалось сохранить настройки.");
-        PickSelectedColorCommand = new RelayCommand(PickSelectedColor, () => SelectedPoint is not null);
+        PickSelectedColorCommand = new AsyncRelayCommand(PickSelectedColorAsync, () => SelectedPoint is not null, _ => ValidationMessage = "Не удалось выбрать цвет.");
         DiscoverLightingDevicesCommand = new AsyncRelayCommand(DiscoverLightingDevicesAsync);
         ResetDefaultsCommand = new RelayCommand(ResetDefaults);
         OpenLightingTestCommand = new RelayCommand(() => LightingTestRequested?.Invoke(this, EventArgs.Empty));
+        AutostartInitialization = InitializeAutostartAsync(_disposeCancellation.Token);
     }
 
     internal event EventHandler<ThermalProfile>? ProfileSaved;
@@ -103,10 +109,7 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
         get => _selectedPoint;
         private set
         {
-            if (SetProperty(ref _selectedPoint, value))
-            {
-                PickSelectedColorCommand?.RaiseCanExecuteChanged();
-            }
+            SetProperty(ref _selectedPoint, value);
         }
     }
     public IReadOnlyList<AppLanguage> AvailableLanguages { get; } = [AppLanguage.System, AppLanguage.Russian, AppLanguage.English];
@@ -131,7 +134,17 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
     }
     public string SelectedPointColorHex => SelectedPoint?.Color.ToHex() ?? string.Empty;
     public double SmoothingSeconds { get => _smoothingSeconds; set => SetProperty(ref _smoothingSeconds, value); }
-    public bool IsAutostartEnabled { get => _isAutostartEnabled; set => SetProperty(ref _isAutostartEnabled, value); }
+    public bool IsAutostartEnabled
+    {
+        get => _isAutostartEnabled;
+        set
+        {
+            if (SetProperty(ref _isAutostartEnabled, value) && !_isApplyingAuthoritativeAutostart)
+            {
+                _isAutostartDirty = true;
+            }
+        }
+    }
     public bool MinimizeToTray { get => _minimizeToTray; set => SetProperty(ref _minimizeToTray, value); }
     public bool NotificationsEnabled { get => _notificationsEnabled; set => SetProperty(ref _notificationsEnabled, value); }
     public string GpuName { get => _gpuName; private set => SetProperty(ref _gpuName, value); }
@@ -168,10 +181,12 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
     public bool IsLightingDeviceSelectorVisible { get => _isLightingDeviceSelectorVisible; private set => SetProperty(ref _isLightingDeviceSelectorVisible, value); }
     public string? ValidationMessage { get => _validationMessage; private set => SetProperty(ref _validationMessage, value); }
     public AsyncRelayCommand SaveCommand { get; }
-    public RelayCommand PickSelectedColorCommand { get; }
+    public AsyncRelayCommand PickSelectedColorCommand { get; }
     public AsyncRelayCommand DiscoverLightingDevicesCommand { get; }
     public RelayCommand ResetDefaultsCommand { get; }
     public RelayCommand OpenLightingTestCommand { get; }
+    public Task AutostartInitialization { get; }
+    public Task RefreshAutostartAsync(CancellationToken cancellationToken) => ReadAuthoritativeAutostartAsync(forceDraftRefresh: true, cancellationToken);
 
     public void Dispose()
     {
@@ -181,6 +196,7 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
         }
 
         _disposed = true;
+        _disposeCancellation.Cancel();
         _runtime.SnapshotChanged -= OnRuntimeSnapshotChanged;
         DetachProfileEditor();
     }
@@ -198,17 +214,19 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
         }
     }
 
-    private void PickSelectedColor()
+    private Task PickSelectedColorAsync()
     {
         if (SelectedPoint is not { } point)
         {
-            return;
+            return Task.CompletedTask;
         }
 
         if (_colorPickerService.Pick(point.Color) is { } selected)
         {
             point.Color = selected;
         }
+
+        return Task.CompletedTask;
     }
 
     private async Task DiscoverLightingDevicesAsync()
@@ -266,6 +284,7 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
 
     private async Task SaveAsync()
     {
+        await AutostartInitialization;
         AppSettings candidate;
 
         try
@@ -284,12 +303,17 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
             return;
         }
 
-        var autostartChanged = candidate.IsAutostartEnabled != _liveSettings.IsAutostartEnabled;
+        var autostartChanged = _hasAuthoritativeAutostart
+            ? candidate.IsAutostartEnabled != _authoritativeAutostartEnabled
+            : candidate.IsAutostartEnabled != _liveSettings.IsAutostartEnabled;
         if (autostartChanged)
         {
             try
             {
                 await _startupService.SetEnabledAsync(candidate.IsAutostartEnabled, CancellationToken.None);
+                _authoritativeAutostartEnabled = candidate.IsAutostartEnabled;
+                _hasAuthoritativeAutostart = true;
+                _isAutostartDirty = false;
             }
             catch (Exception)
             {
@@ -298,6 +322,7 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
             }
         }
 
+        _isAutostartDirty = false;
         Commit(_runtime.CurrentSettings, null);
     }
 
@@ -328,7 +353,7 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
         }
 
         SmoothingSeconds = settings.Profile.SmoothingSeconds;
-        IsAutostartEnabled = settings.IsAutostartEnabled;
+        ApplyAuthoritativeAutostart(settings.IsAutostartEnabled, markKnown: false);
         MinimizeToTray = settings.MinimizeToTray;
         NotificationsEnabled = settings.NotificationsEnabled;
         SelectedLightingDeviceId = settings.PreferredLightingDeviceId;
@@ -473,5 +498,59 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
         _ => "Проверьте параметры температурного профиля.",
     };
 
+    private async Task InitializeAutostartAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            await ReadAuthoritativeAutostartAsync(forceDraftRefresh: false, cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
+        catch (Exception)
+        {
+            if (!_disposed)
+            {
+                ValidationMessage = "Не удалось определить состояние автозапуска.";
+            }
+        }
+    }
+
+    private async Task ReadAuthoritativeAutostartAsync(bool forceDraftRefresh, CancellationToken cancellationToken)
+    {
+        using var linkedCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _disposeCancellation.Token);
+        var enabled = await _startupService.GetEnabledAsync(linkedCancellation.Token);
+        linkedCancellation.Token.ThrowIfCancellationRequested();
+        if (_disposed)
+        {
+            return;
+        }
+
+        _authoritativeAutostartEnabled = enabled;
+        _hasAuthoritativeAutostart = true;
+        if (forceDraftRefresh || !_isAutostartDirty)
+        {
+            ApplyAuthoritativeAutostart(enabled, markKnown: true);
+        }
+    }
+
+    private void ApplyAuthoritativeAutostart(bool enabled, bool markKnown)
+    {
+        _isApplyingAuthoritativeAutostart = true;
+        try
+        {
+            IsAutostartEnabled = enabled;
+            _isAutostartDirty = false;
+            if (markKnown)
+            {
+                _authoritativeAutostartEnabled = enabled;
+                _hasAuthoritativeAutostart = true;
+            }
+        }
+        finally
+        {
+            _isApplyingAuthoritativeAutostart = false;
+        }
+    }
     private sealed record SnapshotUpdate(SettingsViewModel ViewModel, RuntimeSnapshot Snapshot);
 }
