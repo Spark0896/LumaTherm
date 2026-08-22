@@ -349,6 +349,24 @@ public sealed class SettingsViewModelTests
     }
 
     [Fact]
+    public async Task Save_WhenModeTurnsOnAfterOpening_PreservesLiveMode()
+    {
+        var recorder = new OperationRecorder();
+        var runtime = new FakeThermalRuntime(recorder);
+        var vm = new SettingsViewModel(runtime, new FakeStartupService(recorder), AppSettings.Default)
+        {
+            NotificationsEnabled = false,
+        };
+        await runtime.SetModeEnabledAsync(true, CancellationToken.None);
+
+        await vm.SaveCommand.ExecuteAsync();
+
+        Assert.True(runtime.CurrentSettings.IsModeEnabled);
+        Assert.True(vm.LiveSettings.IsModeEnabled);
+        Assert.False(runtime.CurrentSettings.NotificationsEnabled);
+    }
+
+    [Fact]
     public async Task Save_ChangedAutostart_OrdersStartupRuntimeAndViewModelCommit()
     {
         var recorder = new OperationRecorder();
@@ -625,8 +643,12 @@ public sealed class SettingsViewModelTests
         public int PersistenceCount { get; private set; }
         public Task UpdateEntered => _updateEntered.Task;
         public Task StartAsync(CancellationToken cancellationToken) => Task.CompletedTask;
-        public Task SetModeEnabledAsync(bool enabled, CancellationToken cancellationToken) => Task.CompletedTask;
-        public async Task UpdateSettingsAsync(AppSettings settings, CancellationToken cancellationToken)
+        public Task SetModeEnabledAsync(bool enabled, CancellationToken cancellationToken)
+        {
+            CurrentSettings = CurrentSettings with { IsModeEnabled = enabled };
+            return Task.CompletedTask;
+        }
+        public async Task UpdatePreferencesAsync(AppSettings settings, CancellationToken cancellationToken)
         {
             UpdateCalls++;
             settings.Validate();
@@ -644,7 +666,7 @@ public sealed class SettingsViewModelTests
 
             PersistenceCount++;
             recorder.Record("runtime.persist");
-            CurrentSettings = settings;
+            CurrentSettings = settings with { IsModeEnabled = CurrentSettings.IsModeEnabled };
             if (ThrowAfterCommit)
             {
                 throw new InvalidOperationException("subscriber failed");
@@ -672,7 +694,7 @@ public sealed class SettingsViewModelTests
         public void ReleaseFirstUpdate() => _firstGate.TrySetResult();
         public Task StartAsync(CancellationToken cancellationToken) => Task.CompletedTask;
         public Task SetModeEnabledAsync(bool enabled, CancellationToken cancellationToken) => Task.CompletedTask;
-        public async Task UpdateSettingsAsync(AppSettings settings, CancellationToken cancellationToken)
+        public async Task UpdatePreferencesAsync(AppSettings settings, CancellationToken cancellationToken)
         {
             var call = ++UpdateCalls;
             var active = Interlocked.Increment(ref _activeUpdates);
@@ -687,7 +709,7 @@ public sealed class SettingsViewModelTests
                 }
 
                 PersistedCandidates.Add(settings);
-                CurrentSettings = settings;
+                CurrentSettings = settings with { IsModeEnabled = CurrentSettings.IsModeEnabled };
             }
             finally
             {

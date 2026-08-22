@@ -61,8 +61,8 @@ public sealed class AppHostTests
         Assert.Equal([false], fixture.RuntimeUpdates);
         Assert.Equal(false, fixture.SettingsSeenByUi?.IsModeEnabled);
         Assert.Equal(1, fixture.RecoveryWarnings);
-        Assert.True(fixture.Events.IndexOf("runtime.update:false") < fixture.Events.IndexOf("ui.create"));
-        Assert.True(fixture.Events.IndexOf("runtime.update:false") < fixture.Events.IndexOf("runtime.start"));
+        Assert.True(fixture.Events.IndexOf("runtime.mode:false") < fixture.Events.IndexOf("ui.create"));
+        Assert.True(fixture.Events.IndexOf("runtime.mode:false") < fixture.Events.IndexOf("runtime.start"));
     }
 
     [Fact]
@@ -498,10 +498,10 @@ public sealed class AppHostTests
         public AppSettings CurrentSettings => _settings;
         public void SetInitial(AppSettings value) => _settings = value;
         public Task StartAsync(CancellationToken cancellationToken) { events.Add("runtime.start"); started(); return Task.CompletedTask; }
-        public Task UpdateSettingsAsync(AppSettings settings, CancellationToken cancellationToken) { _settings = settings; updates.Add(settings.IsModeEnabled); events.Add($"runtime.update:{settings.IsModeEnabled.ToString().ToLowerInvariant()}"); return Task.CompletedTask; }
+        public Task UpdatePreferencesAsync(AppSettings settings, CancellationToken cancellationToken) { _settings = settings with { IsModeEnabled = _settings.IsModeEnabled }; return Task.CompletedTask; }
         public Task StopAsync(CancellationToken cancellationToken) { events.Add("runtime.stop"); stopped(); return failStop ? Task.FromException(new InvalidOperationException("runtime")) : Task.CompletedTask; }
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
-        public Task SetModeEnabledAsync(bool enabled, CancellationToken cancellationToken) => Task.CompletedTask;
+        public Task SetModeEnabledAsync(bool enabled, CancellationToken cancellationToken) { _settings = _settings with { IsModeEnabled = enabled }; updates.Add(enabled); events.Add($"runtime.mode:{enabled.ToString().ToLowerInvariant()}"); return Task.CompletedTask; }
         public Task SuspendAsync(CancellationToken cancellationToken) => Task.CompletedTask;
         public Task ResumeAsync(CancellationToken cancellationToken) => Task.CompletedTask;
         public void Raise(RuntimeSnapshot snapshot) => SnapshotChanged?.Invoke(this, snapshot);

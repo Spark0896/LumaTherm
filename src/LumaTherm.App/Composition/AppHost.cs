@@ -109,7 +109,7 @@ public sealed class AppHost : IAsyncDisposable
             CaptureRuntimeState(_runtime.CurrentSnapshot);
             if (priorCrash && settings.IsModeEnabled)
             {
-                await _runtime.UpdateSettingsAsync(settings with { IsModeEnabled = false }, cancellationToken).ConfigureAwait(false);
+                await _runtime.SetModeEnabledAsync(false, cancellationToken).ConfigureAwait(false);
                 settings = _runtime.CurrentSettings;
             }
 

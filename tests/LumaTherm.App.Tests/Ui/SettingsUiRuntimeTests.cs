@@ -320,10 +320,10 @@ public sealed class SettingsUiRuntimeTests
         public AppSettings CurrentSettings { get; private set; } = AppSettings.Default;
         public Task StartAsync(CancellationToken cancellationToken) => Task.CompletedTask;
         public Task SetModeEnabledAsync(bool enabled, CancellationToken cancellationToken) => Task.CompletedTask;
-        public Task UpdateSettingsAsync(AppSettings settings, CancellationToken cancellationToken)
+        public Task UpdatePreferencesAsync(AppSettings settings, CancellationToken cancellationToken)
         {
             settings.Validate();
-            CurrentSettings = settings;
+            CurrentSettings = settings with { IsModeEnabled = CurrentSettings.IsModeEnabled };
             return Task.CompletedTask;
         }
         public Task SuspendAsync(CancellationToken cancellationToken) => Task.CompletedTask;

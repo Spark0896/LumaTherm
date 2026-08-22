@@ -623,7 +623,7 @@ public sealed class ThermalCoreRuntimeTests
         }
 
         public Task StartAsync(CancellationToken cancellationToken) => Task.CompletedTask;
-        public Task UpdateSettingsAsync(AppSettings settings, CancellationToken cancellationToken) => Task.CompletedTask;
+        public Task UpdatePreferencesAsync(AppSettings settings, CancellationToken cancellationToken) => Task.CompletedTask;
         public Task SuspendAsync(CancellationToken cancellationToken) => Task.CompletedTask;
         public Task ResumeAsync(CancellationToken cancellationToken) => Task.CompletedTask;
         public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
@@ -655,7 +655,7 @@ public sealed class ThermalCoreRuntimeTests
         public void CompleteRequest() => _modeRequest.TrySetResult();
         public void FailRequest(Exception exception) => _modeRequest.TrySetException(exception);
         public Task StartAsync(CancellationToken cancellationToken) => Task.CompletedTask;
-        public Task UpdateSettingsAsync(AppSettings settings, CancellationToken cancellationToken) => Task.CompletedTask;
+        public Task UpdatePreferencesAsync(AppSettings settings, CancellationToken cancellationToken) => Task.CompletedTask;
         public Task SuspendAsync(CancellationToken cancellationToken) => Task.CompletedTask;
         public Task ResumeAsync(CancellationToken cancellationToken) => Task.CompletedTask;
         public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;

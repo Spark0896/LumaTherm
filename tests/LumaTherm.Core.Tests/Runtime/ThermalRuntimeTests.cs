@@ -46,34 +46,52 @@ public sealed class ThermalRuntimeTests
         await enabled.Runtime.SuspendAsync(CancellationToken.None);
         Assert.True(enabled.Runtime.CurrentSnapshot.IsModeEnabled);
 
-        await enabled.Runtime.UpdateSettingsAsync(enabled.SettingsStore.Initial with { NotificationsEnabled = false }, CancellationToken.None);
+        await enabled.Runtime.UpdatePreferencesAsync(enabled.SettingsStore.Initial with { NotificationsEnabled = false }, CancellationToken.None);
         Assert.True(enabled.Runtime.CurrentSnapshot.IsModeEnabled);
 
-        await enabled.Runtime.UpdateSettingsAsync(enabled.SettingsStore.Initial with { IsModeEnabled = false }, CancellationToken.None);
+        await enabled.Runtime.SetModeEnabledAsync(false, CancellationToken.None);
         Assert.False(enabled.Runtime.CurrentSnapshot.IsModeEnabled);
     }
 
     [Fact]
-    public async Task UpdateSettings_WhenSnapshotSubscriberThrows_KeepsCommittedSettingsAndDoesNotThrow()
+    public async Task UpdatePreferences_StaleDisabledDraft_PreservesLiveEnabledMode()
+    {
+        await using var fixture = RuntimeFixture.Create(modeEnabled: false, temperatures: []);
+        await fixture.Runtime.SetModeEnabledAsync(true, CancellationToken.None);
+        var staleDraft = fixture.Runtime.CurrentSettings with
+        {
+            IsModeEnabled = false,
+            NotificationsEnabled = false,
+        };
+
+        await fixture.Runtime.UpdatePreferencesAsync(staleDraft, CancellationToken.None);
+
+        Assert.True(fixture.Runtime.CurrentSettings.IsModeEnabled);
+        Assert.True(fixture.Runtime.CurrentSnapshot.IsModeEnabled);
+        Assert.False(fixture.Runtime.CurrentSettings.NotificationsEnabled);
+    }
+
+    [Fact]
+    public async Task UpdatePreferences_WhenSnapshotSubscriberThrows_KeepsCommittedSettingsAndDoesNotThrow()
     {
         await using var fixture = RuntimeFixture.Create(modeEnabled: false, temperatures: []);
         fixture.Runtime.SnapshotChanged += (_, _) => throw new InvalidOperationException("subscriber failed");
         var candidate = fixture.SettingsStore.Initial with { NotificationsEnabled = false };
 
-        await fixture.Runtime.UpdateSettingsAsync(candidate, CancellationToken.None);
+        await fixture.Runtime.UpdatePreferencesAsync(candidate, CancellationToken.None);
 
         Assert.Equal(candidate, fixture.Runtime.CurrentSettings);
         Assert.Equal(candidate, fixture.SettingsStore.Saved);
     }
 
     [Fact]
-    public async Task UpdateSettings_PostCommitSnapshotFailure_IsContainedAndPublishesCommittedFault()
+    public async Task UpdatePreferences_PostCommitSnapshotFailure_IsContainedAndPublishesCommittedFault()
     {
         await using var fixture = RuntimeFixture.Create(modeEnabled: false, temperatures: []);
         var candidate = fixture.SettingsStore.Initial with { NotificationsEnabled = false };
         fixture.Clock.GetUtcNowFailuresRemaining = 1;
 
-        await fixture.Runtime.UpdateSettingsAsync(candidate, CancellationToken.None);
+        await fixture.Runtime.UpdatePreferencesAsync(candidate, CancellationToken.None);
 
         Assert.Equal(candidate, fixture.Runtime.CurrentSettings);
         Assert.Equal(candidate, fixture.SettingsStore.Saved);
@@ -83,14 +101,14 @@ public sealed class ThermalRuntimeTests
     }
 
     [Fact]
-    public async Task UpdateSettings_PersistentClockFailureAfterCommit_UsesLastPublishedTimestampAndKeepsGateReusable()
+    public async Task UpdatePreferences_PersistentClockFailureAfterCommit_UsesLastPublishedTimestampAndKeepsGateReusable()
     {
         await using var fixture = RuntimeFixture.Create(modeEnabled: false, temperatures: []);
         var previous = fixture.Runtime.CurrentSnapshot;
         var candidate = fixture.SettingsStore.Initial with { NotificationsEnabled = false };
         fixture.Clock.FailGetUtcNow = true;
 
-        await fixture.Runtime.UpdateSettingsAsync(candidate, TestContext.Current.CancellationToken)
+        await fixture.Runtime.UpdatePreferencesAsync(candidate, TestContext.Current.CancellationToken)
             .WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
 
         Assert.Equal(candidate, fixture.Runtime.CurrentSettings);
@@ -101,7 +119,7 @@ public sealed class ThermalRuntimeTests
         Assert.Contains("clock failed", fixture.Runtime.CurrentSnapshot.Message);
 
         fixture.Clock.FailGetUtcNow = false;
-        await fixture.Runtime.UpdateSettingsAsync(candidate with { NotificationsEnabled = true }, TestContext.Current.CancellationToken)
+        await fixture.Runtime.UpdatePreferencesAsync(candidate with { NotificationsEnabled = true }, TestContext.Current.CancellationToken)
             .WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
         Assert.Equal(RuntimeStatus.Disabled, fixture.Runtime.CurrentSnapshot.Status);
     }
@@ -137,7 +155,7 @@ public sealed class ThermalRuntimeTests
     }
 
     [Fact]
-    public async Task UpdateSettings_StoreFailureBeforeCommit_ThrowsAndPreservesExactLastGoodState()
+    public async Task UpdatePreferences_StoreFailureBeforeCommit_ThrowsAndPreservesExactLastGoodState()
     {
         await using var fixture = RuntimeFixture.Create(modeEnabled: false, temperatures: []);
         var previousSettings = fixture.Runtime.CurrentSettings;
@@ -145,7 +163,7 @@ public sealed class ThermalRuntimeTests
         fixture.SettingsStore.Failure = new InvalidOperationException("store failed");
 
         var failure = await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            fixture.Runtime.UpdateSettingsAsync(
+            fixture.Runtime.UpdatePreferencesAsync(
                 previousSettings with { NotificationsEnabled = false },
                 TestContext.Current.CancellationToken));
 
@@ -336,27 +354,6 @@ public sealed class ThermalRuntimeTests
     }
 
     [Fact]
-    public async Task UpdateSettings_WhenItDisablesMode_PersistsBeforeRelease()
-    {
-        await using var fixture = RuntimeFixture.Create(modeEnabled: true, temperatures: [68]);
-        await fixture.Runtime.ProcessOnceAsync(CancellationToken.None);
-        fixture.SettingsStore.OnSave = settings =>
-        {
-            Assert.False(settings.IsModeEnabled);
-            Assert.Equal(0, fixture.Lighting.ReleaseCalls);
-            Assert.Equal(RuntimeStatus.Active, fixture.Runtime.CurrentSnapshot.Status);
-        };
-
-        await fixture.Runtime.UpdateSettingsAsync(
-            fixture.SettingsStore.Initial with { IsModeEnabled = false, NotificationsEnabled = false },
-            CancellationToken.None);
-
-        Assert.Equal(1, fixture.Lighting.ReleaseCalls);
-        Assert.Equal(RuntimeStatus.Disabled, fixture.Runtime.CurrentSnapshot.Status);
-        Assert.False(fixture.SettingsStore.Saved!.NotificationsEnabled);
-    }
-
-    [Fact]
     public async Task DisableMode_WhenReleaseFails_PublishesDisabledAndRetriesOnRepeat()
     {
         await using var fixture = RuntimeFixture.Create(modeEnabled: true, temperatures: [68]);
@@ -371,28 +368,6 @@ public sealed class ThermalRuntimeTests
         Assert.Equal(1, fixture.Lighting.ReleaseCalls);
 
         await fixture.Runtime.SetModeEnabledAsync(false, CancellationToken.None);
-
-        Assert.Equal(RuntimeStatus.Disabled, fixture.Runtime.CurrentSnapshot.Status);
-        Assert.Null(fixture.Runtime.CurrentSnapshot.Message);
-        Assert.Equal(1, fixture.SettingsStore.SaveCalls);
-        Assert.Equal(2, fixture.Lighting.ReleaseCalls);
-    }
-
-    [Fact]
-    public async Task UpdateSettings_WhenDisableReleaseFails_PublishesDisabledAndRetriesOnRepeat()
-    {
-        await using var fixture = RuntimeFixture.Create(modeEnabled: true, temperatures: [68]);
-        await fixture.Runtime.ProcessOnceAsync(CancellationToken.None);
-        fixture.Lighting.ReleaseFailuresRemaining = 1;
-        var disabled = fixture.SettingsStore.Initial with { IsModeEnabled = false, NotificationsEnabled = false };
-
-        await fixture.Runtime.UpdateSettingsAsync(disabled, CancellationToken.None);
-
-        Assert.Equal(RuntimeStatus.Disabled, fixture.Runtime.CurrentSnapshot.Status);
-        Assert.Contains("release failed", fixture.Runtime.CurrentSnapshot.Message);
-        Assert.Equal(1, fixture.Lighting.ReleaseCalls);
-
-        await fixture.Runtime.UpdateSettingsAsync(disabled, CancellationToken.None);
 
         Assert.Equal(RuntimeStatus.Disabled, fixture.Runtime.CurrentSnapshot.Status);
         Assert.Null(fixture.Runtime.CurrentSnapshot.Message);
@@ -439,46 +414,6 @@ public sealed class ThermalRuntimeTests
         var disabled = await fixture.Runtime.ProcessOnceAsync(TestContext.Current.CancellationToken)
             .WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
         Assert.Equal(RuntimeStatus.Disabled, disabled.Status);
-    }
-
-    [Fact]
-    public async Task UpdateSettings_FaultedBackgroundLoopDuringDisable_ReleasesOwnedLightingInSameMutation()
-    {
-        await using var fixture = RuntimeFixture.Create(modeEnabled: true, temperatures: [68]);
-        await fixture.Runtime.StartAsync(TestContext.Current.CancellationToken)
-            .WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
-        var active = await fixture.Runtime.ProcessOnceAsync(TestContext.Current.CancellationToken)
-            .WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
-        Assert.Equal(RuntimeStatus.Active, active.Status);
-        Assert.True(fixture.Lighting.IsConnected);
-        Assert.Single(fixture.Lighting.Colors);
-
-        fixture.Clock.FailGetUtcNow = true;
-        fixture.Advance(TimeSpan.FromMilliseconds(100));
-        await fixture.Clock.PersistentFailuresObserved
-            .WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
-        var disabled = fixture.SettingsStore.Initial with { IsModeEnabled = false, NotificationsEnabled = false };
-
-        await fixture.Runtime.UpdateSettingsAsync(disabled, TestContext.Current.CancellationToken)
-            .WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
-        fixture.Clock.FailGetUtcNow = false;
-
-        Assert.Equal(disabled, fixture.Runtime.CurrentSettings);
-        Assert.Equal(RuntimeStatus.Faulted, fixture.Runtime.CurrentSnapshot.Status);
-        Assert.False(fixture.Runtime.CurrentSnapshot.IsModeEnabled);
-        Assert.Contains("clock failed", fixture.Runtime.CurrentSnapshot.Message);
-        Assert.Equal(1, fixture.SettingsStore.SaveCalls);
-        Assert.Equal(1, fixture.Lighting.ReleaseCalls);
-        Assert.False(fixture.Lighting.IsConnected);
-
-        await fixture.Runtime.UpdateSettingsAsync(disabled, TestContext.Current.CancellationToken)
-            .WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
-
-        Assert.Equal(1, fixture.SettingsStore.SaveCalls);
-        Assert.Equal(1, fixture.Lighting.ReleaseCalls);
-        var current = await fixture.Runtime.ProcessOnceAsync(TestContext.Current.CancellationToken)
-            .WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
-        Assert.Equal(RuntimeStatus.Disabled, current.Status);
     }
 
     [Fact]
@@ -565,14 +500,14 @@ public sealed class ThermalRuntimeTests
     }
 
     [Fact]
-    public async Task UpdateSettings_DuringRamp_PreservesSmoothedTemperature()
+    public async Task UpdatePreferences_DuringRamp_PreservesSmoothedTemperature()
     {
         await using var fixture = RuntimeFixture.Create(modeEnabled: true, temperatures: [35, 85]);
         await fixture.Runtime.ProcessOnceAsync(CancellationToken.None);
         fixture.Advance(TimeSpan.FromMilliseconds(500));
         var ramping = await fixture.Runtime.ProcessOnceAsync(CancellationToken.None);
         var slowerProfile = fixture.SettingsStore.Initial.Profile with { SmoothingSeconds = 2 };
-        await fixture.Runtime.UpdateSettingsAsync(
+        await fixture.Runtime.UpdatePreferencesAsync(
             fixture.SettingsStore.Initial with { Profile = slowerProfile },
             CancellationToken.None);
         fixture.Advance(TimeSpan.FromMilliseconds(100));

@@ -268,7 +268,7 @@ public sealed class SettingsViewModel : ObservableObject
 
         try
         {
-            await _runtime.UpdateSettingsAsync(candidate, CancellationToken.None);
+            await _runtime.UpdatePreferencesAsync(candidate, CancellationToken.None);
         }
         catch (ArgumentException exception)
         {
@@ -296,7 +296,7 @@ public sealed class SettingsViewModel : ObservableObject
         }
 
 
-        Commit(candidate, null);
+        Commit(_runtime.CurrentSettings, null);
     }
 
     private void ResetDefaults()
@@ -335,7 +335,7 @@ public sealed class SettingsViewModel : ObservableObject
     {
         try
         {
-            await _runtime.UpdateSettingsAsync(_liveSettings, CancellationToken.None);
+            await _runtime.UpdatePreferencesAsync(_liveSettings, CancellationToken.None);
             return "Не удалось изменить автозапуск.";
         }
         catch (Exception)

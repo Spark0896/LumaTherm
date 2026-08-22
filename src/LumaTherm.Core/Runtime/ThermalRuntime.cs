@@ -179,65 +179,41 @@ public sealed class ThermalRuntime : IThermalRuntime
         }
     }
 
-    public async Task UpdateSettingsAsync(AppSettings settings, CancellationToken cancellationToken)
+    public async Task UpdatePreferencesAsync(AppSettings preferences, CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(settings);
-        var validated = settings.Validate();
+        ArgumentNullException.ThrowIfNull(preferences);
         RuntimeSnapshot snapshot;
         await _lifecycleGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             ThrowIfStopped();
+            var validated = preferences.Validate();
             var previousSettings = _settings;
-            var settingsChanged = validated != previousSettings;
-            if (!settingsChanged && !_releasePending)
+            var merged = validated with { IsModeEnabled = previousSettings.IsModeEnabled };
+            if (merged == previousSettings)
             {
                 return;
             }
 
-            var modeChanged = validated.IsModeEnabled != previousSettings.IsModeEnabled;
-            if (settingsChanged)
-            {
-                await _settingsStore.SaveAsync(validated, cancellationToken).ConfigureAwait(false);
-                Volatile.Write(ref _settings, validated);
-                if (modeChanged && !validated.IsModeEnabled)
-                {
-                    _releasePending = true;
-                }
-            }
+            await _settingsStore.SaveAsync(merged, cancellationToken).ConfigureAwait(false);
+            Volatile.Write(ref _settings, merged);
 
             try
             {
-                var profileChanged = validated.Profile != previousSettings.Profile;
-                if (!validated.IsModeEnabled && (modeChanged || _releasePending))
+                await _processGate.WaitAsync(CancellationToken.None).ConfigureAwait(false);
+                try
                 {
-                    snapshot = await DisableCommittedModeAsync(profileChanged ? validated.Profile : null).ConfigureAwait(false);
-                }
-                else
-                {
-                    await _processGate.WaitAsync(CancellationToken.None).ConfigureAwait(false);
-                    try
+                    if (!merged.Profile.ContentEquals(previousSettings.Profile))
                     {
-                        if (profileChanged)
-                        {
-                            _colorEngine.UpdateProfile(validated.Profile);
-                            _targetRange = _targetReading is null ? null : _colorEngine.Classify(_targetReading.Celsius);
-                        }
+                        _colorEngine.UpdateProfile(merged.Profile);
+                        _targetRange = _targetReading is null ? null : _colorEngine.Classify(_targetReading.Celsius);
+                    }
 
-                        if (modeChanged && !_suspended)
-                        {
-                            StartLoopNoLock();
-                            snapshot = CreateSnapshot(RuntimeStatus.Connecting, _targetReading, _displayedColor, _targetRange, null);
-                        }
-                        else
-                        {
-                            snapshot = CreateSnapshot(StatusForCurrentState(), _targetReading, _displayedColor, _targetRange, null);
-                        }
-                    }
-                    finally
-                    {
-                        _processGate.Release();
-                    }
+                    snapshot = CreateSnapshot(StatusForCurrentState(), _targetReading, _displayedColor, _targetRange, null);
+                }
+                finally
+                {
+                    _processGate.Release();
                 }
             }
             catch (Exception exception)
