@@ -30,7 +30,7 @@ public sealed class NotifyIconTrayPlatform : ITrayIconPlatform
     private static Icon LoadOwnedIcon()
     {
         var resource = WpfApplication.GetResourceStream(new Uri("pack://application:,,,/Assets/LumaTherm.ico"))
-            ?? throw new InvalidOperationException("Встроенная иконка LumaTherm не найдена.");
+            ?? throw new InvalidOperationException("The embedded LumaTherm icon was not found.");
         using (resource.Stream)
         {
             using var loadedIcon = new Icon(resource.Stream);

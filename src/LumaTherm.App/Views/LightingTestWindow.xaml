@@ -112,6 +112,7 @@
 
                     <TextBlock x:Name="ErrorText" Margin="4,12,4,0" Foreground="{StaticResource HotColorBrush}"
                                Text="{Binding ErrorMessage}" TextWrapping="Wrap"
+                               automation:AutomationProperties.Name="{DynamicResource TestWindow.Error}"
                                automation:AutomationProperties.LiveSetting="Assertive" />
                 </StackPanel>
             </ScrollViewer>

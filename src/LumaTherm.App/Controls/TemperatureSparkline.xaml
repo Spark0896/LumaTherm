@@ -4,4 +4,4 @@
              Background="Transparent"
              ClipToBounds="True"
              Focusable="False"
-             AutomationProperties.Name="График температуры GPU за последнюю минуту" />
+             AutomationProperties.Name="{DynamicResource Dashboard.History}" />

@@ -33,9 +33,24 @@ public partial class TemperatureRing : UserControl
         nameof(DisplayColor), typeof(RgbColor), typeof(TemperatureRing),
         new FrameworkPropertyMetadata(ThermalProfile.Default.ColdColor, FrameworkPropertyMetadataOptions.AffectsRender));
 
+    public static readonly DependencyProperty NowLabelProperty = DependencyProperty.Register(
+        nameof(NowLabel), typeof(string), typeof(TemperatureRing),
+        new FrameworkPropertyMetadata(string.Empty, FrameworkPropertyMetadataOptions.AffectsRender, OnLocalizedTextChanged));
+
+    public static readonly DependencyProperty UnavailableTextProperty = DependencyProperty.Register(
+        nameof(UnavailableText), typeof(string), typeof(TemperatureRing),
+        new FrameworkPropertyMetadata(string.Empty, OnLocalizedTextChanged));
+
+    public static readonly DependencyProperty AccessibleNameFormatProperty = DependencyProperty.Register(
+        nameof(AccessibleNameFormat), typeof(string), typeof(TemperatureRing),
+        new FrameworkPropertyMetadata("{0}", OnLocalizedTextChanged));
+
     public TemperatureRing()
     {
         InitializeComponent();
+        SetResourceReference(NowLabelProperty, "Dashboard.GpuNow");
+        SetResourceReference(UnavailableTextProperty, "Accessibility.TemperatureUnavailable");
+        SetResourceReference(AccessibleNameFormatProperty, "Accessibility.GpuTemperatureFormat");
         UpdateAccessibleName();
     }
 
@@ -43,7 +58,10 @@ public partial class TemperatureRing : UserControl
     public double Minimum { get => (double)GetValue(MinimumProperty); set => SetValue(MinimumProperty, value); }
     public double Maximum { get => (double)GetValue(MaximumProperty); set => SetValue(MaximumProperty, value); }
     public RgbColor DisplayColor { get => (RgbColor)GetValue(DisplayColorProperty); set => SetValue(DisplayColorProperty, value); }
-    internal string AccessibleValue => double.IsFinite(Temperature) ? $"{Temperature.ToString("0.#", CultureInfo.InvariantCulture)} °C" : "Температура недоступна";
+    public string NowLabel { get => (string)GetValue(NowLabelProperty); set => SetValue(NowLabelProperty, value); }
+    public string UnavailableText { get => (string)GetValue(UnavailableTextProperty); set => SetValue(UnavailableTextProperty, value); }
+    public string AccessibleNameFormat { get => (string)GetValue(AccessibleNameFormatProperty); set => SetValue(AccessibleNameFormatProperty, value); }
+    internal string AccessibleValue => double.IsFinite(Temperature) ? $"{Temperature.ToString("0.#", CultureInfo.InvariantCulture)} °C" : UnavailableText;
 
     protected override void OnRender(DrawingContext drawingContext)
     {
@@ -70,7 +88,7 @@ public partial class TemperatureRing : UserControl
         var dpi = VisualTreeHelper.GetDpi(this).PixelsPerDip;
         var valueText = double.IsFinite(Temperature) ? $"{Temperature:0.#}°" : "—°";
         DrawCenteredText(drawingContext, valueText, center.Y - 31, 44, FontWeights.SemiBold, Color.FromRgb(0xEE, 0xF4, 0xF8), dpi);
-        DrawCenteredText(drawingContext, "GPU · сейчас", center.Y + 21, 10, FontWeights.Normal, Color.FromRgb(0x92, 0x9C, 0xA5), dpi);
+        DrawCenteredText(drawingContext, NowLabel, center.Y + 21, 10, FontWeights.Normal, Color.FromRgb(0x92, 0x9C, 0xA5), dpi);
     }
 
     private static Pen RoundedPen(Brush brush, double thickness) => new(brush, thickness)
@@ -108,5 +126,8 @@ public partial class TemperatureRing : UserControl
     private static void OnAccessibleValueChanged(DependencyObject dependencyObject, DependencyPropertyChangedEventArgs _) =>
         ((TemperatureRing)dependencyObject).UpdateAccessibleName();
 
-    private void UpdateAccessibleName() => AutomationProperties.SetName(this, $"Температура GPU: {AccessibleValue}");
+    private static void OnLocalizedTextChanged(DependencyObject dependencyObject, DependencyPropertyChangedEventArgs _) =>
+        ((TemperatureRing)dependencyObject).UpdateAccessibleName();
+
+    private void UpdateAccessibleName() => AutomationProperties.SetName(this, string.Format(CultureInfo.CurrentCulture, AccessibleNameFormat, AccessibleValue));
 }

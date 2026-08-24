@@ -5,7 +5,6 @@
              xmlns:controls="clr-namespace:LumaTherm.App.Controls"
              xmlns:converters="clr-namespace:LumaTherm.App.Converters"
              xmlns:settings="clr-namespace:LumaTherm.Core.Settings;assembly=LumaTherm.Core"
-             Language="ru-RU"
              MinWidth="420" Background="Transparent"
              SizeChanged="SettingsView_SizeChanged">
     <UserControl.Resources>
@@ -125,11 +124,11 @@
             <Grid Grid.Row="0" Grid.ColumnSpan="3" Margin="0,0,0,15">
                 <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
                 <StackPanel>
-                    <TextBlock Text="{DynamicResource Settings.Title}" FontSize="21" FontWeight="SemiBold" />
-                    <TextBlock Text="{DynamicResource Settings.Subtitle}" Margin="0,5,0,0" FontSize="11" Foreground="{StaticResource MutedTextBrush}" />
+                    <TextBlock Text="{DynamicResource Settings.Title}" FontSize="21" FontWeight="SemiBold" TextWrapping="Wrap" />
+                    <TextBlock Text="{DynamicResource Settings.Subtitle}" Margin="0,5,0,0" FontSize="11" Foreground="{StaticResource MutedTextBrush}" TextWrapping="Wrap" />
                 </StackPanel>
                 <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                    <TextBlock Text="{DynamicResource Settings.ApplyAfterSave}" FontSize="11" Foreground="{StaticResource MutedTextBrush}" />
+                    <TextBlock Text="{DynamicResource Settings.ApplyAfterSave}" FontSize="11" Foreground="{StaticResource MutedTextBrush}" TextWrapping="Wrap" MaxWidth="250" />
                     <Ellipse Width="7" Height="7" Margin="8,0,0,0" Fill="{StaticResource SuccessColorBrush}" />
                 </StackPanel>
             </Grid>

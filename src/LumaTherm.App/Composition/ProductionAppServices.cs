@@ -63,7 +63,8 @@ public static class ProductionAppServices
             (ui, runtime) => new WpfTraySession((WpfUiSession)ui, runtime, application, localization, exception => WriteFailure(logger, "app.unhandled", exception)),
             runtime => new PowerEventService(new WindowsPowerEventSource(), runtime, exception => WriteFailure(logger, "runtime.power_failed", exception)),
             (_, _) => new ReadOnlyDiscoverySession(lighting ?? throw new InvalidOperationException("Lighting composition is unavailable."), () => logger),
-            new WpfAppDispatcher(application.Dispatcher));
+            new WpfAppDispatcher(application.Dispatcher),
+            localization.Get);
     }
 
     private static IStartupService CreateStartupService()
@@ -100,6 +101,7 @@ public static class ProductionAppServices
         private readonly SettingsViewModel _settingsViewModel;
         private readonly AboutViewModel _aboutViewModel;
         private readonly GitHubReleaseFeed _releaseFeed;
+        private readonly ILocalizationService _localization;
         private LightingTestViewModel? _lightingTestViewModel;
         private LightingTestWindow? _lightingTestWindow;
         private Task? _disposeTask;
@@ -107,12 +109,12 @@ public static class ProductionAppServices
         public WpfUiSession(IThermalRuntime runtime, IStartupService startup, AppSettings settings, ILightingDeviceDiscovery discovery, ILocalizationService? localization = null)
         {
             _runtime = runtime;
-            _settingsViewModel = new SettingsViewModel(runtime, startup, settings, new ColorPickerService(), discovery);
-            _mainViewModel = new MainViewModel(runtime, SynchronizationContext.Current);
-            var aboutLocalization = localization ?? new LocalizationService(System.Windows.Application.Current.Resources);
-            if (localization is null) aboutLocalization.Apply(settings.Language);
+            _localization = localization ?? new LocalizationService(System.Windows.Application.Current.Resources);
+            if (localization is null) _localization.Apply(settings.Language);
+            _settingsViewModel = new SettingsViewModel(runtime, startup, settings, new ColorPickerService(), discovery, _localization);
+            _mainViewModel = new MainViewModel(runtime, SynchronizationContext.Current, _localization);
             _releaseFeed = new GitHubReleaseFeed();
-            _aboutViewModel = new AboutViewModel(_releaseFeed, new LinkLauncher(), aboutLocalization);
+            _aboutViewModel = new AboutViewModel(_releaseFeed, new LinkLauncher(), _localization);
             _mainViewModel.SynchronizeProfile(_settingsViewModel);
             ClosePolicy = new WindowClosePolicy(() => _settingsViewModel.LiveSettings.MinimizeToTray);
             Window = new MainWindow
@@ -194,11 +196,11 @@ public static class ProductionAppServices
             }
             catch (ArgumentException)
             {
-                ShowForegroundError(ResourceText("Validation.Profile"));
+                ShowForegroundError(_localization.Get("Validation.Profile"));
                 return;
             }
 
-            var viewModel = new LightingTestViewModel(_runtime, profile, SaveLightingTestProfileAsync);
+            var viewModel = new LightingTestViewModel(_runtime, profile, SaveLightingTestProfileAsync, _localization);
             var window = new LightingTestWindow(viewModel) { Owner = Window };
             _lightingTestViewModel = viewModel;
             _lightingTestWindow = window;
@@ -223,7 +225,7 @@ public static class ProductionAppServices
                 window.CloseAfterCleanup();
                 if (!_isDisposing)
                 {
-                    ShowForegroundError(ResourceText("TestWindow.OpenFailed"));
+                    ShowForegroundError(_localization.Get("TestWindow.OpenFailed"));
                 }
             }
             finally
@@ -239,15 +241,15 @@ public static class ProductionAppServices
         private Task SaveLightingTestProfileAsync(ThermalProfile profile, CancellationToken cancellationToken) =>
             _settingsViewModel.ApplyLightingTestProfileAsync(profile, cancellationToken);
 
-        private static string ResourceText(string key) =>
-            System.Windows.Application.Current.Resources[key] as string ?? key;
     }
 
     private sealed class WpfTraySession : IAppTraySession
     {
         private readonly TrayIconService _service;
+        private readonly ILocalizationService _localization;
         public WpfTraySession(WpfUiSession ui, IThermalRuntime runtime, System.Windows.Application application, ILocalizationService localization, Action<Exception> failure)
         {
+            _localization = localization;
             var window = new WpfTrayWindow(ui.Window);
             var trayApplication = new WpfTrayApplication(application);
             Func<AppSettings> currentSettings = () => ui.Settings.LiveSettings;
@@ -269,7 +271,9 @@ public static class ProductionAppServices
                 failure);
         }
         public void ShowRecoveryWarning(string message) => _service.ShowRecoveryWarning(message);
-        public void ShowBackgroundError(string message) => _service.ShowNotification("LumaTherm · Ошибка", message);
+        public void ShowBackgroundError(string message) => _service.ShowNotification(
+            $"{_localization.Get("App.Name")} · {_localization.Get("Notification.Error")}",
+            message);
         public ValueTask DisposeAsync() => _service.DisposeAsync();
     }
 

@@ -140,5 +140,34 @@
     <sys:String x:Key="TestWindow.Apply">Apply</sys:String>
     <sys:String x:Key="TestWindow.Cancel">Cancel</sys:String>
     <sys:String x:Key="TestWindow.OpenFailed">Unable to start the lighting test.</sys:String>
+    <sys:String x:Key="Common.On">On</sys:String>
+    <sys:String x:Key="Common.Off">Off</sys:String>
+    <sys:String x:Key="Dashboard.SecondsFormat">{0:0.0} s</sys:String>
+    <sys:String x:Key="Dashboard.GpuNow">GPU · now</sys:String>
+    <sys:String x:Key="Runtime.ToggleFailed">Unable to change mode.</sys:String>
+    <sys:String x:Key="Settings.HardwareUnchecked">Windows LampArray devices have not been checked.</sys:String>
+    <sys:String x:Key="Settings.HardwareDiscoveryFailed">Unable to list Windows LampArray devices. Lighting may be in use by another controller.</sys:String>
+    <sys:String x:Key="Settings.UnavailableDeviceFormat">{0} (unavailable)</sys:String>
+    <sys:String x:Key="Settings.HardwareSavedUnavailable">The saved device is unavailable or in use by another controller.</sys:String>
+    <sys:String x:Key="Settings.HardwareNotFound">No Windows LampArray devices were found.</sys:String>
+    <sys:String x:Key="Settings.HardwareConnected">Connected directly through Windows LampArray.</sys:String>
+    <sys:String x:Key="Validation.AutostartFailed">Unable to change autostart.</sys:String>
+    <sys:String x:Key="Validation.AutostartRollbackFailed">Unable to change autostart or restore settings.</sys:String>
+    <sys:String x:Key="Validation.UiRefreshFailed">Settings were saved, but the interface did not refresh completely.</sys:String>
+    <sys:String x:Key="Validation.AutostartReadFailed">Unable to determine the autostart state.</sys:String>
+    <sys:String x:Key="TestWindow.ApplyFailed">Unable to apply the lighting test profile.</sys:String>
+    <sys:String x:Key="TestWindow.CloseFailed">Unable to finish the lighting test safely.</sys:String>
+    <sys:String x:Key="TestWindow.LightingFailed">Unable to update the test lighting.</sys:String>
+    <sys:String x:Key="TestWindow.Error">Lighting test status</sys:String>
+    <sys:String x:Key="Accessibility.ThermalProfile">Thermal profile temperature scale</sys:String>
+    <sys:String x:Key="Accessibility.ThermalGradient">Thermal profile gradient</sys:String>
+    <sys:String x:Key="Accessibility.TemperatureUnavailable">Temperature unavailable</sys:String>
+    <sys:String x:Key="Accessibility.GpuTemperatureFormat">GPU temperature: {0}</sys:String>
+    <sys:String x:Key="ProfileEditor.Instructions">Double-click to add · Drag or use arrow keys · Delete to remove</sys:String>
+    <sys:String x:Key="Notification.Error">Error</sys:String>
+    <sys:String x:Key="Notification.SettingsRecovered">Settings were damaged and reset.</sys:String>
+    <sys:String x:Key="Notification.PreviousSessionCrashed">The previous session ended unexpectedly. Lighting control remains disabled until enabled manually.</sys:String>
+    <sys:String x:Key="Notification.ForegroundUnexpectedError">An unexpected error occurred. LumaTherm will close safely.</sys:String>
+    <sys:String x:Key="Notification.BackgroundUnexpectedError">A background error occurred. Lighting control will stop safely.</sys:String>
 
 </ResourceDictionary>

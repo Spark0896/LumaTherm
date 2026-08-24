@@ -1,6 +1,7 @@
 #pragma warning disable xUnit1051 // Lifecycle tests intentionally exercise default and independently cancelled tokens.
 
 using System.IO;
+using LumaTherm.App.Localization;
 using LumaTherm.App.ViewModels;
 using LumaTherm.Core.Colors;
 using LumaTherm.Core.Runtime;
@@ -118,8 +119,44 @@ public sealed class LightingTestViewModelTests
         await vm.TemperatureUpdate;
         await vm.CloseAsync();
 
-        Assert.Contains("lamp unavailable", vm.ErrorMessage, StringComparison.Ordinal);
+        Assert.Equal("Не удалось обновить тестовую подсветку.", vm.ErrorMessage);
         Assert.True(runtime.Session.Disposed);
+    }
+
+    [Fact]
+    public async Task SetTemperatureFailure_UsesStableLocalizedMessageAndRefreshesInPlace()
+    {
+        var runtime = new FakeRuntime();
+        var localization = new KeyedLocalization(AppLanguage.Russian);
+        var vm = CreateViewModel(runtime, localization: localization);
+        await vm.OpenAsync();
+        runtime.Session.SetFailure = new InvalidOperationException("secret device detail");
+
+        vm.TestTemperature = 91;
+        await vm.TemperatureUpdate;
+
+        Assert.Equal("ru:TestWindow.LightingFailed", vm.ErrorMessage);
+        Assert.DoesNotContain("secret device detail", vm.ErrorMessage, StringComparison.Ordinal);
+        localization.Apply(AppLanguage.English);
+        Assert.Equal("en:TestWindow.LightingFailed", vm.ErrorMessage);
+        await vm.CloseAsync();
+    }
+
+    [Fact]
+    public async Task PreviewRefresh_AfterTemporaryPointReorder_ClearsLocalizedValidationError()
+    {
+        var runtime = new FakeRuntime();
+        var localization = new KeyedLocalization(AppLanguage.English);
+        var vm = CreateViewModel(runtime, localization: localization);
+        var cold = vm.Editor.Points[0];
+
+        cold.Temperature = vm.Editor.Points[1].Temperature;
+        Assert.Equal("en:Validation.TemperatureOrder", vm.ErrorMessage);
+
+        cold.Temperature = 40;
+
+        Assert.Equal(string.Empty, vm.ErrorMessage);
+        await vm.CloseAsync();
     }
 
     [Fact]
@@ -286,8 +323,22 @@ public sealed class LightingTestViewModelTests
 
     private static LightingTestViewModel CreateViewModel(
         FakeRuntime runtime,
-        Func<ThermalProfile, CancellationToken, Task>? save = null) =>
-        new(runtime, ThermalProfile.Default, save ?? ((_, _) => Task.CompletedTask));
+        Func<ThermalProfile, CancellationToken, Task>? save = null,
+        ILocalizationService? localization = null) =>
+        new(runtime, ThermalProfile.Default, save ?? ((_, _) => Task.CompletedTask), localization);
+
+    private sealed class KeyedLocalization(AppLanguage language) : ILocalizationService
+    {
+        public AppLanguage CurrentLanguage { get; private set; } = language;
+        public event EventHandler? LanguageChanged;
+        public string Get(string key) => $"{(CurrentLanguage == AppLanguage.Russian ? "ru" : "en")}:{key}";
+        public void Apply(AppLanguage value)
+        {
+            if (CurrentLanguage == value) return;
+            CurrentLanguage = value;
+            LanguageChanged?.Invoke(this, EventArgs.Empty);
+        }
+    }
 
     private sealed class FakeRuntime : IThermalRuntime
     {

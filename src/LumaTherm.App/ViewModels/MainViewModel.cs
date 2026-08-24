@@ -1,4 +1,6 @@
 using System.Collections.ObjectModel;
+using System.Globalization;
+using LumaTherm.App.Localization;
 using LumaTherm.Core.Colors;
 using LumaTherm.Core.Runtime;
 using LumaTherm.Core.Sensors;
@@ -11,8 +13,11 @@ public sealed class MainViewModel : ObservableObject, IDisposable
 {
     private const int HistoryCapacity = 120;
     private readonly IThermalRuntime _runtime;
+    private readonly ILocalizationService _localization;
     private readonly SynchronizationContext? _synchronizationContext;
     private SettingsViewModel? _settingsViewModel;
+    private RuntimeSnapshot _lastSnapshot;
+    private string? _statusOverrideKey;
     private DateTimeOffset? _lastReadingTimestamp;
     private bool _disposed;
     private double _currentTemperature = double.NaN;
@@ -20,20 +25,30 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     private ThermalRange? _currentRange;
     private ThermalProfile _profile = ThermalProfile.Default;
     private string _temperatureText = "—°C";
-    private string _statusText = "Подключение…";
+    private string _statusText = string.Empty;
     private string _currentColorHex = ThermalProfile.Default.ColdColor.ToHex();
-    private string _gpuName = "GPU не обнаружен";
+    private string _gpuName = string.Empty;
     private string _sensorSource = "—";
-    private string _lightingDeviceName = "Подсветка не обнаружена";
+    private string _lightingDeviceName = string.Empty;
     private bool _isModeEnabled;
+    private bool _hasLightingDevice;
+    private string _smoothingText = string.Empty;
+    private string _autostartText = string.Empty;
+    private string _minimizeToTrayText = string.Empty;
 
-    public MainViewModel(IThermalRuntime runtime, SynchronizationContext? synchronizationContext = null)
+    public MainViewModel(
+        IThermalRuntime runtime,
+        SynchronizationContext? synchronizationContext = null,
+        ILocalizationService? localization = null)
     {
         _runtime = runtime ?? throw new ArgumentNullException(nameof(runtime));
+        _localization = localization ?? LocalizationService.CreateFallback();
         _synchronizationContext = synchronizationContext;
+        _lastSnapshot = _runtime.CurrentSnapshot;
         ToggleModeCommand = new AsyncRelayCommand(ToggleModeAsync, onException: RouteToggleFailure);
+        _localization.LanguageChanged += OnLanguageChanged;
         _runtime.SnapshotChanged += OnSnapshotChanged;
-        ApplySnapshot(_runtime.CurrentSnapshot);
+        ApplySnapshot(_lastSnapshot);
     }
 
     public ObservableCollection<TemperaturePoint> History { get; } = [];
@@ -48,6 +63,10 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     public string SensorSource { get => _sensorSource; private set => SetProperty(ref _sensorSource, value); }
     public string LightingDeviceName { get => _lightingDeviceName; private set => SetProperty(ref _lightingDeviceName, value); }
     public bool IsModeEnabled { get => _isModeEnabled; private set => SetProperty(ref _isModeEnabled, value); }
+    public bool HasLightingDevice { get => _hasLightingDevice; private set => SetProperty(ref _hasLightingDevice, value); }
+    public string SmoothingText { get => _smoothingText; private set => SetProperty(ref _smoothingText, value); }
+    public string AutostartText { get => _autostartText; private set => SetProperty(ref _autostartText, value); }
+    public string MinimizeToTrayText { get => _minimizeToTrayText; private set => SetProperty(ref _minimizeToTrayText, value); }
     public AsyncRelayCommand ToggleModeCommand { get; }
 
     internal void SynchronizeProfile(SettingsViewModel settingsViewModel)
@@ -61,11 +80,14 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         if (_settingsViewModel is not null)
         {
             _settingsViewModel.ProfileSaved -= OnProfileSaved;
+            _settingsViewModel.PropertyChanged -= OnSettingsChanged;
         }
 
         _settingsViewModel = settingsViewModel;
         _settingsViewModel.ProfileSaved += OnProfileSaved;
+        _settingsViewModel.PropertyChanged += OnSettingsChanged;
         SetProfile(_settingsViewModel.LiveSettings.Profile);
+        ApplySettingsProjection();
     }
 
     public void Dispose()
@@ -76,10 +98,12 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         }
 
         _disposed = true;
+        _localization.LanguageChanged -= OnLanguageChanged;
         _runtime.SnapshotChanged -= OnSnapshotChanged;
         if (_settingsViewModel is not null)
         {
             _settingsViewModel.ProfileSaved -= OnProfileSaved;
+            _settingsViewModel.PropertyChanged -= OnSettingsChanged;
             _settingsViewModel = null;
         }
     }
@@ -110,15 +134,18 @@ public sealed class MainViewModel : ObservableObject, IDisposable
 
     private void ApplySnapshot(RuntimeSnapshot snapshot)
     {
+        _lastSnapshot = snapshot;
+        _statusOverrideKey = null;
         CurrentTemperature = snapshot.Temperature?.Celsius ?? double.NaN;
         TemperatureText = snapshot.Temperature is { } temperature ? $"{temperature.Celsius:0.#}°C" : "—°C";
         DisplayColor = snapshot.Color ?? ThermalProfile.Default.ColdColor;
         CurrentColorHex = DisplayColor.ToHex();
         CurrentRange = snapshot.Range;
-        StatusText = ToStatusText(snapshot.Status);
-        GpuName = snapshot.Temperature?.DeviceName ?? "GPU не обнаружен";
+        StatusText = _localization.Get(StatusKey(snapshot.Status));
+        GpuName = snapshot.Temperature?.DeviceName ?? _localization.Get("Runtime.GpuNotFound");
         SensorSource = snapshot.Temperature?.SourceName ?? "—";
-        LightingDeviceName = snapshot.LightingDevice?.Name ?? "Подсветка не обнаружена";
+        LightingDeviceName = snapshot.LightingDevice?.Name ?? _localization.Get("Runtime.LightingNotFound");
+        HasLightingDevice = snapshot.LightingDevice is not null;
 
         IsModeEnabled = snapshot.IsModeEnabled;
 
@@ -141,7 +168,8 @@ public sealed class MainViewModel : ObservableObject, IDisposable
 
     private void RouteToggleFailure(Exception _)
     {
-        StatusText = "Не удалось изменить режим.";
+        _statusOverrideKey = "Runtime.ToggleFailed";
+        StatusText = _localization.Get(_statusOverrideKey);
     }
 
     private void OnProfileSaved(object? sender, ThermalProfile profile)
@@ -174,16 +202,47 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         Profile = profile;
     }
 
-    private static string ToStatusText(RuntimeStatus status) => status switch
+    private void OnLanguageChanged(object? sender, EventArgs args) => RunOnContext(() =>
     {
-        RuntimeStatus.Disabled => "Режим выключен",
-        RuntimeStatus.Connecting => "Подключение…",
-        RuntimeStatus.Active => "Режим активен",
-        RuntimeStatus.HoldingLastColor => "Сохранение последнего цвета",
-        RuntimeStatus.SensorUnavailable => "Датчик температуры недоступен",
-        RuntimeStatus.LightingUnavailable => "Подсветка недоступна",
-        RuntimeStatus.Suspended => "Работа приостановлена",
-        RuntimeStatus.Faulted => "Ошибка работы",
-        _ => "Неизвестное состояние",
+        StatusText = _localization.Get(_statusOverrideKey ?? StatusKey(_lastSnapshot.Status));
+        if (_lastSnapshot.Temperature is null) GpuName = _localization.Get("Runtime.GpuNotFound");
+        if (_lastSnapshot.LightingDevice is null) LightingDeviceName = _localization.Get("Runtime.LightingNotFound");
+        ApplySettingsProjection();
+    });
+
+    private void OnSettingsChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs args)
+    {
+        if (args.PropertyName is null or "" or nameof(SettingsViewModel.LiveSettings)) ApplySettingsProjection();
+    }
+
+    private void ApplySettingsProjection()
+    {
+        if (_settingsViewModel is null) return;
+        var settings = _settingsViewModel.LiveSettings;
+        var culture = _localization.CurrentLanguage == LumaTherm.Core.Settings.AppLanguage.Russian
+            ? CultureInfo.GetCultureInfo("ru-RU")
+            : CultureInfo.GetCultureInfo("en-US");
+        SmoothingText = string.Format(culture, _localization.Get("Dashboard.SecondsFormat"), settings.Profile.SmoothingSeconds);
+        AutostartText = _localization.Get(settings.IsAutostartEnabled ? "Common.On" : "Common.Off");
+        MinimizeToTrayText = _localization.Get(settings.MinimizeToTray ? "Common.On" : "Common.Off");
+    }
+
+    private void RunOnContext(Action action)
+    {
+        if (_synchronizationContext is null || ReferenceEquals(SynchronizationContext.Current, _synchronizationContext)) action();
+        else _synchronizationContext.Post(_ => { if (!_disposed) action(); }, null);
+    }
+
+    private static string StatusKey(RuntimeStatus status) => status switch
+    {
+        RuntimeStatus.Disabled => "Runtime.ModeDisabled",
+        RuntimeStatus.Connecting => "Runtime.Connecting",
+        RuntimeStatus.Active => "Runtime.ModeActive",
+        RuntimeStatus.HoldingLastColor => "Runtime.HoldingLastColor",
+        RuntimeStatus.SensorUnavailable => "Runtime.SensorUnavailable",
+        RuntimeStatus.LightingUnavailable => "Runtime.LightingUnavailable",
+        RuntimeStatus.Suspended => "Runtime.Suspended",
+        RuntimeStatus.Faulted => "Runtime.Faulted",
+        _ => "Runtime.Unknown",
     };
 }

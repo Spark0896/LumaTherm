@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.Collections.Specialized;
 using System.ComponentModel;
 using System.Globalization;
+using LumaTherm.App.Localization;
 using LumaTherm.App.Services;
 using LumaTherm.Core.Colors;
 using LumaTherm.Core.Lighting;
@@ -17,6 +18,7 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
     private readonly IStartupService _startupService;
     private readonly IColorPickerService _colorPickerService;
     private readonly ILightingDeviceDiscovery _lightingDeviceDiscovery;
+    private readonly ILocalizationService _localization;
     private readonly SynchronizationContext? _synchronizationContext;
     private readonly SemaphoreSlim _settingsMutationGate = new(1, 1);
     private readonly CancellationTokenSource _disposeCancellation = new();
@@ -32,13 +34,16 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
     private bool _showTrayOpen;
     private bool _showTrayModeToggle;
     private string _trayTemperaturePreview = "—";
-    private string _gpuName = "GPU не обнаружен";
-    private string _lightingDeviceName = "Подсветка не обнаружена";
-    private string _lightingHardwareStatus = "Устройства Windows LampArray не проверены.";
+    private string _gpuName = string.Empty;
+    private string _lightingDeviceName = string.Empty;
+    private string _lightingHardwareStatus = string.Empty;
+    private string _lightingHardwareStatusKey = "Settings.HardwareUnchecked";
+    private string? _lightingHardwareStatusArgument;
+    private RuntimeSnapshot _lastSnapshot;
     private string? _selectedLightingDeviceId;
     private string? _unavailableSavedDeviceId;
     private bool _isLightingDeviceSelectorVisible;
-    private string? _validationMessage;
+    private string? _validationKey;
     private bool _disposed;
     private bool _isApplyingAuthoritativeAutostart;
     private bool _isAutostartDirty;
@@ -64,20 +69,25 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
         IStartupService startupService,
         AppSettings settings,
         IColorPickerService colorPickerService,
-        ILightingDeviceDiscovery lightingDeviceDiscovery)
+        ILightingDeviceDiscovery lightingDeviceDiscovery,
+        ILocalizationService? localization = null)
     {
         _runtime = runtime ?? throw new ArgumentNullException(nameof(runtime));
         _startupService = startupService ?? throw new ArgumentNullException(nameof(startupService));
         _colorPickerService = colorPickerService ?? throw new ArgumentNullException(nameof(colorPickerService));
         _lightingDeviceDiscovery = lightingDeviceDiscovery ?? throw new ArgumentNullException(nameof(lightingDeviceDiscovery));
+        _localization = localization ?? LocalizationService.CreateFallback();
         _synchronizationContext = SynchronizationContext.Current;
         _liveSettings = (settings ?? throw new ArgumentNullException(nameof(settings))).Validate();
+        _lastSnapshot = runtime.CurrentSnapshot;
+        _localization.LanguageChanged += OnLanguageChanged;
+        SetLightingHardwareStatus("Settings.HardwareUnchecked");
         LoadEditableValues(_liveSettings);
-        ApplySnapshot(runtime.CurrentSnapshot);
+        ApplySnapshot(_lastSnapshot);
         runtime.SnapshotChanged += OnRuntimeSnapshotChanged;
 
-        SaveCommand = new AsyncRelayCommand(() => RunSettingsMutationAsync(SaveAsync), onException: _ => ValidationMessage = "Не удалось сохранить настройки.");
-        PickSelectedColorCommand = new AsyncRelayCommand(PickSelectedColorAsync, () => SelectedPoint is not null, _ => ValidationMessage = "Не удалось выбрать цвет.");
+        SaveCommand = new AsyncRelayCommand(() => RunSettingsMutationAsync(SaveAsync), onException: _ => SetValidation("Validation.SaveFailed"));
+        PickSelectedColorCommand = new AsyncRelayCommand(PickSelectedColorAsync, () => SelectedPoint is not null, _ => SetValidation("Validation.ColorPickFailed"));
         DiscoverLightingDevicesCommand = new AsyncRelayCommand(DiscoverLightingDevicesAsync);
         ResetDefaultsCommand = new RelayCommand(ResetDefaults);
         OpenLightingTestCommand = new RelayCommand(() => LightingTestRequested?.Invoke(this, EventArgs.Empty));
@@ -174,12 +184,12 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
             }
 
             LightingDeviceName = selected.Name;
-            LightingHardwareStatus = "Подключено напрямую через Windows LampArray.";
+            SetLightingHardwareStatus("Settings.HardwareConnected");
             IsLightingDeviceSelectorVisible = LightingDevices.Count(device => device.IsAvailable) > 1;
         }
     }
     public bool IsLightingDeviceSelectorVisible { get => _isLightingDeviceSelectorVisible; private set => SetProperty(ref _isLightingDeviceSelectorVisible, value); }
-    public string? ValidationMessage { get => _validationMessage; private set => SetProperty(ref _validationMessage, value); }
+    public string? ValidationMessage => _validationKey is null ? null : _localization.Get(_validationKey);
     public AsyncRelayCommand SaveCommand { get; }
     public AsyncRelayCommand PickSelectedColorCommand { get; }
     public AsyncRelayCommand DiscoverLightingDevicesCommand { get; }
@@ -226,6 +236,7 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
 
         _disposed = true;
         _disposeCancellation.Cancel();
+        _localization.LanguageChanged -= OnLanguageChanged;
         _runtime.SnapshotChanged -= OnRuntimeSnapshotChanged;
         DetachProfileEditor();
     }
@@ -281,7 +292,7 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
         }
         catch (Exception)
         {
-            LightingHardwareStatus = "Не удалось получить устройства Windows LampArray. Подсветка может быть занята другим контроллером.";
+            SetLightingHardwareStatus("Settings.HardwareDiscoveryFailed");
             return;
         }
 
@@ -295,7 +306,7 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
         if (_liveSettings.PreferredLightingDeviceId is { Length: > 0 } savedId
             && !LightingDevices.Any(device => device.Id == savedId))
         {
-            LightingDevices.Add(new LightingDeviceInfo(savedId, $"{savedId} (недоступно)", 0, false));
+            LightingDevices.Add(new LightingDeviceInfo(savedId, Format("Settings.UnavailableDeviceFormat", savedId), 0, false));
             _unavailableSavedDeviceId = savedId;
         }
 
@@ -306,22 +317,22 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
             || selectedDevice is { IsAvailable: false };
         if (selectedDevice is { IsAvailable: false })
         {
-            LightingDeviceName = "Подсветка недоступна";
-            LightingHardwareStatus = "Сохранённое устройство недоступно или занято другим контроллером.";
+            LightingDeviceName = _localization.Get("Runtime.LightingUnavailable");
+            SetLightingHardwareStatus("Settings.HardwareSavedUnavailable");
         }
         else if (devices.Count == 0)
         {
-            LightingHardwareStatus = "Устройства Windows LampArray не найдены.";
+            SetLightingHardwareStatus("Settings.HardwareNotFound");
         }
         else if (selectedDevice is { IsAvailable: true } selected)
         {
             LightingDeviceName = selected.Name;
-            LightingHardwareStatus = "Подключено напрямую через Windows LampArray.";
+            SetLightingHardwareStatus("Settings.HardwareConnected");
         }
         else
         {
-            LightingDeviceName = "Подсветка недоступна";
-            LightingHardwareStatus = "Сохранённое устройство недоступно или занято другим контроллером.";
+            LightingDeviceName = _localization.Get("Runtime.LightingUnavailable");
+            SetLightingHardwareStatus("Settings.HardwareSavedUnavailable");
         }
     }
 
@@ -339,12 +350,12 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
         }
         catch (ArgumentException exception)
         {
-            ValidationMessage = TranslateValidationError(exception);
+            SetValidation(ValidationKey(exception));
             return;
         }
         catch (InvalidOperationException)
         {
-            ValidationMessage = "Не удалось сохранить настройки.";
+            SetValidation("Validation.SaveFailed");
             return;
         }
 
@@ -367,7 +378,7 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
             }
             catch (Exception)
             {
-                ValidationMessage = await RollBackRuntimeAfterStartupFailureAsync(cancellationToken);
+                SetValidation(await RollBackRuntimeAfterStartupFailureAsync(cancellationToken));
                 return;
             }
         }
@@ -381,7 +392,7 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
     {
         LoadEditableValues(AppSettings.Default);
         _isAutostartDirty = true;
-        ValidationMessage = null;
+        SetValidation(null);
     }
 
     private AppSettings CreateCandidate() => _liveSettings with
@@ -425,7 +436,7 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
         try
         {
             await _runtime.UpdatePreferencesAsync(_liveSettings, cancellationToken);
-            return "Не удалось изменить автозапуск.";
+            return "Validation.AutostartFailed";
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -433,11 +444,11 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
         }
         catch (Exception)
         {
-            return "Не удалось изменить автозапуск. Не удалось вернуть настройки.";
+            return "Validation.AutostartRollbackFailed";
         }
     }
 
-    private void Commit(AppSettings candidate, string? warning)
+    private void Commit(AppSettings candidate, string? warningKey)
     {
         _liveSettings = candidate;
         var observerFailed = OnPropertyChanged(nameof(LiveSettings));
@@ -446,7 +457,7 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
             try { handler(this, candidate.Profile); }
             catch (Exception) { observerFailed = true; }
         }
-        ValidationMessage = observerFailed ? "Настройки сохранены, но обновление интерфейса выполнено не полностью." : warning;
+        SetValidation(observerFailed ? "Validation.UiRefreshFailed" : warningKey);
     }
 
     private void AttachProfileEditor()
@@ -543,20 +554,23 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
 
     private void ApplySnapshot(RuntimeSnapshot snapshot)
     {
+        _lastSnapshot = snapshot;
         TrayTemperaturePreview = snapshot.Temperature is { } reading
             ? string.Create(CultureInfo.InvariantCulture, $"{reading.Celsius:0}°C")
             : "—";
-        GpuName = snapshot.Temperature?.DeviceName ?? GpuName;
-        LightingDeviceName = snapshot.LightingDevice?.Name ?? LightingDeviceName;
+        GpuName = snapshot.Temperature?.DeviceName ?? _localization.Get("Runtime.GpuNotFound");
+        LightingDeviceName = snapshot.LightingDevice?.Name
+            ?? LightingDevices.FirstOrDefault(device => device.Id == SelectedLightingDeviceId && device.IsAvailable)?.Name
+            ?? _localization.Get("Runtime.LightingNotFound");
     }
 
-    private static string TranslateValidationError(ArgumentException exception) => exception.Message switch
+    private static string ValidationKey(ArgumentException exception) => exception.Message switch
     {
-        "Temperatures must be between 0 and 120 °C." => "Температура должна быть от 0 до 120 °C.",
-        "Expected ColdTemperature < WarmTemperature < HotTemperature with at least 1 °C between points." => "Температуры должны возрастать с шагом не менее 1 °C.",
-        "Temperatures must be at least 1 °C apart." => "Температуры должны возрастать с шагом не менее 1 °C.",
-        "SmoothingSeconds must be between 0.1 and 5.0." => "Сглаживание должно быть от 0,1 до 5,0 секунд.",
-        _ => "Проверьте параметры температурного профиля.",
+        "Temperatures must be between 0 and 120 °C." => "Validation.TemperatureRange",
+        "Expected ColdTemperature < WarmTemperature < HotTemperature with at least 1 °C between points." => "Validation.TemperatureOrder",
+        "Temperatures must be at least 1 °C apart." => "Validation.TemperatureOrder",
+        "SmoothingSeconds must be between 0.1 and 5.0." => "Validation.SmoothingRange",
+        _ => "Validation.Profile",
     };
 
     private async Task InitializeAutostartAsync(CancellationToken cancellationToken)
@@ -573,7 +587,7 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
         {
             if (!_disposed)
             {
-                ValidationMessage = "Не удалось определить состояние автозапуска.";
+                SetValidation("Validation.AutostartReadFailed");
             }
         }
     }
@@ -613,6 +627,48 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
         {
             _isApplyingAuthoritativeAutostart = false;
         }
+    }
+
+    private void SetValidation(string? key)
+    {
+        if (_validationKey == key) return;
+        _validationKey = key;
+        OnPropertyChanged(nameof(ValidationMessage));
+    }
+
+    private void SetLightingHardwareStatus(string key, string? argument = null)
+    {
+        _lightingHardwareStatusKey = key;
+        _lightingHardwareStatusArgument = argument;
+        LightingHardwareStatus = argument is null ? _localization.Get(key) : Format(key, argument);
+    }
+
+    private string Format(string key, object argument)
+    {
+        var culture = _localization.CurrentLanguage == AppLanguage.Russian
+            ? CultureInfo.GetCultureInfo("ru-RU")
+            : CultureInfo.GetCultureInfo("en-US");
+        return string.Format(culture, _localization.Get(key), argument);
+    }
+
+    private void OnLanguageChanged(object? sender, EventArgs args)
+    {
+        void Refresh()
+        {
+            if (_disposed) return;
+            OnPropertyChanged(nameof(ValidationMessage));
+            SetLightingHardwareStatus(_lightingHardwareStatusKey, _lightingHardwareStatusArgument);
+            ApplySnapshot(_lastSnapshot);
+            if (_unavailableSavedDeviceId is { } staleId
+                && LightingDevices.FirstOrDefault(device => device.Id == staleId) is { } stale)
+            {
+                var index = LightingDevices.IndexOf(stale);
+                LightingDevices[index] = stale with { Name = Format("Settings.UnavailableDeviceFormat", staleId) };
+            }
+        }
+
+        if (_synchronizationContext is null || ReferenceEquals(SynchronizationContext.Current, _synchronizationContext)) Refresh();
+        else _synchronizationContext.Post(_ => Refresh(), null);
     }
     private sealed record SnapshotUpdate(SettingsViewModel ViewModel, RuntimeSnapshot Snapshot);
 }

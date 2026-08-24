@@ -33,7 +33,7 @@ public partial class ThermalGradientBar : UserControl
     public double CurrentTemperature { get => (double)GetValue(CurrentTemperatureProperty); set => SetValue(CurrentTemperatureProperty, value); }
     public ThermalProfile? Profile { get => (ThermalProfile?)GetValue(ProfileProperty); set => SetValue(ProfileProperty, value); }
     internal IReadOnlyList<GradientStop> RenderedStops => [.. CreateGradient().GradientStops];
-    internal IReadOnlyList<string> RenderedLabels => Profile is null ? [$"{ColdTemperature:0.#}° Холодно", $"{WarmTemperature:0.#}° Тепло", $"{HotTemperature:0.#}° Пик"] : [.. Profile.Points.Select(point => $"{point.Temperature:0.#}°")];
+    internal IReadOnlyList<string> RenderedLabels => Profile is null ? [$"{ColdTemperature:0.#}°", $"{WarmTemperature:0.#}°", $"{HotTemperature:0.#}°"] : [.. Profile.Points.Select(point => $"{point.Temperature:0.#}°")];
     internal IReadOnlyList<double> RenderedLabelOffsets
     {
         get

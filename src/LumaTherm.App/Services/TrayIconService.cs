@@ -192,7 +192,7 @@ public sealed class TrayIconService : IAsyncDisposable
             }
 
             _recoveryWarningShown = true;
-            _platform.ShowNotification("LumaTherm · Настройки восстановлены", message);
+            _platform.ShowNotification($"{_localization.Get("App.Name")} · {_localization.Get("Notification.Recovery")}", message);
         }
     }
 
@@ -306,7 +306,9 @@ public sealed class TrayIconService : IAsyncDisposable
             _platform.MenuState = BuildMenuState(snapshot, _currentSettings(), _localization);
             if (notify && ShouldNotify(snapshot))
             {
-                _platform.ShowNotification("LumaTherm · Внимание", NotificationMessage(snapshot.Status));
+                _platform.ShowNotification(
+                    $"{_localization.Get("App.Name")} · {_localization.Get("Notification.Warning")}",
+                    NotificationMessage(snapshot.Status));
             }
             _previousStatus = snapshot.Status;
         }
@@ -322,12 +324,12 @@ public sealed class TrayIconService : IAsyncDisposable
         return snapshot.Status is RuntimeStatus.SensorUnavailable or RuntimeStatus.LightingUnavailable or RuntimeStatus.Faulted;
     }
 
-    private static string NotificationMessage(RuntimeStatus status) => status switch
+    private string NotificationMessage(RuntimeStatus status) => _localization.Get(status switch
     {
-        RuntimeStatus.SensorUnavailable => "Датчик температуры недоступен.",
-        RuntimeStatus.LightingUnavailable => "Подсветка недоступна.",
-        _ => "LumaTherm столкнулся с ошибкой.",
-    };
+        RuntimeStatus.SensorUnavailable => "Notification.SensorUnavailable",
+        RuntimeStatus.LightingUnavailable => "Notification.LightingUnavailable",
+        _ => "Notification.BackgroundError",
+    });
 
     private void Enqueue(Func<Task> operation)
     {

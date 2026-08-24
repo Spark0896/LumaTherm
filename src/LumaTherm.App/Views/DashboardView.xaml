@@ -35,8 +35,8 @@
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
                 <StackPanel VerticalAlignment="Bottom">
-                    <TextBlock Text="Термосинхронизация" FontSize="21" FontWeight="SemiBold" />
-                    <TextBlock Text="Цвет подсветки следует за температурой GPU" Margin="0,5,0,0" Foreground="{StaticResource MutedTextBrush}" FontSize="11" />
+                    <TextBlock Text="{DynamicResource Dashboard.Title}" FontSize="21" FontWeight="SemiBold" TextWrapping="Wrap" />
+                    <TextBlock Text="{DynamicResource Dashboard.Subtitle}" Margin="0,5,0,0" Foreground="{StaticResource MutedTextBrush}" FontSize="11" TextWrapping="Wrap" />
                 </StackPanel>
                 <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
                     <TextBlock x:Name="ModeStatusText" Text="{Binding StatusText}" Foreground="#B9C2C9" FontSize="11" VerticalAlignment="Center" Margin="0,0,10,0" />
@@ -44,7 +44,7 @@
                             Width="44" Height="24" Padding="3" BorderThickness="0"
                             Command="{Binding ToggleModeCommand}"
                             IsChecked="{Binding IsModeEnabled, Mode=OneWay}"
-                            automation:AutomationProperties.Name="Включить или выключить термосинхронизацию"
+                            automation:AutomationProperties.Name="{DynamicResource Accessibility.ToggleThermalSync}"
                             KeyboardNavigation.IsTabStop="True">
                         <controls:AuthoritativeToggleButton.Style>
                             <Style TargetType="{x:Type controls:AuthoritativeToggleButton}">
@@ -122,8 +122,8 @@
                         <Grid>
                             <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
                             <StackPanel>
-                                <TextBlock Text="Профиль «Спектр»" FontSize="12" FontWeight="SemiBold" />
-                                <TextBlock Text="Плавная интерполяция цвета" Style="{StaticResource CaptionStyle}" Margin="0,4,0,0" />
+                                <TextBlock Text="{DynamicResource Dashboard.ProfileTitle}" FontSize="12" FontWeight="SemiBold" TextWrapping="Wrap" />
+                                <TextBlock Text="{DynamicResource Dashboard.ProfileSubtitle}" Style="{StaticResource CaptionStyle}" Margin="0,4,0,0" TextWrapping="Wrap" />
                             </StackPanel>
                             <TextBlock x:Name="CurrentColorText" Grid.Column="1" Text="{Binding CurrentColorHex}" FontSize="9" Foreground="{StaticResource MutedTextBrush}" VerticalAlignment="Center" Margin="0,0,8,0" />
                             <Border Grid.Column="2" Width="15" Height="15" CornerRadius="4"
@@ -134,9 +134,9 @@
                                                      CurrentTemperature="{Binding CurrentTemperature}" />
                         <Grid Grid.Row="2">
                             <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                            <StackPanel Margin="0,0,8,0"><TextBlock Text="НИЗКАЯ" Style="{StaticResource CaptionStyle}" /><TextBlock x:Name="ColdColorText" Text="{Binding Profile.ColdColor, Converter={StaticResource RgbColorHexConverter}}" FontSize="10" Margin="0,3,0,0" /></StackPanel>
-                            <StackPanel Grid.Column="1" Margin="8,0"><TextBlock Text="СРЕДНЯЯ" Style="{StaticResource CaptionStyle}" /><TextBlock x:Name="WarmColorText" Text="{Binding Profile.WarmColor, Converter={StaticResource RgbColorHexConverter}}" FontSize="10" Margin="0,3,0,0" /></StackPanel>
-                            <StackPanel Grid.Column="2" Margin="8,0,0,0"><TextBlock Text="ВЫСОКАЯ" Style="{StaticResource CaptionStyle}" /><TextBlock x:Name="HotColorText" Text="{Binding Profile.HotColor, Converter={StaticResource RgbColorHexConverter}}" FontSize="10" Margin="0,3,0,0" /></StackPanel>
+                            <StackPanel Margin="0,0,8,0"><TextBlock Text="{DynamicResource Dashboard.RangeLow}" Style="{StaticResource CaptionStyle}" /><TextBlock x:Name="ColdColorText" Text="{Binding Profile.ColdColor, Converter={StaticResource RgbColorHexConverter}}" FontSize="10" Margin="0,3,0,0" /></StackPanel>
+                            <StackPanel Grid.Column="1" Margin="8,0"><TextBlock Text="{DynamicResource Dashboard.RangeMedium}" Style="{StaticResource CaptionStyle}" /><TextBlock x:Name="WarmColorText" Text="{Binding Profile.WarmColor, Converter={StaticResource RgbColorHexConverter}}" FontSize="10" Margin="0,3,0,0" /></StackPanel>
+                            <StackPanel Grid.Column="2" Margin="8,0,0,0"><TextBlock Text="{DynamicResource Dashboard.RangeHigh}" Style="{StaticResource CaptionStyle}" /><TextBlock x:Name="HotColorText" Text="{Binding Profile.HotColor, Converter={StaticResource RgbColorHexConverter}}" FontSize="10" Margin="0,3,0,0" /></StackPanel>
                         </Grid>
                     </Grid>
                 </Border>
@@ -157,13 +157,13 @@
                 <Border x:Name="MonitorPanel" Style="{StaticResource PanelStyle}" Padding="19,17">
                     <Grid>
                         <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
-                        <TextBlock Text="МОНИТОРИНГ" Style="{StaticResource CaptionStyle}" />
+                        <TextBlock Text="{DynamicResource Dashboard.Monitoring}" Style="{StaticResource CaptionStyle}" />
                         <Grid Grid.Row="1" Margin="0,17,0,0">
                             <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
                             <StackPanel>
                                 <TextBlock Text="{Binding GpuName}" FontSize="12" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
                                 <TextBlock FontSize="9" Foreground="{StaticResource MutedTextBrush}" Margin="0,3,0,0">
-                                    <Run Text="Источник: " /><Run Text="{Binding SensorSource, Mode=OneWay}" /><Run Text=" · обновлено сейчас" />
+                                    <Run Text="{DynamicResource Dashboard.Source}" /><Run Text=" " /><Run Text="{Binding SensorSource, Mode=OneWay}" /><Run Text=" · " /><Run Text="{DynamicResource Dashboard.UpdatedNow}" />
                                 </TextBlock>
                             </StackPanel>
                             <TextBlock x:Name="CurrentTemperatureText" Grid.Column="1" Text="{Binding TemperatureText}"
@@ -172,10 +172,10 @@
                         <controls:TemperatureSparkline x:Name="HistorySparkline" Grid.Row="2" MinHeight="82" Margin="0,10,0,0"
                                                        ItemsSource="{Binding History}"
                                                        Profile="{Binding Profile}"
-                                                       automation:AutomationProperties.Name="График температуры GPU за последнюю минуту" />
+                                                       automation:AutomationProperties.Name="{DynamicResource Dashboard.History}" />
                         <Grid Grid.Row="3" Margin="0,4,0,0">
-                            <TextBlock Text="60 секунд назад" Style="{StaticResource CaptionStyle}" FontSize="8" />
-                            <TextBlock Text="Сейчас" Style="{StaticResource CaptionStyle}" FontSize="8" HorizontalAlignment="Right" />
+                            <TextBlock Text="{DynamicResource Dashboard.SixtySecondsAgo}" Style="{StaticResource CaptionStyle}" FontSize="8" />
+                            <TextBlock Text="{DynamicResource Dashboard.Now}" Style="{StaticResource CaptionStyle}" FontSize="8" HorizontalAlignment="Right" />
                         </Grid>
                     </Grid>
                 </Border>
@@ -183,11 +183,11 @@
                 <Border x:Name="BehaviorPanel" Grid.Column="2" Style="{StaticResource PanelStyle}" Padding="19,17">
                     <Grid>
                         <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /><RowDefinition Height="*" /><RowDefinition Height="*" /><RowDefinition Height="*" /></Grid.RowDefinitions>
-                        <TextBlock Text="ПОВЕДЕНИЕ" Style="{StaticResource CaptionStyle}" />
-                        <Grid Grid.Row="1" Style="{StaticResource BehaviorRowStyle}" Margin="0,5,0,0"><TextBlock Text="Плавность перехода" FontSize="10" VerticalAlignment="Center" Foreground="#B9C2C9" /><TextBlock Text="0,8 с" HorizontalAlignment="Right" VerticalAlignment="Center" FontSize="10" Foreground="{StaticResource ColdColorBrush}" /></Grid>
-                        <Grid Grid.Row="2" Style="{StaticResource BehaviorRowStyle}"><Border BorderBrush="{StaticResource SubtleLineBrush}" BorderThickness="0,1,0,0" /><TextBlock Text="Автозапуск" FontSize="10" VerticalAlignment="Center" Foreground="#B9C2C9" /><TextBlock Text="Выкл." HorizontalAlignment="Right" VerticalAlignment="Center" FontSize="10" Foreground="{StaticResource ColdColorBrush}" /></Grid>
-                        <Grid Grid.Row="3" Style="{StaticResource BehaviorRowStyle}"><Border BorderBrush="{StaticResource SubtleLineBrush}" BorderThickness="0,1,0,0" /><TextBlock Text="Сворачивать в трей" FontSize="10" VerticalAlignment="Center" Foreground="#B9C2C9" /><TextBlock Text="Вкл." HorizontalAlignment="Right" VerticalAlignment="Center" FontSize="10" Foreground="{StaticResource ColdColorBrush}" /></Grid>
-                        <Grid Grid.Row="4" Style="{StaticResource BehaviorRowStyle}"><Border BorderBrush="{StaticResource SubtleLineBrush}" BorderThickness="0,1,0,0" /><TextBlock Text="Управление LampArray" FontSize="10" VerticalAlignment="Center" Foreground="#B9C2C9" /><TextBlock Text="{Binding StatusText}" MaxWidth="120" TextTrimming="CharacterEllipsis" HorizontalAlignment="Right" VerticalAlignment="Center" FontSize="10" Foreground="{StaticResource ColdColorBrush}" /></Grid>
+                        <TextBlock Text="{DynamicResource Dashboard.Behavior}" Style="{StaticResource CaptionStyle}" />
+                        <Grid Grid.Row="1" Style="{StaticResource BehaviorRowStyle}" Margin="0,5,0,0"><TextBlock Text="{DynamicResource Dashboard.Smoothing}" FontSize="10" VerticalAlignment="Center" Foreground="#B9C2C9" TextWrapping="Wrap" /><TextBlock Text="{Binding SmoothingText}" Margin="10,0,0,0" HorizontalAlignment="Right" VerticalAlignment="Center" FontSize="10" Foreground="{StaticResource ColdColorBrush}" /></Grid>
+                        <Grid Grid.Row="2" Style="{StaticResource BehaviorRowStyle}"><Border BorderBrush="{StaticResource SubtleLineBrush}" BorderThickness="0,1,0,0" /><TextBlock Text="{DynamicResource Dashboard.Autostart}" FontSize="10" VerticalAlignment="Center" Foreground="#B9C2C9" TextWrapping="Wrap" /><TextBlock Text="{Binding AutostartText}" Margin="10,0,0,0" HorizontalAlignment="Right" VerticalAlignment="Center" FontSize="10" Foreground="{StaticResource ColdColorBrush}" /></Grid>
+                        <Grid Grid.Row="3" Style="{StaticResource BehaviorRowStyle}"><Border BorderBrush="{StaticResource SubtleLineBrush}" BorderThickness="0,1,0,0" /><TextBlock Text="{DynamicResource Dashboard.MinimizeToTray}" FontSize="10" VerticalAlignment="Center" Foreground="#B9C2C9" TextWrapping="Wrap" /><TextBlock Text="{Binding MinimizeToTrayText}" Margin="10,0,0,0" HorizontalAlignment="Right" VerticalAlignment="Center" FontSize="10" Foreground="{StaticResource ColdColorBrush}" /></Grid>
+                        <Grid Grid.Row="4" Style="{StaticResource BehaviorRowStyle}"><Border BorderBrush="{StaticResource SubtleLineBrush}" BorderThickness="0,1,0,0" /><TextBlock Text="{DynamicResource Dashboard.LampArrayControl}" FontSize="10" VerticalAlignment="Center" Foreground="#B9C2C9" TextWrapping="Wrap" /><TextBlock Text="{Binding StatusText}" MaxWidth="120" TextTrimming="CharacterEllipsis" HorizontalAlignment="Right" VerticalAlignment="Center" FontSize="10" Foreground="{StaticResource ColdColorBrush}" /></Grid>
                     </Grid>
                 </Border>
             </Grid>

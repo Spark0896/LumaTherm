@@ -220,6 +220,23 @@ public sealed class TrayIconServiceTests
     }
 
     [Fact]
+    public async Task Notification_UsesCurrentLanguageForStableTitleAndMessage()
+    {
+        var fixture = new TrayFixture(notificationsEnabled: true);
+        await using var service = fixture.CreateService();
+        fixture.Localization.Apply(AppLanguage.Russian);
+
+        fixture.Runtime.Publish(Snapshot(RuntimeStatus.Active, true, 68));
+        fixture.Runtime.Publish(Snapshot(RuntimeStatus.SensorUnavailable, true, 68));
+        Assert.Equal(("LumaTherm · Внимание", "Датчик температуры недоступен."), fixture.Platform.Notifications[^1]);
+
+        fixture.Localization.Apply(AppLanguage.English);
+        fixture.Runtime.Publish(Snapshot(RuntimeStatus.Active, true, 68));
+        fixture.Runtime.Publish(Snapshot(RuntimeStatus.LightingUnavailable, true, 68));
+        Assert.Equal(("LumaTherm · Warning", "Lighting is unavailable."), fixture.Platform.Notifications[^1]);
+    }
+
+    [Fact]
     public async Task Notifications_AreSuppressedWhenDisabledOrModeOff_AndRecoveryIsOneShot()
     {
         var fixture = new TrayFixture(notificationsEnabled: false);
@@ -491,6 +508,11 @@ public sealed class TrayIconServiceTests
                 "Tray.StatusFaulted" => english ? "Error" : "Ошибка",
                 "Tray.StatusUnknown" => english ? "Unknown" : "Неизвестно",
                 "Runtime.LightingNotFound" => english ? "Lighting not found" : "Подсветка не обнаружена",
+                "Notification.Warning" => english ? "Warning" : "Внимание",
+                "Notification.SensorUnavailable" => english ? "Temperature sensor is unavailable." : "Датчик температуры недоступен.",
+                "Notification.LightingUnavailable" => english ? "Lighting is unavailable." : "Подсветка недоступна.",
+                "Notification.BackgroundError" => english ? "LumaTherm encountered an error." : "LumaTherm столкнулся с ошибкой.",
+                "Notification.Recovery" => english ? "Settings restored" : "Настройки восстановлены",
                 _ => throw new KeyNotFoundException(key),
             };
         }

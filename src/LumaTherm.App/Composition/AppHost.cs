@@ -7,7 +7,6 @@ namespace LumaTherm.App.Composition;
 
 public sealed class AppHost : IAsyncDisposable
 {
-    private const string CrashRecoveryWarning = "Предыдущий сеанс завершился аварийно. Управление подсветкой выключено до ручного включения.";
     private readonly object _sync = new();
     private readonly AppServices _services;
     private readonly bool _autostart;
@@ -103,6 +102,10 @@ public sealed class AppHost : IAsyncDisposable
             _sentinelBegun = true;
             _settingsStore = _services.CreateSettingsStore();
             var load = await _settingsStore.LoadAsync(cancellationToken).ConfigureAwait(false);
+            if (!string.IsNullOrWhiteSpace(load.RecoveryMessage))
+            {
+                SafeLog(AppLogLevel.Warning, "settings.recovered", load.RecoveryMessage);
+            }
             var settings = load.Settings.Validate();
             _runtime = _services.CreateRuntime(settings, _settingsStore);
             _runtime.SnapshotChanged += OnRuntimeSnapshotChanged;
@@ -122,7 +125,9 @@ public sealed class AppHost : IAsyncDisposable
                 _power = _services.CreatePower(_runtime);
                 _discovery = _services.CreateDiscovery(_runtime, _ui);
             }, cancellationToken).ConfigureAwait(false);
-            var warning = priorCrash ? CrashRecoveryWarning : load.RecoveryMessage;
+            var warning = priorCrash
+                ? _services.Localize("Notification.PreviousSessionCrashed")
+                : load.RecoveryMessage is null ? null : _services.Localize("Notification.SettingsRecovered");
             if (!string.IsNullOrWhiteSpace(warning))
             {
                 await _services.Dispatcher.InvokeAsync(() => _tray!.ShowRecoveryWarning(warning), cancellationToken).ConfigureAwait(false);
@@ -170,8 +175,8 @@ public sealed class AppHost : IAsyncDisposable
         ArgumentNullException.ThrowIfNull(exception);
         SafeLog(AppLogLevel.Error, "app.unhandled", "Unhandled application exception.", exception);
         if (!notify) return;
-        if (foreground) _ui?.ShowForegroundError("Произошла непредвиденная ошибка. LumaTherm безопасно завершит работу.");
-        else _tray?.ShowBackgroundError("Произошла фоновая ошибка. Управление подсветкой будет безопасно остановлено.");
+        if (foreground) _ui?.ShowForegroundError(_services.Localize("Notification.ForegroundUnexpectedError"));
+        else _tray?.ShowBackgroundError(_services.Localize("Notification.BackgroundUnexpectedError"));
     }
 
     public async ValueTask DisposeAsync()

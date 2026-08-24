@@ -1,3 +1,4 @@
+using LumaTherm.App.Localization;
 using LumaTherm.App.ViewModels;
 using LumaTherm.Core.Colors;
 using LumaTherm.Core.Lighting;
@@ -201,6 +202,31 @@ public sealed class MainViewModelTests
         Assert.Empty(vm.History);
     }
 
+    [Fact]
+    public void LanguageChanged_ReprojectsExistingRuntimeStatusAndMissingDeviceText()
+    {
+        var runtime = new FakeThermalRuntime();
+        var localization = new KeyedLocalization(AppLanguage.Russian);
+        using var vm = new MainViewModel(runtime, localization: localization);
+        var changed = new List<string?>();
+        vm.PropertyChanged += (_, args) => changed.Add(args.PropertyName);
+
+        runtime.Publish(new RuntimeSnapshot(
+            RuntimeStatus.Active, null, null, null, null, null, DateTimeOffset.UnixEpoch, true));
+        Assert.Equal("ru:Runtime.ModeActive", vm.StatusText);
+        Assert.Equal("ru:Runtime.GpuNotFound", vm.GpuName);
+        Assert.Equal("ru:Runtime.LightingNotFound", vm.LightingDeviceName);
+
+        localization.Apply(AppLanguage.English);
+
+        Assert.Equal("en:Runtime.ModeActive", vm.StatusText);
+        Assert.Equal("en:Runtime.GpuNotFound", vm.GpuName);
+        Assert.Equal("en:Runtime.LightingNotFound", vm.LightingDeviceName);
+        Assert.Contains(nameof(MainViewModel.StatusText), changed);
+        Assert.Contains(nameof(MainViewModel.GpuName), changed);
+        Assert.Contains(nameof(MainViewModel.LightingDeviceName), changed);
+    }
+
     private static RuntimeSnapshot Snapshot(RuntimeStatus status, double? temperature, DateTimeOffset timestamp, RgbColor? color = null, ThermalRange? range = ThermalRange.Warm, bool isModeEnabled = true) => new(
         status,
         temperature is { } celsius ? new TemperatureReading(celsius, "NVML", "GPU 0", timestamp) : null,
@@ -258,6 +284,19 @@ public sealed class MainViewModelTests
             {
                 item.Callback(item.State);
             }
+        }
+    }
+
+    private sealed class KeyedLocalization(AppLanguage language) : ILocalizationService
+    {
+        public AppLanguage CurrentLanguage { get; private set; } = language;
+        public event EventHandler? LanguageChanged;
+        public string Get(string key) => $"{(CurrentLanguage == AppLanguage.Russian ? "ru" : "en")}:{key}";
+        public void Apply(AppLanguage value)
+        {
+            if (CurrentLanguage == value) return;
+            CurrentLanguage = value;
+            LanguageChanged?.Invoke(this, EventArgs.Empty);
         }
     }
 }

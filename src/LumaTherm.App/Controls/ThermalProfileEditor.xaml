@@ -7,7 +7,7 @@
              Background="Transparent"
              Focusable="False"
              MinHeight="92"
-             automation:AutomationProperties.Name="Thermal profile temperature scale">
+             automation:AutomationProperties.Name="{DynamicResource Accessibility.ThermalProfile}">
     <UserControl.Resources>
         <converters:RgbColorBrushConverter x:Key="RgbColorBrushConverter" />
         <local:TemperatureToCanvasLeftConverter x:Key="TemperatureToCanvasLeftConverter" />
@@ -54,7 +54,7 @@
                             <DataTrigger Binding="{Binding IsSelected}" Value="True">
                                 <Setter TargetName="MarkerHalo" Property="Stroke" Value="{StaticResource ColdColorBrush}" />
                                 <Setter TargetName="MarkerHalo" Property="StrokeThickness" Value="3" />
-                                <Setter Property="automation:AutomationProperties.ItemStatus" Value="Selected" />
+                                <Setter Property="automation:AutomationProperties.ItemStatus" Value="{DynamicResource Accessibility.Selected}" />
                             </DataTrigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -96,7 +96,7 @@
             <ItemsControl.ItemTemplate>
                 <DataTemplate>
                     <Button Style="{StaticResource ThermalPointMarkerStyle}"
-                            automation:AutomationProperties.Name="{Binding Temperature, StringFormat=Temperature {0:0.#} degrees Celsius}"
+                            automation:AutomationProperties.Name="{Binding Temperature, StringFormat={}{0:0.#} °C}"
                             PreviewKeyDown="PointMarker_PreviewKeyDown"
                             PreviewMouseLeftButtonDown="PointMarker_MouseLeftButtonDown"
                             MouseMove="PointMarker_MouseMove"
@@ -108,6 +108,6 @@
         <TextBlock Grid.Row="1" HorizontalAlignment="Left" Text="0 °C" FontSize="10" Foreground="{StaticResource MutedTextBrush}" />
         <TextBlock Grid.Row="1" HorizontalAlignment="Right" Text="120 °C" FontSize="10" Foreground="{StaticResource MutedTextBrush}" />
         <TextBlock Grid.Row="2" HorizontalAlignment="Center" FontSize="10" Foreground="{StaticResource MutedTextBrush}"
-                   Text="Double-click to add · Drag or use arrow keys · Delete to remove" />
+                   Text="{DynamicResource ProfileEditor.Instructions}" TextWrapping="Wrap" />
     </Grid>
 </UserControl>

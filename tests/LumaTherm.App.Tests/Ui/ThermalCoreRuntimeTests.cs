@@ -83,7 +83,7 @@ public sealed class ThermalCoreRuntimeTests
         try
         {
             Assert.Same(vm.ToggleModeCommand, toggle.Command);
-            Assert.Equal("Включить или выключить термосинхронизацию", AutomationProperties.GetName(toggle));
+            Assert.Equal(Application.Current.Resources["Accessibility.ToggleThermalSync"], AutomationProperties.GetName(toggle));
             Assert.NotEmpty(shell.IconOnlyButtons.Select(AutomationProperties.GetName));
             Assert.All(
                 new[] { shell.MinimizeButtonContent, shell.MaximizeButtonContent, shell.CloseButtonContent },
@@ -232,7 +232,7 @@ public sealed class ThermalCoreRuntimeTests
         }, 600, 100);
 
         Assert.Equal(3, bar.RenderedStops.Count);
-        Assert.Equal(["35° Холодно", "65° Тепло", "85° Пик"], bar.RenderedLabels);
+        Assert.Equal(["35°", "65°", "85°"], bar.RenderedLabels);
         Assert.Equal([Color.FromRgb(0x50, 0xC8, 0xFF), Color.FromRgb(0xFF, 0xC6, 0x4A), Color.FromRgb(0xFF, 0x56, 0x5D)], bar.RenderedStops.Select(stop => stop.Color));
         Assert.NotEqual(BlankChecksum(600, 100), RenderChecksum(bar, 600, 100));
     });
@@ -305,7 +305,7 @@ public sealed class ThermalCoreRuntimeTests
         var flat = RenderChecksum(sparkline, 520, 107);
 
         Assert.NotEqual(onePoint, flat);
-        Assert.Equal("График температуры GPU за последнюю минуту", AutomationProperties.GetName(sparkline));
+        Assert.Equal(sparkline.FindResource("Dashboard.History"), AutomationProperties.GetName(sparkline));
         sparkline.ItemsSource = Array.Empty<TemperaturePoint>();
         _ = RenderChecksum(sparkline, 520, 107);
     });

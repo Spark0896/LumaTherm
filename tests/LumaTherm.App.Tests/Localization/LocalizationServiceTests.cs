@@ -81,4 +81,22 @@ public sealed class LocalizationServiceTests(ThermalCoreStaFixture sta)
             Assert.Throws<KeyNotFoundException>(() => service.Get("Missing.Key"));
         });
     }
+
+    [Fact]
+    public void Get_ActiveLanguageMissingKey_FallsBackToEnglishWithoutChangingLanguage()
+    {
+        sta.Run(() =>
+        {
+            var root = new ResourceDictionary();
+            var service = new LocalizationService(root, new CultureInfo("ru-RU"));
+            service.Apply(AppLanguage.Russian);
+            var russian = Assert.Single(root.MergedDictionaries, LocalizationService.IsLanguageDictionary);
+            russian.Remove("Nav.Settings");
+
+            var value = service.Get("Nav.Settings");
+
+            Assert.Equal("Settings", value);
+            Assert.Equal(AppLanguage.Russian, service.CurrentLanguage);
+        });
+    }
 }

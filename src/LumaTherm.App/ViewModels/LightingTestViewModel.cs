@@ -1,5 +1,6 @@
 using System.Collections.Specialized;
 using System.ComponentModel;
+using LumaTherm.App.Localization;
 using LumaTherm.Core.Colors;
 using LumaTherm.Core.Runtime;
 
@@ -12,6 +13,7 @@ public sealed class LightingTestViewModel : ObservableObject, IAsyncDisposable
 
     private readonly IThermalRuntime _runtime;
     private readonly Func<ThermalProfile, CancellationToken, Task> _saveProfileAsync;
+    private readonly ILocalizationService _localization;
     private readonly SemaphoreSlim _openGate = new(1, 1);
     private readonly object _stateLock = new();
     private readonly SynchronizationContext? _synchronizationContext;
@@ -21,20 +23,24 @@ public sealed class LightingTestViewModel : ObservableObject, IAsyncDisposable
     private double _testTemperature = 60;
     private RgbColor _previewColor;
     private string _errorMessage = string.Empty;
+    private string? _errorKey;
     private bool _editorDetached;
 
     public LightingTestViewModel(
         IThermalRuntime runtime,
         ThermalProfile profile,
-        Func<ThermalProfile, CancellationToken, Task> saveProfileAsync)
+        Func<ThermalProfile, CancellationToken, Task> saveProfileAsync,
+        ILocalizationService? localization = null)
     {
         _runtime = runtime ?? throw new ArgumentNullException(nameof(runtime));
         _saveProfileAsync = saveProfileAsync ?? throw new ArgumentNullException(nameof(saveProfileAsync));
+        _localization = localization ?? LocalizationService.CreateFallback();
         _synchronizationContext = SynchronizationContext.Current;
         var validatedProfile = (profile ?? throw new ArgumentNullException(nameof(profile))).Validate();
         Editor = new ThermalProfileEditorViewModel(validatedProfile);
         SmoothingSeconds = validatedProfile.SmoothingSeconds;
         AttachEditor();
+        _localization.LanguageChanged += OnLanguageChanged;
         _previewColor = MapPreviewColor();
     }
 
@@ -113,9 +119,9 @@ public sealed class LightingTestViewModel : ObservableObject, IAsyncDisposable
             {
                 throw;
             }
-            catch (Exception exception)
+            catch (Exception)
             {
-                ErrorMessage = exception.Message;
+                SetErrorKey("TestWindow.OpenFailed");
                 throw;
             }
 
@@ -199,7 +205,7 @@ public sealed class LightingTestViewModel : ObservableObject, IAsyncDisposable
         catch (Exception exception)
         {
             failure = exception;
-            ErrorMessage = exception.Message;
+            SetErrorKey(apply ? "TestWindow.ApplyFailed" : "TestWindow.CloseFailed");
         }
         finally
         {
@@ -219,7 +225,7 @@ public sealed class LightingTestViewModel : ObservableObject, IAsyncDisposable
                 }
                 catch (Exception exception)
                 {
-                    ErrorMessage = exception.Message;
+                    SetErrorKey("TestWindow.CloseFailed");
                     failure = failure is null ? exception : new AggregateException(failure, exception);
                 }
             }
@@ -259,11 +265,11 @@ public sealed class LightingTestViewModel : ObservableObject, IAsyncDisposable
         try
         {
             await session.SetTemperatureAsync(temperature, CancellationToken.None);
-            SetErrorMessage(string.Empty);
+            if (_errorKey == "TestWindow.LightingFailed") SetErrorKey(null);
         }
-        catch (Exception exception)
+        catch (Exception)
         {
-            SetErrorMessage(exception.Message);
+            SetErrorKey("TestWindow.LightingFailed");
         }
     }
 
@@ -284,6 +290,7 @@ public sealed class LightingTestViewModel : ObservableObject, IAsyncDisposable
         }
 
         _editorDetached = true;
+        _localization.LanguageChanged -= OnLanguageChanged;
         Editor.Points.CollectionChanged -= OnPointsChanged;
         foreach (var point in Editor.Points)
         {
@@ -326,10 +333,14 @@ public sealed class LightingTestViewModel : ObservableObject, IAsyncDisposable
         try
         {
             PreviewColor = MapPreviewColor();
+            if (_errorKey is "Validation.TemperatureRange" or "Validation.TemperatureOrder" or "Validation.SmoothingRange" or "Validation.Profile")
+            {
+                SetErrorKey(null);
+            }
         }
         catch (ArgumentException exception)
         {
-            ErrorMessage = exception.Message;
+            SetErrorKey(ValidationKey(exception));
         }
     }
 
@@ -338,6 +349,26 @@ public sealed class LightingTestViewModel : ObservableObject, IAsyncDisposable
         var profile = Editor.BuildProfile(SmoothingSeconds);
         return new ColorEngine(profile, TestTemperature).Map(TestTemperature);
     }
+
+    private void SetErrorKey(string? key)
+    {
+        _errorKey = key;
+        SetErrorMessage(key is null ? string.Empty : _localization.Get(key));
+    }
+
+    private void OnLanguageChanged(object? sender, EventArgs args)
+    {
+        if (_errorKey is not null) SetErrorMessage(_localization.Get(_errorKey));
+    }
+
+    private static string ValidationKey(ArgumentException exception) => exception.Message switch
+    {
+        "Temperatures must be between 0 and 120 °C." => "Validation.TemperatureRange",
+        "Expected ColdTemperature < WarmTemperature < HotTemperature with at least 1 °C between points." => "Validation.TemperatureOrder",
+        "Temperatures must be at least 1 °C apart." => "Validation.TemperatureOrder",
+        "SmoothingSeconds must be between 0.1 and 5.0." => "Validation.SmoothingRange",
+        _ => "Validation.Profile",
+    };
 
     private void SetErrorMessage(string message)
     {

@@ -140,5 +140,34 @@
     <sys:String x:Key="TestWindow.Apply">Применить</sys:String>
     <sys:String x:Key="TestWindow.Cancel">Отмена</sys:String>
     <sys:String x:Key="TestWindow.OpenFailed">Не удалось запустить проверку подсветки.</sys:String>
+    <sys:String x:Key="Common.On">Вкл.</sys:String>
+    <sys:String x:Key="Common.Off">Выкл.</sys:String>
+    <sys:String x:Key="Dashboard.SecondsFormat">{0:0.0} с</sys:String>
+    <sys:String x:Key="Dashboard.GpuNow">GPU · сейчас</sys:String>
+    <sys:String x:Key="Runtime.ToggleFailed">Не удалось изменить режим.</sys:String>
+    <sys:String x:Key="Settings.HardwareUnchecked">Устройства Windows LampArray не проверены.</sys:String>
+    <sys:String x:Key="Settings.HardwareDiscoveryFailed">Не удалось получить устройства Windows LampArray. Подсветка может быть занята другим контроллером.</sys:String>
+    <sys:String x:Key="Settings.UnavailableDeviceFormat">{0} (недоступно)</sys:String>
+    <sys:String x:Key="Settings.HardwareSavedUnavailable">Сохранённое устройство недоступно или занято другим контроллером.</sys:String>
+    <sys:String x:Key="Settings.HardwareNotFound">Устройства Windows LampArray не найдены.</sys:String>
+    <sys:String x:Key="Settings.HardwareConnected">Подключено напрямую через Windows LampArray.</sys:String>
+    <sys:String x:Key="Validation.AutostartFailed">Не удалось изменить автозапуск.</sys:String>
+    <sys:String x:Key="Validation.AutostartRollbackFailed">Не удалось изменить автозапуск. Не удалось вернуть настройки.</sys:String>
+    <sys:String x:Key="Validation.UiRefreshFailed">Настройки сохранены, но обновление интерфейса выполнено не полностью.</sys:String>
+    <sys:String x:Key="Validation.AutostartReadFailed">Не удалось определить состояние автозапуска.</sys:String>
+    <sys:String x:Key="TestWindow.ApplyFailed">Не удалось применить профиль проверки подсветки.</sys:String>
+    <sys:String x:Key="TestWindow.CloseFailed">Не удалось безопасно завершить проверку подсветки.</sys:String>
+    <sys:String x:Key="TestWindow.LightingFailed">Не удалось обновить тестовую подсветку.</sys:String>
+    <sys:String x:Key="TestWindow.Error">Состояние проверки подсветки</sys:String>
+    <sys:String x:Key="Accessibility.ThermalProfile">Температурная шкала профиля</sys:String>
+    <sys:String x:Key="Accessibility.ThermalGradient">Градиент температурного профиля</sys:String>
+    <sys:String x:Key="Accessibility.TemperatureUnavailable">Температура недоступна</sys:String>
+    <sys:String x:Key="Accessibility.GpuTemperatureFormat">Температура GPU: {0}</sys:String>
+    <sys:String x:Key="ProfileEditor.Instructions">Двойной щелчок — добавить · Перетаскивание или стрелки — переместить · Delete — удалить</sys:String>
+    <sys:String x:Key="Notification.Error">Ошибка</sys:String>
+    <sys:String x:Key="Notification.SettingsRecovered">Повреждённые настройки были сброшены.</sys:String>
+    <sys:String x:Key="Notification.PreviousSessionCrashed">Предыдущий сеанс завершился аварийно. Управление подсветкой выключено до ручного включения.</sys:String>
+    <sys:String x:Key="Notification.ForegroundUnexpectedError">Произошла непредвиденная ошибка. LumaTherm безопасно завершит работу.</sys:String>
+    <sys:String x:Key="Notification.BackgroundUnexpectedError">Произошла фоновая ошибка. Управление подсветкой будет безопасно остановлено.</sys:String>
 
 </ResourceDictionary>

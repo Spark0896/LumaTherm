@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Runtime.CompilerServices;
 using System.Windows;
 using LumaTherm.Core.Settings;
 
@@ -10,6 +11,8 @@ public sealed class LocalizationService : ILocalizationService
     private const string RussianResourcePath = "Resources/Strings.ru-RU.xaml";
     private static readonly Uri EnglishResourceUri = CreateResourceUri(EnglishResourcePath);
     private static readonly Uri RussianResourceUri = CreateResourceUri(RussianResourcePath);
+    private static readonly object ResourceLoadGate = new();
+    private static readonly ConditionalWeakTable<ResourceDictionary, LanguageDictionaryMarker> LanguageDictionaries = new();
     private readonly ResourceDictionary _rootResources;
     private readonly CultureInfo _systemCulture;
     private ResourceDictionary _activeDictionary;
@@ -69,9 +72,17 @@ public sealed class LocalizationService : ILocalizationService
     public static bool IsLanguageDictionary(ResourceDictionary dictionary)
     {
         ArgumentNullException.ThrowIfNull(dictionary);
+        if (LanguageDictionaries.TryGetValue(dictionary, out _)) return true;
         var source = dictionary.Source?.OriginalString;
         return source?.EndsWith(EnglishResourcePath, StringComparison.OrdinalIgnoreCase) == true
             || source?.EndsWith(RussianResourcePath, StringComparison.OrdinalIgnoreCase) == true;
+    }
+
+    internal static ILocalizationService CreateFallback()
+    {
+        var service = new LocalizationService(new ResourceDictionary(), new CultureInfo("ru-RU"));
+        service.Apply(AppLanguage.Russian);
+        return service;
     }
 
     private AppLanguage ResolveLanguage(AppLanguage language) => language switch
@@ -102,7 +113,17 @@ public sealed class LocalizationService : ILocalizationService
         _ => throw new ArgumentOutOfRangeException(nameof(language), language, "Only resolved languages have resources."),
     };
 
-    private static ResourceDictionary LoadDictionary(Uri source) => new() { Source = source };
+    private static ResourceDictionary LoadDictionary(Uri source)
+    {
+        lock (ResourceLoadGate)
+        {
+            var dictionary = (ResourceDictionary)System.Windows.Application.LoadComponent(source);
+            LanguageDictionaries.Add(dictionary, new LanguageDictionaryMarker());
+            return dictionary;
+        }
+    }
+
+    private sealed class LanguageDictionaryMarker;
 
     private static Uri CreateResourceUri(string resourcePath) => new($"/LumaTherm.App;component/{resourcePath}", UriKind.Relative);
 }

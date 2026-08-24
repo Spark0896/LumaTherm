@@ -61,7 +61,8 @@ public sealed class AppServices
         Func<IAppUiSession, IThermalRuntime, IAppTraySession> createTray,
         Func<IThermalRuntime, IAsyncDisposable> createPower,
         Func<IThermalRuntime, IAppUiSession, IAppDiscoverySession> createDiscovery,
-        IAppDispatcher dispatcher)
+        IAppDispatcher dispatcher,
+        Func<string, string>? localize = null)
     {
         CreateLogger = createLogger ?? throw new ArgumentNullException(nameof(createLogger));
         CreateSingleInstance = createSingleInstance ?? throw new ArgumentNullException(nameof(createSingleInstance));
@@ -74,6 +75,7 @@ public sealed class AppServices
         CreatePower = createPower ?? throw new ArgumentNullException(nameof(createPower));
         CreateDiscovery = createDiscovery ?? throw new ArgumentNullException(nameof(createDiscovery));
         Dispatcher = dispatcher ?? throw new ArgumentNullException(nameof(dispatcher));
+        Localize = localize ?? (key => key);
     }
 
     internal Func<IAppLogger> CreateLogger { get; }
@@ -87,6 +89,7 @@ public sealed class AppServices
     internal Func<IThermalRuntime, IAsyncDisposable> CreatePower { get; }
     internal Func<IThermalRuntime, IAppUiSession, IAppDiscoverySession> CreateDiscovery { get; }
     internal IAppDispatcher Dispatcher { get; }
+    internal Func<string, string> Localize { get; }
 
     public static IReadOnlyList<string> ProductionTemperatureSourceNames()
     {
