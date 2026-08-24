@@ -16,6 +16,7 @@ using LumaTherm.Infrastructure.Lighting;
 using LumaTherm.Infrastructure.Sensors;
 using LumaTherm.Infrastructure.Settings;
 using LumaTherm.Infrastructure.System;
+using LumaTherm.Infrastructure.Updates;
 
 namespace LumaTherm.App.Composition;
 
@@ -57,7 +58,7 @@ public static class ProductionAppServices
             (runtime, startup, settings) =>
             {
                 localization.Apply(settings.Language);
-                return new WpfUiSession(runtime, startup, settings, lightingDiscovery ?? EmptyLightingDeviceDiscovery.Instance);
+                return new WpfUiSession(runtime, startup, settings, lightingDiscovery ?? EmptyLightingDeviceDiscovery.Instance, localization);
             },
             (ui, runtime) => new WpfTraySession((WpfUiSession)ui, runtime, application, localization, exception => WriteFailure(logger, "app.unhandled", exception)),
             runtime => new PowerEventService(new WindowsPowerEventSource(), runtime, exception => WriteFailure(logger, "runtime.power_failed", exception)),
@@ -97,21 +98,28 @@ public static class ProductionAppServices
         private readonly IThermalRuntime _runtime;
         private readonly MainViewModel _mainViewModel;
         private readonly SettingsViewModel _settingsViewModel;
+        private readonly AboutViewModel _aboutViewModel;
+        private readonly GitHubReleaseFeed _releaseFeed;
         private LightingTestViewModel? _lightingTestViewModel;
         private LightingTestWindow? _lightingTestWindow;
         private Task? _disposeTask;
         private bool _isDisposing;
-        public WpfUiSession(IThermalRuntime runtime, IStartupService startup, AppSettings settings, ILightingDeviceDiscovery discovery)
+        public WpfUiSession(IThermalRuntime runtime, IStartupService startup, AppSettings settings, ILightingDeviceDiscovery discovery, ILocalizationService? localization = null)
         {
             _runtime = runtime;
             _settingsViewModel = new SettingsViewModel(runtime, startup, settings, new ColorPickerService(), discovery);
             _mainViewModel = new MainViewModel(runtime, SynchronizationContext.Current);
+            var aboutLocalization = localization ?? new LocalizationService(System.Windows.Application.Current.Resources);
+            if (localization is null) aboutLocalization.Apply(settings.Language);
+            _releaseFeed = new GitHubReleaseFeed();
+            _aboutViewModel = new AboutViewModel(_releaseFeed, new LinkLauncher(), aboutLocalization);
             _mainViewModel.SynchronizeProfile(_settingsViewModel);
             ClosePolicy = new WindowClosePolicy(() => _settingsViewModel.LiveSettings.MinimizeToTray);
             Window = new MainWindow
             {
                 DataContext = _mainViewModel,
                 SettingsDataContext = _settingsViewModel,
+                AboutDataContext = _aboutViewModel,
                 ClosePolicy = ClosePolicy,
             };
             System.Windows.Application.Current.MainWindow = Window;
@@ -162,6 +170,8 @@ public static class ProductionAppServices
 
             _settingsViewModel.Dispose();
             _mainViewModel.Dispose();
+            _aboutViewModel.Dispose();
+            _releaseFeed.Dispose();
             ClosePolicy.RequestExplicitExit();
             Window.Close();
         }

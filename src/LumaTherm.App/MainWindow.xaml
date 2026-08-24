@@ -53,9 +53,17 @@
                         </Border.Effect>
                     </Border>
                     <Button x:Name="AboutButton" Grid.Row="4" Style="{StaticResource IconButtonStyle}"
+                            Command="{Binding ShowAboutCommand, RelativeSource={RelativeSource AncestorType={x:Type Window}}}"
                             automation:AutomationProperties.Name="О программе">
                         <TextBlock Text="&#xE946;" FontFamily="Segoe Fluent Icons" FontSize="19" Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" />
                     </Button>
+                    <Border x:Name="AboutSelectionIndicator" Grid.Row="4" Width="3" Height="24"
+                            HorizontalAlignment="Left" VerticalAlignment="Center"
+                            Background="{StaticResource ColdColorBrush}" CornerRadius="0,3,3,0" Panel.ZIndex="2" Visibility="Collapsed">
+                        <Border.Effect>
+                            <DropShadowEffect Color="#50C8FF" BlurRadius="12" ShadowDepth="0" Opacity="1" />
+                        </Border.Effect>
+                    </Border>
                 </Grid>
             </Border>
 
@@ -110,6 +118,8 @@
                     <views:DashboardView x:Name="DashboardContent" />
                     <views:SettingsView x:Name="SettingsContent" Visibility="Collapsed"
                                         DataContext="{Binding SettingsDataContext, RelativeSource={RelativeSource AncestorType={x:Type Window}}}" />
+                    <views:AboutView x:Name="AboutContent" Visibility="Collapsed"
+                                     DataContext="{Binding AboutDataContext, RelativeSource={RelativeSource AncestorType={x:Type Window}}}" />
                 </Grid>
             </Grid>
         </Grid>

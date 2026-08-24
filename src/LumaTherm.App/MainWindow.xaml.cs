@@ -21,10 +21,16 @@ public partial class MainWindow : System.Windows.Window
         typeof(SettingsViewModel),
         typeof(MainWindow));
 
+    public static readonly DependencyProperty AboutDataContextProperty = DependencyProperty.Register(
+        nameof(AboutDataContext),
+        typeof(AboutViewModel),
+        typeof(MainWindow));
+
     public MainWindow()
     {
         ShowDashboardCommand = new RelayCommand(ShowDashboard);
         ShowSettingsCommand = new RelayCommand(ShowSettings);
+        ShowAboutCommand = new RelayCommand(ShowAbout);
         InitializeComponent();
         Closing += OnWindowClosing;
         StateChanged += OnWindowStateChanged;
@@ -38,8 +44,15 @@ public partial class MainWindow : System.Windows.Window
         set => SetValue(SettingsDataContextProperty, value);
     }
 
+    public AboutViewModel? AboutDataContext
+    {
+        get => (AboutViewModel?)GetValue(AboutDataContextProperty);
+        set => SetValue(AboutDataContextProperty, value);
+    }
+
     public RelayCommand ShowDashboardCommand { get; }
     public RelayCommand ShowSettingsCommand { get; }
+    public RelayCommand ShowAboutCommand { get; }
 
     internal IReadOnlyList<Button> IconOnlyButtons => [HomeButton, SettingsButton, AboutButton, MinimizeButton, MaximizeButton, CloseButton];
 
@@ -47,28 +60,46 @@ public partial class MainWindow : System.Windows.Window
     {
         DashboardContent.Visibility = Visibility.Visible;
         SettingsContent.Visibility = Visibility.Collapsed;
+        AboutContent.Visibility = Visibility.Collapsed;
         HomeSelectionIndicator.Visibility = Visibility.Visible;
         SettingsSelectionIndicator.Visibility = Visibility.Collapsed;
-        SetNavigationState(HomeButton, SettingsButton);
+        AboutSelectionIndicator.Visibility = Visibility.Collapsed;
+        SetNavigationState(HomeButton, SettingsButton, AboutButton);
     }
 
     private void ShowSettings()
     {
         DashboardContent.Visibility = Visibility.Collapsed;
         SettingsContent.Visibility = Visibility.Visible;
+        AboutContent.Visibility = Visibility.Collapsed;
         HomeSelectionIndicator.Visibility = Visibility.Collapsed;
         SettingsSelectionIndicator.Visibility = Visibility.Visible;
-        SetNavigationState(SettingsButton, HomeButton);
+        AboutSelectionIndicator.Visibility = Visibility.Collapsed;
+        SetNavigationState(SettingsButton, HomeButton, AboutButton);
     }
 
-    private static void SetNavigationState(Button active, Button inactive)
+    private void ShowAbout()
+    {
+        DashboardContent.Visibility = Visibility.Collapsed;
+        SettingsContent.Visibility = Visibility.Collapsed;
+        AboutContent.Visibility = Visibility.Visible;
+        HomeSelectionIndicator.Visibility = Visibility.Collapsed;
+        SettingsSelectionIndicator.Visibility = Visibility.Collapsed;
+        AboutSelectionIndicator.Visibility = Visibility.Visible;
+        SetNavigationState(AboutButton, HomeButton, SettingsButton);
+    }
+
+    private static void SetNavigationState(Button active, params Button[] inactive)
     {
         active.Foreground = (Brush)Application.Current.Resources["ColdColorBrush"];
         active.Background = new SolidColorBrush(Color.FromRgb(0x20, 0x27, 0x2D));
-        inactive.ClearValue(ForegroundProperty);
-        inactive.ClearValue(BackgroundProperty);
         System.Windows.Automation.AutomationProperties.SetItemStatus(active, "Выбрано");
-        System.Windows.Automation.AutomationProperties.SetItemStatus(inactive, string.Empty);
+        foreach (var button in inactive)
+        {
+            button.ClearValue(ForegroundProperty);
+            button.ClearValue(BackgroundProperty);
+            System.Windows.Automation.AutomationProperties.SetItemStatus(button, string.Empty);
+        }
     }
 
     private void MinimizeButton_Click(object sender, RoutedEventArgs e) => WindowState = WindowState.Minimized;
