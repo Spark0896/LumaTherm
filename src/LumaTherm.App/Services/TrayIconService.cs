@@ -27,6 +27,7 @@ public sealed class TrayIconService : IAsyncDisposable
     private int _exitRequested;
     private bool _recoveryWarningShown;
     private bool _platformDisposed;
+    private bool _subscriptionsAttached;
     private bool _disposed;
 
     public TrayIconService(
@@ -60,16 +61,20 @@ public sealed class TrayIconService : IAsyncDisposable
             AllowSynchronousContinuations = false,
         });
 
-        _platform.LeftClick += OnShowRequested;
-        _platform.DoubleClick += OnShowRequested;
-        _platform.CommandRequested += OnCommandRequested;
-        _localization.LanguageChanged += OnLanguageChanged;
-        _runtime.SnapshotChanged += OnSnapshotChanged;
-        _previousStatus = _runtime.CurrentSnapshot.Status;
-        _settingsChangeSource.PropertyChanged += OnSettingsChanged;
-        ApplySnapshot(_runtime.CurrentSnapshot, notify: false);
-        _platform.Visible = true;
-        _operationConsumer = ConsumeOperationsAsync();
+        _operationConsumer = Task.CompletedTask;
+        try
+        {
+            AttachSubscriptions();
+            _previousStatus = _runtime.CurrentSnapshot.Status;
+            ApplySnapshot(_runtime.CurrentSnapshot, notify: false);
+            _platform.Visible = true;
+            _operationConsumer = ConsumeOperationsAsync();
+        }
+        catch
+        {
+            RollbackInitialization();
+            throw;
+        }
     }
 
     public static TrayMenuState BuildMenuState(
@@ -201,16 +206,50 @@ public sealed class TrayIconService : IAsyncDisposable
             }
 
             _disposed = true;
-            _platform.LeftClick -= OnShowRequested;
-            _platform.DoubleClick -= OnShowRequested;
-            _platform.CommandRequested -= OnCommandRequested;
-            _localization.LanguageChanged -= OnLanguageChanged;
-            _runtime.SnapshotChanged -= OnSnapshotChanged;
+            DetachSubscriptions();
             _operations.Writer.TryComplete();
-            _settingsChangeSource.PropertyChanged -= OnSettingsChanged;
         }
 
         await _operationConsumer;
+        DisposePlatform();
+    }
+
+    private void AttachSubscriptions()
+    {
+        _subscriptionsAttached = true;
+        _platform.LeftClick += OnShowRequested;
+        _platform.DoubleClick += OnShowRequested;
+        _platform.CommandRequested += OnCommandRequested;
+        _localization.LanguageChanged += OnLanguageChanged;
+        _runtime.SnapshotChanged += OnSnapshotChanged;
+        _settingsChangeSource.PropertyChanged += OnSettingsChanged;
+    }
+
+    private void DetachSubscriptions()
+    {
+        if (!_subscriptionsAttached)
+        {
+            return;
+        }
+
+        _subscriptionsAttached = false;
+        _platform.LeftClick -= OnShowRequested;
+        _platform.DoubleClick -= OnShowRequested;
+        _platform.CommandRequested -= OnCommandRequested;
+        _localization.LanguageChanged -= OnLanguageChanged;
+        _runtime.SnapshotChanged -= OnSnapshotChanged;
+        _settingsChangeSource.PropertyChanged -= OnSettingsChanged;
+    }
+
+    private void RollbackInitialization()
+    {
+        lock (_sync)
+        {
+            _disposed = true;
+            DetachSubscriptions();
+            _operations.Writer.TryComplete();
+        }
+
         DisposePlatform();
     }
 

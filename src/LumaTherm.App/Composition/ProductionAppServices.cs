@@ -92,7 +92,7 @@ public static class ProductionAppServices
         public ValueTask DisposeAsync() => coordinator.DisposeAsync();
     }
 
-    private sealed class WpfUiSession : IAppUiSession
+    internal sealed class WpfUiSession : IAppUiSession
     {
         private readonly IThermalRuntime _runtime;
         private readonly MainViewModel _mainViewModel;
@@ -238,17 +238,24 @@ public static class ProductionAppServices
         private readonly TrayIconService _service;
         public WpfTraySession(WpfUiSession ui, IThermalRuntime runtime, System.Windows.Application application, ILocalizationService localization, Action<Exception> failure)
         {
+            var window = new WpfTrayWindow(ui.Window);
+            var trayApplication = new WpfTrayApplication(application);
+            Func<AppSettings> currentSettings = () => ui.Settings.LiveSettings;
+            Func<Task> toggleMode = () => runtime.SetModeEnabledAsync(!runtime.CurrentSettings.IsModeEnabled, CancellationToken.None);
+            Func<bool> notificationsEnabled = () => ui.Settings.LiveSettings.NotificationsEnabled;
+            var ownedPlatform = new NotifyIconTrayPlatform();
+
             _service = new TrayIconService(
-                new NotifyIconTrayPlatform(),
-                new WpfTrayWindow(ui.Window),
-                new WpfTrayApplication(application),
+                ownedPlatform,
+                window,
+                trayApplication,
                 runtime,
                 localization,
-                () => ui.Settings.LiveSettings,
+                currentSettings,
                 ui.Settings,
-                () => runtime.SetModeEnabledAsync(!runtime.CurrentSettings.IsModeEnabled, CancellationToken.None),
+                toggleMode,
                 ui.ClosePolicy,
-                () => ui.Settings.LiveSettings.NotificationsEnabled,
+                notificationsEnabled,
                 failure);
         }
         public void ShowRecoveryWarning(string message) => _service.ShowRecoveryWarning(message);

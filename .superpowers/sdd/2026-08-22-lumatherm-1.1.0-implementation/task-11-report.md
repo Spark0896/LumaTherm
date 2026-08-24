@@ -130,3 +130,95 @@ Exit code: `0`. Build succeeded with `0` warnings and `0` errors; restore was al
 ## Concerns
 
 None.
+
+## Fix Round 1 — Important findings
+
+### Outcome
+
+Replaced the window-event-only ownership assertion with a production-facing lifecycle regression. It uses the real `ProductionAppServices.WpfUiSession`, `MainWindow`, `TrayIconService`, `ThermalRuntime`, and `LampArrayLightingController` over deterministic hardware seams. Ordinary deactivation and minimize-to-tray leave the runtime and LampArray ownership untouched; explicit tray/application shutdown stops the runtime, disables the owned handle, and disposes the LampArray platform.
+
+`TrayIconService` construction is now transactional across event subscriptions, initial menu application, and visibility. Resource lookup, menu application, or visibility failure detaches every publisher and disposes the owned platform exactly once while preserving the original exception. Production composition constructs all other adapters/delegates first, creates the explicitly named `ownedPlatform` last, and transfers it immediately to the exception-safe service constructor.
+
+### TDD evidence — constructor initialization rollback
+
+RED command:
+
+```powershell
+& .\.dotnet\dotnet.exe test .\tests\LumaTherm.App.Tests -c Release -p:NuGetAudit=false --filter TrayIconServiceTests
+```
+
+Exit code: `1`. `23` passed and `3` failed out of `26`. Each literal failure injection (localization resource lookup, platform menu application, and platform visibility) observed `3` retained platform subscribers where `0` were required; the owned platform was also not disposed.
+
+GREEN command: the same command.
+
+Exit code: `0`. `26` passed, `0` failed, `0` skipped. Restore was current and there were no warnings.
+
+### TDD evidence — real lifecycle ownership boundary
+
+RED command:
+
+```powershell
+& .\.dotnet\dotnet.exe test .\tests\LumaTherm.App.Tests -c Release -p:NuGetAudit=false --filter MainWindowLifecycleTests
+```
+
+Exit code: `1`. The compiler reported `CS0122` because the concrete production `ProductionAppServices.WpfUiSession` was private, so the test could not exercise the real production session boundary. The follow-on member-access diagnostics were consequences of the same inaccessible type.
+
+Before that valid RED, one ACL-workaround patch did not apply and an unchanged two-test baseline passed; it was discarded as evidence. The first applied test scaffold also had a misplaced test-class brace and unused test-double event warnings; those test-only errors were corrected before the valid `CS0122` RED above.
+
+GREEN command: the same command.
+
+Exit code: `0`. `2` passed, `0` failed, `0` skipped. The production session was exposed only as `internal` to the existing friend test assembly; lifecycle behavior itself remained unchanged.
+
+### Refactor/focused verification
+
+Command:
+
+```powershell
+& .\.dotnet\dotnet.exe test .\tests\LumaTherm.App.Tests -c Release -p:NuGetAudit=false --filter "TrayIconServiceTests|MainWindowLifecycleTests"
+```
+
+Exit code: `0`. `28` passed, `0` failed, `0` skipped. Restore was current and there were no warnings.
+
+The lifecycle regression separately observes the normal visible/deactivated state and the hidden/minimized state. At both boundaries it asserts zero runtime `StopAsync`/`DisposeAsync` calls, zero LampArray handle disables, and zero LampArray platform disposals. After typed Exit it observes one runtime stop, one handle disable, and one platform disposal; final session teardown invokes runtime disposal once.
+
+### Full solution verification
+
+Command:
+
+```powershell
+& .\.dotnet\dotnet.exe test .\LumaTherm.sln -c Release -p:NuGetAudit=false
+```
+
+Exit code: `0`. `483` passed, `0` failed, `0` skipped:
+
+- Core: `106`
+- Infrastructure: `95`
+- App: `221`
+- Smoke: `19`
+- Packaging: `42`
+
+Restore was current. Output was localized in Russian and contained no warnings or errors.
+
+### Release build verification
+
+Command:
+
+```powershell
+& .\.dotnet\dotnet.exe build .\LumaTherm.sln -c Release -p:NuGetAudit=false
+```
+
+Exit code: `0`. Build succeeded with `0` warnings and `0` errors; restore was current.
+
+### Fix-round self-review
+
+- Failure injection covers the three later initialization boundaries supported without test-only production hooks: localized menu construction, platform menu assignment, and `Visible = true`.
+- Constructor rollback reuses the same subscription-detach and exactly-once platform-disposal paths as normal disposal.
+- The original initialization exception remains the thrown exception; cleanup reporting stays contained by the existing error sink.
+- Production creates the owned platform only after the other tray dependencies and delegates, leaving the exception-safe service constructor as the sole ownership-transfer boundary.
+- The lifecycle test crosses real WPF window and real runtime/LampArray controller code; fakes are limited to OS/hardware edges and observable call counters.
+- Typed routing, dispatcher/serialized operation behavior, and Task 12+ scope remain unchanged.
+- `git diff --check` exited `0` with no output before report append.
+
+### Fix-round concerns
+
+None. The previously ledgered minor finding about a throwing real-platform `Dispose` remains intentionally outside this fix round.

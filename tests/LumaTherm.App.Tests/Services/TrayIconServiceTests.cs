@@ -399,6 +399,39 @@ public sealed class TrayIconServiceTests
         Assert.Equal(menuAssignments, fixture.Platform.MenuStateAssignments);
     }
 
+    [Theory]
+    [InlineData(InitializationFailure.ResourceLookup, "resource lookup failed")]
+    [InlineData(InitializationFailure.MenuState, "menu apply failed")]
+    [InlineData(InitializationFailure.Visible, "visibility failed")]
+    public void Constructor_WhenInitializationFails_RollsBackEverySubscriptionAndOwnedPlatform(
+        InitializationFailure failure,
+        string expectedMessage)
+    {
+        var fixture = new TrayFixture();
+        var injected = new InvalidOperationException(expectedMessage);
+        switch (failure)
+        {
+            case InitializationFailure.ResourceLookup:
+                fixture.Localization.GetFailure = injected;
+                break;
+            case InitializationFailure.MenuState:
+                fixture.Platform.MenuStateFailure = injected;
+                break;
+            case InitializationFailure.Visible:
+                fixture.Platform.ShowFailure = injected;
+                break;
+        }
+
+        var exception = Assert.Throws<InvalidOperationException>(() => fixture.CreateService());
+
+        Assert.Same(injected, exception);
+        Assert.Equal(0, fixture.Platform.SubscriberCount);
+        Assert.Equal(0, fixture.Localization.SubscriberCount);
+        Assert.Equal(0, fixture.Runtime.SubscriberCount);
+        Assert.Equal(1, fixture.Platform.DisposeCalls);
+        Assert.False(fixture.Platform.Visible);
+    }
+
     private static async Task WaitUntilAsync(Func<bool> condition)
     {
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(2));
@@ -421,13 +454,23 @@ public sealed class TrayIconServiceTests
     private static AppSettings Settings(TrayMenuOptions options) =>
         AppSettings.Default with { TrayMenu = options };
 
+    public enum InitializationFailure { ResourceLookup, MenuState, Visible }
+
     private sealed class FakeLocalization(AppLanguage language) : ILocalizationService
     {
+        private EventHandler? _languageChanged;
         public AppLanguage CurrentLanguage { get; private set; } = language;
-        public event EventHandler? LanguageChanged;
+        public Exception? GetFailure { get; set; }
+        public int SubscriberCount => _languageChanged?.GetInvocationList().Length ?? 0;
+        public event EventHandler? LanguageChanged
+        {
+            add => _languageChanged += value;
+            remove => _languageChanged -= value;
+        }
 
         public string Get(string key)
         {
+            if (GetFailure is not null) throw GetFailure;
             var english = CurrentLanguage == AppLanguage.English;
             return key switch
             {
@@ -456,7 +499,7 @@ public sealed class TrayIconServiceTests
         {
             if (CurrentLanguage == value) return;
             CurrentLanguage = value;
-            LanguageChanged?.Invoke(this, EventArgs.Empty);
+            _languageChanged?.Invoke(this, EventArgs.Empty);
         }
     }
 
@@ -506,22 +549,44 @@ public sealed class TrayIconServiceTests
     private sealed class FakeTrayPlatform : ITrayIconPlatform
     {
         private bool _visible;
-        public event EventHandler? LeftClick;
+        private EventHandler? _leftClick;
+        private EventHandler? _doubleClick;
+        private EventHandler<TrayCommandKind>? _commandRequested;
+        public event EventHandler? LeftClick
+        {
+            add => _leftClick += value;
+            remove => _leftClick -= value;
+        }
         private TrayMenuState? _menuState;
-        public event EventHandler? DoubleClick;
+        public event EventHandler? DoubleClick
+        {
+            add => _doubleClick += value;
+            remove => _doubleClick -= value;
+        }
         public List<(string Title, string Message)> Notifications { get; } = [];
         public List<string> Order { get; set; } = [];
         public int DisposeCalls { get; private set; }
-        public event EventHandler<TrayCommandKind>? CommandRequested;
+        public event EventHandler<TrayCommandKind>? CommandRequested
+        {
+            add => _commandRequested += value;
+            remove => _commandRequested -= value;
+        }
+        public int SubscriberCount =>
+            (_leftClick?.GetInvocationList().Length ?? 0) +
+            (_doubleClick?.GetInvocationList().Length ?? 0) +
+            (_commandRequested?.GetInvocationList().Length ?? 0);
         public int HideCalls { get; private set; }
         public Exception? HideFailure { get; set; }
+        public Exception? ShowFailure { get; set; }
         public int MenuStateAssignments { get; private set; }
+        public Exception? MenuStateFailure { get; set; }
         public Exception? DisposeFailure { get; set; }
         public bool Visible
         {
             get => _visible;
             set
             {
+                if (value && ShowFailure is not null) throw ShowFailure;
                 if (!value)
                 {
                     HideCalls++;
@@ -538,6 +603,7 @@ public sealed class TrayIconServiceTests
             {
                 _menuState = value;
                 MenuStateAssignments++;
+                if (MenuStateFailure is not null) throw MenuStateFailure;
             }
         }
         public void ShowNotification(string title, string message) => Notifications.Add((title, message));
@@ -547,12 +613,12 @@ public sealed class TrayIconServiceTests
             Order.Add("icon.dispose");
             if (DisposeFailure is not null) throw DisposeFailure;
         }
-        public void RaiseLeftClick() => LeftClick?.Invoke(this, EventArgs.Empty);
-        public void RaiseDoubleClick() => DoubleClick?.Invoke(this, EventArgs.Empty);
+        public void RaiseLeftClick() => _leftClick?.Invoke(this, EventArgs.Empty);
+        public void RaiseDoubleClick() => _doubleClick?.Invoke(this, EventArgs.Empty);
         public void RaiseOpen() => RaiseCommand(TrayCommandKind.Open);
         public void RaiseToggle() => RaiseCommand(TrayCommandKind.ToggleMode);
         public void RaiseExit() => RaiseCommand(TrayCommandKind.Exit);
-        public void RaiseCommand(TrayCommandKind kind) => CommandRequested?.Invoke(this, kind);
+        public void RaiseCommand(TrayCommandKind kind) => _commandRequested?.Invoke(this, kind);
     }
 
     private sealed class FakeWindow : ITrayWindow
@@ -585,18 +651,31 @@ public sealed class TrayIconServiceTests
     private sealed class FakeRuntime(List<string> order) : IThermalRuntime, INotifyPropertyChanged
     {
         private RuntimeSnapshot _snapshot = Snapshot(RuntimeStatus.Disabled, false, 68);
+        private EventHandler<RuntimeSnapshot>? _snapshotChanged;
+        private PropertyChangedEventHandler? _propertyChanged;
         public Exception? StopFailure { get; set; }
-        public event EventHandler<RuntimeSnapshot>? SnapshotChanged;
+        public event EventHandler<RuntimeSnapshot>? SnapshotChanged
+        {
+            add => _snapshotChanged += value;
+            remove => _snapshotChanged -= value;
+        }
         public RuntimeSnapshot CurrentSnapshot => _snapshot;
-        public event PropertyChangedEventHandler? PropertyChanged;
+        public event PropertyChangedEventHandler? PropertyChanged
+        {
+            add => _propertyChanged += value;
+            remove => _propertyChanged -= value;
+        }
+        public int SubscriberCount =>
+            (_snapshotChanged?.GetInvocationList().Length ?? 0) +
+            (_propertyChanged?.GetInvocationList().Length ?? 0);
         private AppSettings _settings = AppSettings.Default;
         public int StopCalls { get; private set; }
         public AppSettings CurrentSettings => _settings;
-        public void Publish(RuntimeSnapshot snapshot) { _snapshot = snapshot; SnapshotChanged?.Invoke(this, snapshot); }
+        public void Publish(RuntimeSnapshot snapshot) { _snapshot = snapshot; _snapshotChanged?.Invoke(this, snapshot); }
         public void SetSettings(AppSettings settings)
         {
             _settings = settings;
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CurrentSettings)));
+            _propertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CurrentSettings)));
         }
         public Task StopAsync(CancellationToken cancellationToken)
         {
