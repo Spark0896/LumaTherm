@@ -13,7 +13,7 @@ public interface IAppInstanceCoordinator : IAsyncDisposable
     Task SignalActivationAsync(CancellationToken cancellationToken);
 }
 
-public interface IAppUiSession : IDisposable
+public interface IAppUiSession : IAsyncDisposable
 {
     void Show();
     void ShowRestoreActivate();

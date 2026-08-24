@@ -223,9 +223,13 @@ public sealed class AppHost : IAsyncDisposable
         await AttemptAsync(() => trayDisposal, failures).ConfigureAwait(false);
         _tray = null;
         var ui = _ui;
+        Task uiDisposal = Task.CompletedTask;
         await AttemptAsync(
-            () => _services.Dispatcher.InvokeAsync(() => ui?.Dispose(), CancellationToken.None),
+            () => _services.Dispatcher.InvokeAsync(
+                () => uiDisposal = ui?.DisposeAsync().AsTask() ?? Task.CompletedTask,
+                CancellationToken.None),
             failures).ConfigureAwait(false);
+        await AttemptAsync(() => uiDisposal, failures).ConfigureAwait(false);
         _ui = null;
         var sentinelRemoved = false;
         if (removeSentinel && failures.Count == 0 && _sentinelBegun && _sentinel is not null)

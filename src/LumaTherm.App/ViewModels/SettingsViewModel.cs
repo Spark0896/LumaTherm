@@ -188,6 +188,35 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
     public Task AutostartInitialization { get; }
     public Task RefreshAutostartAsync(CancellationToken cancellationToken) => ReadAuthoritativeAutostartAsync(forceDraftRefresh: true, cancellationToken);
 
+    internal async Task ApplyLightingTestProfileAsync(ThermalProfile profile, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(profile);
+        profile.Validate();
+        using var linkedCancellation = CancellationTokenSource.CreateLinkedTokenSource(
+            cancellationToken,
+            _disposeCancellation.Token);
+        var lockTaken = false;
+        try
+        {
+            await _settingsMutationGate.WaitAsync(linkedCancellation.Token);
+            lockTaken = true;
+            linkedCancellation.Token.ThrowIfCancellationRequested();
+            await _runtime.UpdatePreferencesAsync(
+                _liveSettings with { Profile = profile },
+                linkedCancellation.Token);
+            var committed = _runtime.CurrentSettings;
+            LoadEditableProfile(committed.Profile);
+            Commit(committed, null);
+        }
+        finally
+        {
+            if (lockTaken)
+            {
+                _settingsMutationGate.Release();
+            }
+        }
+    }
+
     public void Dispose()
     {
         if (_disposed)
@@ -368,14 +397,7 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
 
     private void LoadEditableValues(AppSettings settings)
     {
-        ProfileEditor = new ThermalProfileEditorViewModel(settings.Profile);
-        if (ProfileEditor.Points.FirstOrDefault() is { } first)
-        {
-            ProfileEditor.Select(first.Id);
-            RefreshSelectedPoint();
-        }
-
-        SmoothingSeconds = settings.Profile.SmoothingSeconds;
+        LoadEditableProfile(settings.Profile);
         ApplyAuthoritativeAutostart(settings.IsAutostartEnabled, markKnown: false);
         MinimizeToTray = settings.MinimizeToTray;
         NotificationsEnabled = settings.NotificationsEnabled;
@@ -384,6 +406,18 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
         ShowTrayTemperature = settings.TrayMenu.ShowTemperature;
         ShowTrayOpen = settings.TrayMenu.ShowOpenCommand;
         ShowTrayModeToggle = settings.TrayMenu.ShowModeToggle;
+    }
+
+    private void LoadEditableProfile(ThermalProfile profile)
+    {
+        ProfileEditor = new ThermalProfileEditorViewModel(profile);
+        if (ProfileEditor.Points.FirstOrDefault() is { } first)
+        {
+            ProfileEditor.Select(first.Id);
+            RefreshSelectedPoint();
+        }
+
+        SmoothingSeconds = profile.SmoothingSeconds;
     }
 
     private async Task<string> RollBackRuntimeAfterStartupFailureAsync(CancellationToken cancellationToken)

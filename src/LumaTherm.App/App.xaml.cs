@@ -60,7 +60,7 @@ public partial class App : System.Windows.Application
         _exceptionSource?.Dispose();
         if (_host is not null)
         {
-            WaitWithDispatcherPump(_host.StopAsync(CancellationToken.None), ShutdownTimeout);
+            WaitWithDispatcherPumpUntilCompleted(_host.StopAsync(CancellationToken.None), ShutdownTimeout);
         }
         _lifetime.Dispose();
         base.OnExit(e);
@@ -83,6 +83,14 @@ public partial class App : System.Windows.Application
     {
         if (Dispatcher.CheckAccess()) Shutdown();
         else Dispatcher.BeginInvoke((Action)Shutdown);
+    }
+
+    internal static void WaitWithDispatcherPumpUntilCompleted(Task task, TimeSpan observationInterval)
+    {
+        while (!WaitWithDispatcherPump(task, observationInterval))
+        {
+            // Keep ownership alive and the dispatcher responsive until cleanup actually completes.
+        }
     }
 
     internal static bool WaitWithDispatcherPump(Task task, TimeSpan timeout)

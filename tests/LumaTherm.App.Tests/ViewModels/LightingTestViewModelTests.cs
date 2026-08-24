@@ -5,6 +5,7 @@ using LumaTherm.App.ViewModels;
 using LumaTherm.Core.Colors;
 using LumaTherm.Core.Runtime;
 using LumaTherm.Core.Settings;
+using LumaTherm.Core.System;
 
 namespace LumaTherm.App.Tests.ViewModels;
 
@@ -192,6 +193,97 @@ public sealed class LightingTestViewModelTests
         Assert.True(runtime.Session.Disposed);
     }
 
+    [Fact]
+    public async Task CloseAsync_WhileBeginIsBlocked_WaitsForLateSessionDisposal()
+    {
+        var runtime = new FakeRuntime(blockBegin: true);
+        var vm = CreateViewModel(runtime);
+        var open = vm.OpenAsync();
+        await runtime.BeginEntered.Task.WaitAsync(TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken);
+
+        var close = vm.CloseAsync();
+
+        Assert.False(close.IsCompleted);
+        Assert.False(runtime.Session.Disposed);
+        runtime.CompleteBegin();
+        await Task.WhenAll(open, close).WaitAsync(TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken);
+        Assert.True(runtime.Session.Disposed);
+        Assert.Equal(1, runtime.Session.DisposeCalls);
+    }
+
+    [Fact]
+    public async Task ConcurrentDoubleOpenAndClose_SharesBeginAndLateDisposalBarrier()
+    {
+        var runtime = new FakeRuntime(blockBegin: true);
+        var vm = CreateViewModel(runtime);
+        var firstOpen = vm.OpenAsync();
+        await runtime.BeginEntered.Task.WaitAsync(TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken);
+        var secondOpen = vm.OpenAsync();
+
+        var firstClose = vm.CloseAsync();
+        var secondClose = vm.CloseAsync();
+
+        Assert.False(firstClose.IsCompleted);
+        Assert.Same(firstClose, secondClose);
+        Assert.Equal(1, runtime.BeginCalls);
+        runtime.CompleteBegin();
+        await Task.WhenAll(firstOpen, firstClose, secondClose)
+            .WaitAsync(TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => secondOpen)
+            .WaitAsync(TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken);
+        Assert.Equal(1, runtime.BeginCalls);
+        Assert.Equal(1, runtime.Session.DisposeCalls);
+    }
+
+    [Fact]
+    public async Task LightingTestApply_CommitsOneAuthoritativeProfileAcrossSettingsRuntimeAndDashboard()
+    {
+        var runtime = new FakeRuntime();
+        using var settings = new SettingsViewModel(runtime, new FakeStartupService(), AppSettings.Default);
+        using var dashboard = new MainViewModel(runtime);
+        dashboard.SynchronizeProfile(settings);
+        var applied = ThermalProfile.Create(
+        [
+            new(10, new RgbColor(1, 2, 3)),
+            new(72, new RgbColor(4, 5, 6)),
+            new(110, new RgbColor(7, 8, 9)),
+        ], 1.4);
+
+        await settings.ApplyLightingTestProfileAsync(applied, TestContext.Current.CancellationToken);
+
+        Assert.Equal(applied, runtime.CurrentSettings.Profile);
+        Assert.Equal(applied, settings.LiveSettings.Profile);
+        Assert.Equal(applied, settings.ProfileEditor.BuildProfile(settings.SmoothingSeconds));
+        Assert.Equal(applied, dashboard.Profile);
+        var reopened = new LightingTestViewModel(
+            runtime,
+            settings.ProfileEditor.BuildProfile(settings.SmoothingSeconds),
+            (_, _) => Task.CompletedTask);
+        Assert.Equal(applied, reopened.Editor.BuildProfile(reopened.SmoothingSeconds));
+        await reopened.CloseAsync();
+    }
+
+    [Fact]
+    public async Task SettingsSave_AfterLightingTestApply_CannotOverwriteAppliedProfile()
+    {
+        var runtime = new FakeRuntime();
+        using var settings = new SettingsViewModel(runtime, new FakeStartupService(), AppSettings.Default);
+        var applied = ThermalProfile.Create(
+        [
+            new(5, new RgbColor(10, 20, 30)),
+            new(75, new RgbColor(40, 50, 60)),
+            new(115, new RgbColor(70, 80, 90)),
+        ], 1.2);
+        await settings.ApplyLightingTestProfileAsync(applied, TestContext.Current.CancellationToken);
+        settings.NotificationsEnabled = false;
+
+        await settings.SaveCommand.ExecuteAsync();
+
+        Assert.Equal(applied, runtime.CurrentSettings.Profile);
+        Assert.Equal(applied, settings.LiveSettings.Profile);
+        Assert.False(runtime.CurrentSettings.NotificationsEnabled);
+    }
+
     private static LightingTestViewModel CreateViewModel(
         FakeRuntime runtime,
         Func<ThermalProfile, CancellationToken, Task>? save = null) =>
@@ -199,14 +291,18 @@ public sealed class LightingTestViewModelTests
 
     private sealed class FakeRuntime : IThermalRuntime
     {
-        public FakeRuntime(AppSettings? settings = null)
+        private readonly TaskCompletionSource<ILightingTestSession>? _beginGate;
+
+        public FakeRuntime(AppSettings? settings = null, bool blockBegin = false)
         {
             CurrentSettings = settings ?? AppSettings.Default;
             Session = new FakeSession(Events);
+            _beginGate = blockBegin ? new(TaskCreationOptions.RunContinuationsAsynchronously) : null;
         }
 
         public event EventHandler<RuntimeSnapshot>? SnapshotChanged { add { } remove { } }
         public RuntimeSnapshot CurrentSnapshot { get; } = new(RuntimeStatus.Disabled, null, null, null, null, null, DateTimeOffset.MinValue, false);
+        public TaskCompletionSource BeginEntered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public AppSettings CurrentSettings { get; private set; }
         public FakeSession Session { get; }
         public List<string> Events { get; } = [];
@@ -215,14 +311,22 @@ public sealed class LightingTestViewModelTests
         public int PreferenceUpdates { get; private set; }
         public int ModeChanges { get; private set; }
 
-        public Task<ILightingTestSession> BeginLightingTestAsync(CancellationToken cancellationToken)
+        public async Task<ILightingTestSession> BeginLightingTestAsync(CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
             BeginCalls++;
-            return BeginFailure is null
-                ? Task.FromResult<ILightingTestSession>(Session)
-                : Task.FromException<ILightingTestSession>(BeginFailure);
+            BeginEntered.TrySetResult();
+            if (BeginFailure is not null)
+            {
+                throw BeginFailure;
+            }
+
+            return _beginGate is null
+                ? Session
+                : await _beginGate.Task.WaitAsync(cancellationToken);
         }
+
+        public void CompleteBegin() => _beginGate?.TrySetResult(Session);
 
         public Task SetModeEnabledAsync(bool enabled, CancellationToken cancellationToken)
         {
@@ -271,6 +375,12 @@ public sealed class LightingTestViewModelTests
             events.Add("dispose");
             return ValueTask.CompletedTask;
         }
+    }
+
+    private sealed class FakeStartupService : IStartupService
+    {
+        public Task<bool> GetEnabledAsync(CancellationToken cancellationToken) => Task.FromResult(false);
+        public Task SetEnabledAsync(bool enabled, CancellationToken cancellationToken) => Task.CompletedTask;
     }
 }
 

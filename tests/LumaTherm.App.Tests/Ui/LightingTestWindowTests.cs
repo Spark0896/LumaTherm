@@ -92,6 +92,61 @@ public sealed class LightingTestWindowTests(ThermalCoreStaFixture sta)
         Assert.Equal(1, runtime.Session.DisposeCalls);
     });
 
+    [Fact]
+    public void PrepareCloseAsync_WhileBeginIsBlocked_AwaitsLateSessionDisposalBeforeShutdownMayClose() => sta.Run(() =>
+    {
+        var runtime = new FakeRuntime(blockBegin: true);
+        var vm = new LightingTestViewModel(runtime, ThermalProfile.Default, (_, _) => Task.CompletedTask);
+        var opening = vm.OpenAsync();
+        Assert.True(runtime.BeginStarted.Task.IsCompleted);
+        var window = new LightingTestWindow(vm) { ShowInTaskbar = false };
+        window.Show();
+
+        var cleanup = window.PrepareCloseAsync();
+
+        Assert.False(cleanup.IsCompleted);
+        Assert.True(window.IsVisible);
+        Assert.False(runtime.Session.Disposed);
+
+        runtime.CompleteBegin();
+        PumpUntil(() => cleanup.IsCompleted);
+        cleanup.GetAwaiter().GetResult();
+        opening.GetAwaiter().GetResult();
+        Assert.True(runtime.Session.Disposed);
+        Assert.Equal(1, runtime.Session.DisposeCalls);
+
+        window.CloseAfterCleanup();
+        Assert.False(window.IsVisible);
+    });
+
+    [Fact]
+    public void ShutdownPump_AfterObservationTimeout_ContinuesUntilCleanupCompletes()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        sta.Run(() =>
+        {
+            var cleanup = Task.Delay(75, cancellationToken);
+            var elapsed = System.Diagnostics.Stopwatch.StartNew();
+            var priorContext = SynchronizationContext.Current;
+            SynchronizationContext.SetSynchronizationContext(
+                new DispatcherSynchronizationContext(Dispatcher.CurrentDispatcher));
+            try
+            {
+                LumaTherm.App.App.WaitWithDispatcherPumpUntilCompleted(
+                    cleanup,
+                    TimeSpan.FromMilliseconds(5));
+            }
+            finally
+            {
+                SynchronizationContext.SetSynchronizationContext(priorContext);
+            }
+
+            elapsed.Stop();
+            Assert.True(cleanup.IsCompletedSuccessfully);
+            Assert.True(elapsed.Elapsed >= TimeSpan.FromMilliseconds(50));
+        });
+    }
+
     private static void AssertBinding(FrameworkElement element, DependencyProperty property, string path)
     {
         var expression = BindingOperations.GetBindingExpression(element, property);
@@ -119,13 +174,22 @@ public sealed class LightingTestWindowTests(ThermalCoreStaFixture sta)
         Assert.True(condition(), "Condition did not become true before the finite dispatcher deadline.");
     }
 
-    private sealed class FakeRuntime(bool blockDispose = false) : IThermalRuntime
+    private sealed class FakeRuntime(bool blockDispose = false, bool blockBegin = false) : IThermalRuntime
     {
         public event EventHandler<RuntimeSnapshot>? SnapshotChanged { add { } remove { } }
         public RuntimeSnapshot CurrentSnapshot { get; } = new(RuntimeStatus.Disabled, null, null, null, null, null, DateTimeOffset.MinValue, false);
         public AppSettings CurrentSettings { get; } = AppSettings.Default;
         public FakeSession Session { get; } = new(blockDispose);
-        public Task<ILightingTestSession> BeginLightingTestAsync(CancellationToken cancellationToken) => Task.FromResult<ILightingTestSession>(Session);
+        public TaskCompletionSource BeginStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource<ILightingTestSession>? _begin = blockBegin
+            ? new(TaskCreationOptions.RunContinuationsAsynchronously)
+            : null;
+        public Task<ILightingTestSession> BeginLightingTestAsync(CancellationToken cancellationToken)
+        {
+            BeginStarted.TrySetResult();
+            return _begin?.Task ?? Task.FromResult<ILightingTestSession>(Session);
+        }
+        public void CompleteBegin() => _begin?.TrySetResult(Session);
         public Task StartAsync(CancellationToken cancellationToken) => Task.CompletedTask;
         public Task SetModeEnabledAsync(bool enabled, CancellationToken cancellationToken) => Task.CompletedTask;
         public Task UpdatePreferencesAsync(AppSettings settings, CancellationToken cancellationToken) => Task.CompletedTask;

@@ -166,6 +166,19 @@ public sealed class LightingTestViewModel : ObservableObject, IAsyncDisposable
 
     private async Task CompleteCoreAsync(bool apply, CancellationToken cancellationToken)
     {
+        await _openGate.WaitAsync(CancellationToken.None);
+        try
+        {
+            await CompleteOwnedSessionAsync(apply, cancellationToken);
+        }
+        finally
+        {
+            _openGate.Release();
+        }
+    }
+
+    private async Task CompleteOwnedSessionAsync(bool apply, CancellationToken cancellationToken)
+    {
         Exception? failure = null;
         ILightingTestSession? session;
         Task temperatureUpdate;

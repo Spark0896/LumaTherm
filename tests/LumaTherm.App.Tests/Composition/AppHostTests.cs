@@ -360,6 +360,26 @@ public sealed class AppHostTests
         Assert.Equal(1, fixture.RuntimeStops);
     }
 
+    [Fact]
+    public async Task Stop_WhenLightingTestUiCleanupIsBlocked_RetainsOwnershipUntilCleanupCompletes()
+    {
+        var fixture = new HostFixture(blockUiDispose: true);
+        await using var host = new AppHost(fixture.Services, [], fixture.RequestExit);
+        Assert.True(await host.StartAsync(TestContext.Current.CancellationToken));
+
+        var stop = host.StopAsync(TestContext.Current.CancellationToken);
+        await fixture.UiDisposeStarted.Task.WaitAsync(TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken);
+        await Task.Delay(50, TestContext.Current.CancellationToken);
+
+        Assert.False(stop.IsCompleted);
+        Assert.Same(fixture.Ui, host.Ui);
+        Assert.False(fixture.Ui.CleanupCompleted);
+        fixture.ReleaseUiDispose();
+        await stop.WaitAsync(TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken);
+        Assert.Null(host.Ui);
+        Assert.True(fixture.Ui.CleanupCompleted);
+    }
+
     private static bool IsCleanup(string value) => value.EndsWith(".dispose", StringComparison.Ordinal) || value == "runtime.stop";
 
     private sealed class HostFixture
@@ -388,7 +408,8 @@ public sealed class AppHostTests
             bool blockSentinelComplete = false,
             bool blockDiscoveryStart = false,
             bool failSentinelComplete = false,
-            bool beginNewSentinelOnInstanceDispose = false)
+            bool beginNewSentinelOnInstanceDispose = false,
+            bool blockUiDispose = false)
         {
             _logger = new FakeLogger(Events, LogEvents, StopTimeline, failLoggerDispose);
             var sentinelGate = blockSentinelComplete ? new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously) : null;
@@ -403,7 +424,9 @@ public sealed class AppHostTests
                 () => { if (beginNewSentinelOnInstanceDispose) _sentinel.BeginAsync(CancellationToken.None).GetAwaiter().GetResult(); });
             _sentinelGate = sentinelGate;
             _runtime = new FakeRuntime(Events, settings ?? AppSettings.Default, () => RuntimeStarts++, () => RuntimeStops++, RuntimeUpdates, failRuntimeStop);
-            _ui = new FakeUi(Events, () => ActivationCalls++, RecordUiThread, RecordUiThread);
+            UiDisposeStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            _uiDisposeGate = blockUiDispose ? new(TaskCreationOptions.RunContinuationsAsynchronously) : null;
+            _ui = new FakeUi(Events, () => ActivationCalls++, RecordUiThread, RecordUiThread, UiDisposeStarted, _uiDisposeGate);
             _tray = new FakeTray(Events, () => { RecoveryWarnings++; RecordUiThread(); }, failTrayStop, RecordUiThread);
             _power = new FakeAsyncOwned(Events, "power.dispose");
             DiscoveryStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -442,6 +465,7 @@ public sealed class AppHostTests
         public FakeRuntime Runtime => _runtime;
         public int SentinelBegins { get; private set; }
         public int SentinelCompletes { get; private set; }
+        public FakeUi Ui => _ui;
         public bool SentinelMarkerPresent => _sentinel.MarkerPresent;
         public int RuntimeStarts { get; private set; }
         public int RuntimeStops { get; private set; }
@@ -454,6 +478,9 @@ public sealed class AppHostTests
         private readonly TaskCompletionSource? _sentinelGate;
         public TaskCompletionSource SentinelCompleteEntered { get; }
         public void ReleaseSentinelComplete() => _sentinelGate?.TrySetResult();
+        private readonly TaskCompletionSource? _uiDisposeGate;
+        public TaskCompletionSource UiDisposeStarted { get; }
+        public void ReleaseUiDispose() => _uiDisposeGate?.TrySetResult();
         public TaskCompletionSource DiscoveryStarted { get; }
         public void RequestExit() => Events.Add("exit");
     }
@@ -513,12 +540,24 @@ public sealed class AppHostTests
         public Task SetEnabledAsync(bool enabled, CancellationToken cancellationToken) => Task.CompletedTask;
     }
 
-    private sealed class FakeUi(List<string> events, Action activated, Action shown, Action disposed) : IAppUiSession
+    public sealed class FakeUi(
+        List<string> events,
+        Action activated,
+        Action shown,
+        Action disposed,
+        TaskCompletionSource disposeStarted,
+        TaskCompletionSource? disposeGate) : IAppUiSession
     {
+        public bool CleanupCompleted { get; private set; }
         public void Show() { events.Add("ui.show"); shown(); }
         public void ShowRestoreActivate() => activated();
         public void ShowForegroundError(string message) { }
-        public void Dispose() { events.Add("ui.dispose"); disposed(); }
+        public async ValueTask DisposeAsync()
+        {
+            events.Add("ui.dispose"); disposed(); disposeStarted.TrySetResult();
+            if (disposeGate is not null) await disposeGate.Task;
+            CleanupCompleted = true;
+        }
     }
 
     private sealed class FakeTray(List<string> events, Action warned, bool failDispose, Action disposed) : IAppTraySession

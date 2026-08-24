@@ -94,12 +94,13 @@ public static class ProductionAppServices
 
     private sealed class WpfUiSession : IAppUiSession
     {
-        private static readonly TimeSpan LightingTestShutdownTimeout = TimeSpan.FromSeconds(8);
         private readonly IThermalRuntime _runtime;
         private readonly MainViewModel _mainViewModel;
         private readonly SettingsViewModel _settingsViewModel;
         private LightingTestViewModel? _lightingTestViewModel;
         private LightingTestWindow? _lightingTestWindow;
+        private Task? _disposeTask;
+        private bool _isDisposing;
         public WpfUiSession(IThermalRuntime runtime, IStartupService startup, AppSettings settings, ILightingDeviceDiscovery discovery)
         {
             _runtime = runtime;
@@ -130,10 +131,35 @@ public static class ProductionAppServices
             adapter.BringToFront();
         }
         public void ShowForegroundError(string message) => System.Windows.MessageBox.Show(Window, message, "LumaTherm", MessageBoxButton.OK, MessageBoxImage.Error);
-        public void Dispose()
+        public ValueTask DisposeAsync()
         {
+            return new ValueTask(_disposeTask ??= DisposeCoreAsync());
+        }
+
+        private async Task DisposeCoreAsync()
+        {
+            _isDisposing = true;
             _settingsViewModel.LightingTestRequested -= OnLightingTestRequested;
-            CloseLightingTestForShutdown();
+            var lightingTestWindow = _lightingTestWindow;
+            if (lightingTestWindow is not null)
+            {
+                try
+                {
+                    await lightingTestWindow.PrepareCloseAsync();
+                }
+                catch (Exception)
+                {
+                    // Cleanup has completed its disposal attempt; the ViewModel retains the failure.
+                }
+
+                lightingTestWindow.CloseAfterCleanup();
+                if (ReferenceEquals(_lightingTestWindow, lightingTestWindow))
+                {
+                    _lightingTestWindow = null;
+                    _lightingTestViewModel = null;
+                }
+            }
+
             _settingsViewModel.Dispose();
             _mainViewModel.Dispose();
             ClosePolicy.RequestExplicitExit();
@@ -169,7 +195,7 @@ public static class ProductionAppServices
             try
             {
                 await viewModel.OpenAsync();
-                if (ReferenceEquals(_lightingTestWindow, window))
+                if (ReferenceEquals(_lightingTestWindow, window) && !_isDisposing)
                 {
                     window.ShowDialog();
                 }
@@ -185,7 +211,10 @@ public static class ProductionAppServices
                 }
 
                 window.CloseAfterCleanup();
-                ShowForegroundError(ResourceText("TestWindow.OpenFailed"));
+                if (!_isDisposing)
+                {
+                    ShowForegroundError(ResourceText("TestWindow.OpenFailed"));
+                }
             }
             finally
             {
@@ -198,30 +227,7 @@ public static class ProductionAppServices
         }
 
         private Task SaveLightingTestProfileAsync(ThermalProfile profile, CancellationToken cancellationToken) =>
-            _runtime.UpdatePreferencesAsync(_settingsViewModel.LiveSettings with { Profile = profile }, cancellationToken);
-
-        private void CloseLightingTestForShutdown()
-        {
-            var window = _lightingTestWindow;
-            if (window is null)
-            {
-                return;
-            }
-
-            try
-            {
-                App.WaitWithDispatcherPump(window.PrepareCloseAsync(), LightingTestShutdownTimeout);
-            }
-            catch (Exception)
-            {
-            }
-            finally
-            {
-                window.CloseAfterCleanup();
-                _lightingTestWindow = null;
-                _lightingTestViewModel = null;
-            }
-        }
+            _settingsViewModel.ApplyLightingTestProfileAsync(profile, cancellationToken);
 
         private static string ResourceText(string key) =>
             System.Windows.Application.Current.Resources[key] as string ?? key;
