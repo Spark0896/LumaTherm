@@ -125,5 +125,12 @@
     <sys:String x:Key="Settings.TrayShowModeToggle">Show mode toggle</sys:String>
     <sys:String x:Key="Settings.TrayExitAlwaysVisible">Exit is always available for safe shutdown.</sys:String>
     <sys:String x:Key="Settings.OpenLightingTest">Test lighting</sys:String>
+    <sys:String x:Key="TestWindow.Temperature">Test temperature</sys:String>
+    <sys:String x:Key="TestWindow.Preview">Live color</sys:String>
+    <sys:String x:Key="TestWindow.Profile">Draft thermal profile</sys:String>
+    <sys:String x:Key="TestWindow.ProfileHint">Edit any number of temperature points. Changes are saved only when you apply them.</sys:String>
+    <sys:String x:Key="TestWindow.Apply">Apply</sys:String>
+    <sys:String x:Key="TestWindow.Cancel">Cancel</sys:String>
+    <sys:String x:Key="TestWindow.OpenFailed">Unable to start the lighting test.</sys:String>
 
 </ResourceDictionary>

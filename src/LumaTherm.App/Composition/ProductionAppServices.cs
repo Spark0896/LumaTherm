@@ -3,6 +3,7 @@ using System.Windows;
 using LumaTherm.App.Localization;
 using LumaTherm.App.Services;
 using LumaTherm.App.ViewModels;
+using LumaTherm.App.Views;
 using LumaTherm.Core.Colors;
 using LumaTherm.Core.Diagnostics;
 using LumaTherm.Core.Lighting;
@@ -93,10 +94,15 @@ public static class ProductionAppServices
 
     private sealed class WpfUiSession : IAppUiSession
     {
+        private static readonly TimeSpan LightingTestShutdownTimeout = TimeSpan.FromSeconds(8);
+        private readonly IThermalRuntime _runtime;
         private readonly MainViewModel _mainViewModel;
         private readonly SettingsViewModel _settingsViewModel;
+        private LightingTestViewModel? _lightingTestViewModel;
+        private LightingTestWindow? _lightingTestWindow;
         public WpfUiSession(IThermalRuntime runtime, IStartupService startup, AppSettings settings, ILightingDeviceDiscovery discovery)
         {
+            _runtime = runtime;
             _settingsViewModel = new SettingsViewModel(runtime, startup, settings, new ColorPickerService(), discovery);
             _mainViewModel = new MainViewModel(runtime, SynchronizationContext.Current);
             _mainViewModel.SynchronizeProfile(_settingsViewModel);
@@ -108,6 +114,7 @@ public static class ProductionAppServices
                 ClosePolicy = ClosePolicy,
             };
             System.Windows.Application.Current.MainWindow = Window;
+            _settingsViewModel.LightingTestRequested += OnLightingTestRequested;
         }
 
         public MainWindow Window { get; }
@@ -125,11 +132,99 @@ public static class ProductionAppServices
         public void ShowForegroundError(string message) => System.Windows.MessageBox.Show(Window, message, "LumaTherm", MessageBoxButton.OK, MessageBoxImage.Error);
         public void Dispose()
         {
+            _settingsViewModel.LightingTestRequested -= OnLightingTestRequested;
+            CloseLightingTestForShutdown();
             _settingsViewModel.Dispose();
             _mainViewModel.Dispose();
             ClosePolicy.RequestExplicitExit();
             Window.Close();
         }
+
+        private async void OnLightingTestRequested(object? sender, EventArgs args)
+        {
+            if (_lightingTestWindow is { } existing)
+            {
+                if (existing.IsVisible)
+                {
+                    existing.Activate();
+                }
+                return;
+            }
+
+            ThermalProfile profile;
+            try
+            {
+                profile = _settingsViewModel.ProfileEditor.BuildProfile(_settingsViewModel.SmoothingSeconds);
+            }
+            catch (ArgumentException)
+            {
+                ShowForegroundError(ResourceText("Validation.Profile"));
+                return;
+            }
+
+            var viewModel = new LightingTestViewModel(_runtime, profile, SaveLightingTestProfileAsync);
+            var window = new LightingTestWindow(viewModel) { Owner = Window };
+            _lightingTestViewModel = viewModel;
+            _lightingTestWindow = window;
+            try
+            {
+                await viewModel.OpenAsync();
+                if (ReferenceEquals(_lightingTestWindow, window))
+                {
+                    window.ShowDialog();
+                }
+            }
+            catch (Exception)
+            {
+                try
+                {
+                    await viewModel.CloseAsync();
+                }
+                catch (Exception)
+                {
+                }
+
+                window.CloseAfterCleanup();
+                ShowForegroundError(ResourceText("TestWindow.OpenFailed"));
+            }
+            finally
+            {
+                if (ReferenceEquals(_lightingTestWindow, window))
+                {
+                    _lightingTestWindow = null;
+                    _lightingTestViewModel = null;
+                }
+            }
+        }
+
+        private Task SaveLightingTestProfileAsync(ThermalProfile profile, CancellationToken cancellationToken) =>
+            _runtime.UpdatePreferencesAsync(_settingsViewModel.LiveSettings with { Profile = profile }, cancellationToken);
+
+        private void CloseLightingTestForShutdown()
+        {
+            var window = _lightingTestWindow;
+            if (window is null)
+            {
+                return;
+            }
+
+            try
+            {
+                App.WaitWithDispatcherPump(window.PrepareCloseAsync(), LightingTestShutdownTimeout);
+            }
+            catch (Exception)
+            {
+            }
+            finally
+            {
+                window.CloseAfterCleanup();
+                _lightingTestWindow = null;
+                _lightingTestViewModel = null;
+            }
+        }
+
+        private static string ResourceText(string key) =>
+            System.Windows.Application.Current.Resources[key] as string ?? key;
     }
 
     private sealed class WpfTraySession : IAppTraySession

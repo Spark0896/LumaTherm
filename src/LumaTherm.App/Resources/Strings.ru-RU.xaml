@@ -125,5 +125,12 @@
     <sys:String x:Key="Settings.TrayShowModeToggle">Показывать переключатель режима</sys:String>
     <sys:String x:Key="Settings.TrayExitAlwaysVisible">Выход всегда доступен для безопасного завершения.</sys:String>
     <sys:String x:Key="Settings.OpenLightingTest">Проверить подсветку</sys:String>
+    <sys:String x:Key="TestWindow.Temperature">Тестовая температура</sys:String>
+    <sys:String x:Key="TestWindow.Preview">Цвет подсветки</sys:String>
+    <sys:String x:Key="TestWindow.Profile">Черновик температурного профиля</sys:String>
+    <sys:String x:Key="TestWindow.ProfileHint">Добавляйте любое число температурных точек. Изменения сохранятся только после применения.</sys:String>
+    <sys:String x:Key="TestWindow.Apply">Применить</sys:String>
+    <sys:String x:Key="TestWindow.Cancel">Отмена</sys:String>
+    <sys:String x:Key="TestWindow.OpenFailed">Не удалось запустить проверку подсветки.</sys:String>
 
 </ResourceDictionary>
