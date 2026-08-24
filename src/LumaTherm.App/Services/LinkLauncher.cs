@@ -29,7 +29,8 @@ public sealed class LinkLauncher : ILinkLauncher
             || !uri.Host.Equals("github.com", StringComparison.OrdinalIgnoreCase)
             || !uri.IsDefaultPort
             || !string.IsNullOrEmpty(uri.UserInfo)
-            || uri.OriginalString.Contains('\\'))
+            || uri.OriginalString.Contains('\\')
+            || ContainsTraversalSyntax(uri.OriginalString))
         {
             throw new ArgumentException("Only HTTPS links to the LumaTherm GitHub repository are allowed.", nameof(uri));
         }
@@ -49,4 +50,43 @@ public sealed class LinkLauncher : ILinkLauncher
         }
         return uri;
     }
+
+    private static bool ContainsTraversalSyntax(string original)
+    {
+        var schemeSeparator = original.IndexOf("://", StringComparison.Ordinal);
+        if (schemeSeparator < 0) return true;
+        var pathStart = original.IndexOf('/', schemeSeparator + 3);
+        if (pathStart < 0) return false;
+
+        var pathEnd = original.Length;
+        var queryStart = original.IndexOf('?', pathStart);
+        if (queryStart >= 0) pathEnd = queryStart;
+        var fragmentStart = original.IndexOf('#', pathStart);
+        if (fragmentStart >= 0 && fragmentStart < pathEnd) pathEnd = fragmentStart;
+        var path = original[pathStart..pathEnd];
+
+        for (var decodingPass = 0; decodingPass < 3; decodingPass++)
+        {
+            if (path.Contains('\\') || HasDotSegment(path)) return true;
+
+            string decoded;
+            try
+            {
+                decoded = Uri.UnescapeDataString(path);
+            }
+            catch (UriFormatException)
+            {
+                return true;
+            }
+
+            if (decoded.Equals(path, StringComparison.Ordinal)) return false;
+            path = decoded;
+        }
+
+        return path.Contains('\\') || HasDotSegment(path);
+    }
+
+    private static bool HasDotSegment(string path) =>
+        path.Split('/', StringSplitOptions.None)
+            .Any(segment => segment is "." or "..");
 }

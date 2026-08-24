@@ -1,4 +1,5 @@
 using System.Windows;
+using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Media;
 using LumaTherm.App.Localization;
@@ -51,6 +52,62 @@ public sealed class SettingsUiRuntimeTestsAbout(ThermalCoreStaFixture sta)
                 Assert.Contains("open source", FlattenText(aboutContent), StringComparison.OrdinalIgnoreCase);
                 Assert.Contains("controls thermal lighting", FlattenText(aboutContent), StringComparison.OrdinalIgnoreCase);
                 Assert.Contains("Check for updates", FlattenText(aboutContent), StringComparison.Ordinal);
+            }
+            finally
+            {
+                shell.Close();
+                localization.Apply(AppLanguage.Russian);
+            }
+        });
+    }
+
+    [Fact]
+    public void MainWindow_NavigationAccessibilityRefreshesSelectionAndNamesAcrossRuntimeLanguageSwitches()
+    {
+        sta.Run(() =>
+        {
+            var localization = new LocalizationService(Application.Current.Resources);
+            localization.Apply(AppLanguage.Russian);
+            var shell = new MainWindow();
+            try
+            {
+                Arrange(Assert.IsType<Border>(shell.Content), 1180, 720);
+                var home = Assert.IsType<Button>(shell.FindName("HomeButton"));
+                var settings = Assert.IsType<Button>(shell.FindName("SettingsButton"));
+                var about = Assert.IsType<Button>(shell.FindName("AboutButton"));
+
+                Assert.Equal("Главная", AutomationProperties.GetName(home));
+                Assert.Equal("Настройки", AutomationProperties.GetName(settings));
+                Assert.Equal("О программе", AutomationProperties.GetName(about));
+                Assert.Equal("Выбрано", AutomationProperties.GetItemStatus(home));
+                Assert.Equal(string.Empty, AutomationProperties.GetItemStatus(settings));
+                Assert.Equal(string.Empty, AutomationProperties.GetItemStatus(about));
+
+                about.Command.Execute(null);
+                Assert.Equal(string.Empty, AutomationProperties.GetItemStatus(home));
+                Assert.Equal(string.Empty, AutomationProperties.GetItemStatus(settings));
+                Assert.Equal("Выбрано", AutomationProperties.GetItemStatus(about));
+
+                var sameWindow = shell;
+                localization.Apply(AppLanguage.English);
+                shell.UpdateLayout();
+
+                Assert.Same(sameWindow, shell);
+                Assert.Equal("Home", AutomationProperties.GetName(home));
+                Assert.Equal("Settings", AutomationProperties.GetName(settings));
+                Assert.Equal("About", AutomationProperties.GetName(about));
+                Assert.Equal(string.Empty, AutomationProperties.GetItemStatus(home));
+                Assert.Equal(string.Empty, AutomationProperties.GetItemStatus(settings));
+                Assert.Equal("Selected", AutomationProperties.GetItemStatus(about));
+
+                settings.Command.Execute(null);
+                Assert.Equal(string.Empty, AutomationProperties.GetItemStatus(home));
+                Assert.Equal("Selected", AutomationProperties.GetItemStatus(settings));
+                Assert.Equal(string.Empty, AutomationProperties.GetItemStatus(about));
+
+                localization.Apply(AppLanguage.Russian);
+                shell.UpdateLayout();
+                Assert.Equal("Выбрано", AutomationProperties.GetItemStatus(settings));
             }
             finally
             {

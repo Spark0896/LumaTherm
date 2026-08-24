@@ -42,6 +42,21 @@ public sealed class GitHubReleaseFeedTests
     }
 
     [Theory]
+    [InlineData("")]
+    [InlineData("\"draft\":false")]
+    [InlineData("\"prerelease\":false")]
+    [InlineData("\"draft\":null,\"prerelease\":false")]
+    [InlineData("\"draft\":false,\"prerelease\":null")]
+    [InlineData("\"draft\":\"false\",\"prerelease\":false")]
+    [InlineData("\"draft\":false,\"prerelease\":0")]
+    public async Task GetLatestStableAsync_RejectsMissingNullOrNonBooleanStabilityFields(string stabilityFields)
+    {
+        using var feed = FeedReturning(JsonResponse(ReleaseJsonWith(stabilityFields)));
+
+        await Assert.ThrowsAsync<InvalidDataException>(() => feed.GetLatestStableAsync(CancellationToken.None));
+    }
+
+    [Theory]
     [InlineData("http://github.com/Spark0896/LumaTherm/releases/tag/v1.2.0", "https://github.com/Spark0896/LumaTherm/releases/download/v1.2.0/LumaTherm.exe")]
     [InlineData("https://github.com/Spark0896/LumaTherm/releases/tag/v1.2.0", "http://github.com/Spark0896/LumaTherm/releases/download/v1.2.0/LumaTherm.exe")]
     public async Task GetLatestStableAsync_RejectsNonHttpsBrowserOrAssetUrls(string pageUrl, string downloadUrl)
@@ -105,6 +120,19 @@ public sealed class GitHubReleaseFeedTests
     {
         Content = new StringContent(json, Encoding.UTF8, "application/json"),
     };
+
+    private static string ReleaseJsonWith(string stabilityFields) => $$"""
+        {
+          "html_url":"https://github.com/Spark0896/LumaTherm/releases/tag/v1.2.0",
+          "tag_name":"v1.2.0",
+          {{stabilityFields}}
+          {{(stabilityFields.Length == 0 ? string.Empty : ",")}}
+          "assets":[{
+            "name":"LumaTherm-Setup.exe",
+            "browser_download_url":"https://github.com/Spark0896/LumaTherm/releases/download/v1.2.0/LumaTherm-Setup.exe"
+          }]
+        }
+        """;
 
     private const string StableJson = """
         {

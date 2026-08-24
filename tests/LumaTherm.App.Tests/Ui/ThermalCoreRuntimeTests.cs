@@ -85,7 +85,6 @@ public sealed class ThermalCoreRuntimeTests
             Assert.Same(vm.ToggleModeCommand, toggle.Command);
             Assert.Equal("Включить или выключить термосинхронизацию", AutomationProperties.GetName(toggle));
             Assert.NotEmpty(shell.IconOnlyButtons.Select(AutomationProperties.GetName));
-            Assert.All(shell.IconOnlyButtons, button => Assert.Matches("[А-Яа-яЁё]", AutomationProperties.GetName(button)));
             Assert.All(
                 new[] { shell.MinimizeButtonContent, shell.MaximizeButtonContent, shell.CloseButtonContent },
                 icon => Assert.Equal("Segoe MDL2 Assets", icon.FontFamily.Source));

@@ -29,12 +29,12 @@
                         <Button x:Name="HomeButton" Style="{StaticResource IconButtonStyle}"
                                 Command="{Binding ShowDashboardCommand, RelativeSource={RelativeSource AncestorType={x:Type Window}}}"
                                 Foreground="{StaticResource ColdColorBrush}" Background="#20272D"
-                                automation:AutomationProperties.Name="Главная" automation:AutomationProperties.ItemStatus="Выбрано">
+                                automation:AutomationProperties.Name="{DynamicResource Nav.Home}" automation:AutomationProperties.ItemStatus="{DynamicResource Accessibility.Selected}">
                             <TextBlock Text="&#xE80F;" FontFamily="Segoe Fluent Icons" FontSize="19" Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" />
                         </Button>
                         <Button x:Name="SettingsButton" Style="{StaticResource IconButtonStyle}" Margin="0,7,0,0"
                                 Command="{Binding ShowSettingsCommand, RelativeSource={RelativeSource AncestorType={x:Type Window}}}"
-                                automation:AutomationProperties.Name="Настройки">
+                                automation:AutomationProperties.Name="{DynamicResource Nav.Settings}">
                             <TextBlock Text="&#xE713;" FontFamily="Segoe Fluent Icons" FontSize="19" Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" />
                         </Button>
                     </StackPanel>
@@ -54,7 +54,7 @@
                     </Border>
                     <Button x:Name="AboutButton" Grid.Row="4" Style="{StaticResource IconButtonStyle}"
                             Command="{Binding ShowAboutCommand, RelativeSource={RelativeSource AncestorType={x:Type Window}}}"
-                            automation:AutomationProperties.Name="О программе">
+                            automation:AutomationProperties.Name="{DynamicResource Nav.About}">
                         <TextBlock Text="&#xE946;" FontFamily="Segoe Fluent Icons" FontSize="19" Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" />
                     </Button>
                     <Border x:Name="AboutSelectionIndicator" Grid.Row="4" Width="3" Height="24"

@@ -93,12 +93,12 @@ public partial class MainWindow : System.Windows.Window
     {
         active.Foreground = (Brush)Application.Current.Resources["ColdColorBrush"];
         active.Background = new SolidColorBrush(Color.FromRgb(0x20, 0x27, 0x2D));
-        System.Windows.Automation.AutomationProperties.SetItemStatus(active, "Выбрано");
+        active.SetResourceReference(System.Windows.Automation.AutomationProperties.ItemStatusProperty, "Accessibility.Selected");
         foreach (var button in inactive)
         {
             button.ClearValue(ForegroundProperty);
             button.ClearValue(BackgroundProperty);
-            System.Windows.Automation.AutomationProperties.SetItemStatus(button, string.Empty);
+            button.ClearValue(System.Windows.Automation.AutomationProperties.ItemStatusProperty);
         }
     }
 

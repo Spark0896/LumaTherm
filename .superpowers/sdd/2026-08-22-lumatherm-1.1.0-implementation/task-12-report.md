@@ -83,3 +83,54 @@ All commands ran in `C:\Users\User\Documents\project\monitoring_color\.worktrees
 - Mutation review: wrong SemVer comparison/parse boundaries, wrong endpoint/header/timeout, missing stable/HTTPS/size/cancellation validation, loosened link host/path checks, wrong update state/enablement, overlapping checks, post-disposal updates, mutable UI version, missing localized About content, and broken info navigation each have a focused test that would fail.
 - Resource ownership is single and explicit; no live network, installer execution, or publication side effect exists.
 - Remaining concern: the GitHub endpoint may legitimately fail until Task 16 publishes the repository/release; this is intentionally represented as localized `Failed` and is not treated as an application fault.
+
+## Fix Round 1/5 — Important review findings
+
+Three Important findings were addressed with separate verified RED → GREEN cycles. The ledgered HttpClient-timeout ownership Minor remained out of scope.
+
+### Feed stability fields
+
+Test-first cases cover both fields omitted, each field omitted independently, `null` for either field, and a non-boolean value for either field. Existing `true` draft/prerelease rejection remains covered.
+
+- RED command: `& .\.dotnet\dotnet.exe test .\tests\LumaTherm.Infrastructure.Tests -c Release -p:NuGetAudit=false --filter GitHubReleaseFeedTests`
+  - Exit `1`; passed `13`, failed `3`, skipped `0`, total `16`.
+  - Expected failures: payloads missing both stability fields, missing `draft`, and missing `prerelease` were incorrectly accepted. Null/wrong-type cases already failed safely.
+- GREEN: same command exited `0`; passed `16`, failed `0`, skipped `0`.
+- Implementation decision: `draft` and `prerelease` deserialize as nullable booleans and acceptance requires each property to be present and exactly JSON `false`. Missing/null values fail the stable-release gate; wrong JSON types remain caught as malformed release data.
+
+### Original-input traversal rejection
+
+Test-first cases include literal `releases/../issues`, literal single-dot segments, upper/lower percent-encoded dot segments, double-encoded dot segments, literal mixed backslash separators, and single/double-encoded backslash traversal. Existing valid repository root, release, and asset links remain covered.
+
+- RED command: `& .\.dotnet\dotnet.exe test .\tests\LumaTherm.App.Tests -c Release -p:NuGetAudit=false --filter LinkLauncherTests`
+  - Exit `1`; passed `20`, failed `4`, skipped `0`, total `24`.
+  - Expected failures: literal `.`/`..` and single-encoded dot segments normalized to an allowed in-repository path before validation.
+- GREEN: same command exited `0`; passed `24`, failed `0`, skipped `0`.
+- Implementation decision: the raw original path is isolated before query/fragment data, checked for slash/backslash dot segments, decoded repeatedly, and checked again before normalized URI allowlisting. Rejected input never reaches the process-start delegate.
+
+### Runtime navigation accessibility localization
+
+A new STA test exercises the same `MainWindow` through RU → EN → RU changes, verifies exact accessible names for Home/Settings/About, and verifies the active `ItemStatus` moves between all three buttons and refreshes from `Выбрано` to `Selected` without recreating the window.
+
+- RED command: `& .\.dotnet\dotnet.exe test .\tests\LumaTherm.App.Tests -c Release -p:NuGetAudit=false --filter SettingsUiRuntimeTestsAbout`
+  - Exit `1`; passed `1`, failed `1`, skipped `0`, total `2`.
+  - Expected failure: after switching to English, Home still exposed hard-coded `Главная`.
+- Initial broader GREEN check exposed one stale test-only hard-coded `Выбрано` expectation while the active dictionary was English: exit `1`, passed `19`, failed `1`, total `20`.
+- Final GREEN command: `& .\.dotnet\dotnet.exe test .\tests\LumaTherm.App.Tests -c Release -p:NuGetAudit=false --filter "AboutViewModelTests|SettingsUiRuntimeTests"`
+  - Exit `0`; passed `20`, failed `0`, skipped `0`.
+- Implementation decision: all three navigation names use RU/EN dynamic resources. The selected button owns a live `Accessibility.Selected` resource reference; inactive buttons clear the attached property. Older shell tests retain their non-empty accessibility purpose without assuming a specific active language.
+
+### Final Fix Round 1 verification
+
+All commands used Release configuration and `-p:NuGetAudit=false`.
+
+1. Core focused (`SemanticVersionTests`): exit `0`; passed `17`, failed `0`, skipped `0`.
+2. Infrastructure focused (`GitHubReleaseFeedTests`): exit `0`; passed `16`, failed `0`, skipped `0`.
+3. App focused (`AboutViewModelTests|SettingsUiRuntimeTests`): exit `0`; passed `20`, failed `0`, skipped `0`.
+4. Link security focused (`LinkLauncherTests`): exit `0`; passed `24`, failed `0`, skipped `0`.
+5. Full solution: `& .\.dotnet\dotnet.exe test .\LumaTherm.sln -c Release -p:NuGetAudit=false`
+   - Exit `0`; passed `549`, failed `0`, skipped `0`: Core `123`, Infrastructure `111`, App `254`, Smoke `19`, Packaging `42`.
+6. Release build: `& .\.dotnet\dotnet.exe build .\LumaTherm.sln -c Release -p:NuGetAudit=false`
+   - Exit `0`; warnings `0`, errors `0`.
+
+Output noise was limited to normal localized restore/build/VSTest progress. No live network, installer execution, repository publication, or Task 13+ behavior was introduced.

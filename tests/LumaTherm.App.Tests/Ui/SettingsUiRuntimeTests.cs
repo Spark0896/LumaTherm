@@ -122,7 +122,7 @@ public sealed class SettingsUiRuntimeTests
             Assert.Equal(Visibility.Visible, settingsContent.Visibility);
             Assert.Same(settings, settingsContent.DataContext);
             Assert.Equal("", AutomationProperties.GetItemStatus(home));
-            Assert.Equal("Выбрано", AutomationProperties.GetItemStatus(settingsButton));
+            Assert.False(string.IsNullOrWhiteSpace(AutomationProperties.GetItemStatus(settingsButton)));
         }
         finally
         {

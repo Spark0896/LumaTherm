@@ -45,7 +45,7 @@ public sealed class GitHubReleaseFeed : IReleaseFeed, IDisposable
             throw new InvalidDataException("GitHub returned malformed release data.", exception);
         }
 
-        if (document is null || document.Draft || document.Prerelease)
+        if (document is null || document.Draft is not false || document.Prerelease is not false)
         {
             throw new InvalidDataException("GitHub did not return a stable release.");
         }
@@ -116,9 +116,9 @@ public sealed class GitHubReleaseFeed : IReleaseFeed, IDisposable
         [JsonPropertyName("html_url")]
         public string? HtmlUrl { get; init; }
         [JsonPropertyName("draft")]
-        public bool Draft { get; init; }
+        public bool? Draft { get; init; }
         [JsonPropertyName("prerelease")]
-        public bool Prerelease { get; init; }
+        public bool? Prerelease { get; init; }
         [JsonPropertyName("assets")]
         public GitHubAssetDocument[]? Assets { get; init; }
     }
