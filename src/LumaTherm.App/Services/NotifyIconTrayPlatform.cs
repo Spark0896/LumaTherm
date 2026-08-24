@@ -9,41 +9,38 @@ public sealed class NotifyIconTrayPlatform : ITrayIconPlatform
     private readonly SynchronizationContext? _context = SynchronizationContext.Current;
     private readonly Forms.NotifyIcon _icon;
     private readonly Icon _ownedIcon;
-    private readonly Forms.ToolStripMenuItem _temperature;
-    private readonly Forms.ToolStripMenuItem _open;
-    private readonly Forms.ToolStripMenuItem _toggle;
-    private readonly Forms.ToolStripMenuItem _exit;
     private TrayMenuState? _menuState;
     private bool _disposed;
 
-    public NotifyIconTrayPlatform()
+    public NotifyIconTrayPlatform() : this(LoadOwnedIcon(), new Forms.NotifyIcon())
+    {
+    }
+
+    internal NotifyIconTrayPlatform(Icon ownedIcon, Forms.NotifyIcon icon)
+    {
+        _icon = icon ?? throw new ArgumentNullException(nameof(icon));
+        _ownedIcon = ownedIcon ?? throw new ArgumentNullException(nameof(ownedIcon));
+        _icon.Icon = _ownedIcon;
+        _icon.ContextMenuStrip = null;
+        _icon.Visible = false;
+        _icon.MouseClick += OnMouseClick;
+        _icon.DoubleClick += OnDoubleClick;
+    }
+
+    private static Icon LoadOwnedIcon()
     {
         var resource = WpfApplication.GetResourceStream(new Uri("pack://application:,,,/Assets/LumaTherm.ico"))
             ?? throw new InvalidOperationException("Встроенная иконка LumaTherm не найдена.");
         using (resource.Stream)
         {
             using var loadedIcon = new Icon(resource.Stream);
-            _ownedIcon = (Icon)loadedIcon.Clone();
+            return (Icon)loadedIcon.Clone();
         }
-        _temperature = new Forms.ToolStripMenuItem { Enabled = false };
-        _open = new Forms.ToolStripMenuItem("Открыть LumaTherm");
-        _toggle = new Forms.ToolStripMenuItem("Включить режим");
-        _exit = new Forms.ToolStripMenuItem("Выход");
-        var menu = new Forms.ContextMenuStrip();
-        menu.Items.AddRange([_temperature, _open, _toggle, _exit]);
-        _icon = new Forms.NotifyIcon { Icon = _ownedIcon, ContextMenuStrip = menu, Visible = false };
-        _icon.MouseClick += OnMouseClick;
-        _icon.DoubleClick += OnDoubleClick;
-        _open.Click += OnOpenClick;
-        _toggle.Click += OnToggleClick;
-        _exit.Click += OnExitClick;
     }
 
     public event EventHandler? LeftClick;
     public event EventHandler? DoubleClick;
-    public event EventHandler? OpenRequested;
-    public event EventHandler? ToggleRequested;
-    public event EventHandler? ExitRequested;
+    public event EventHandler<TrayCommandKind>? CommandRequested;
 
     public bool Visible
     {
@@ -57,17 +54,7 @@ public sealed class NotifyIconTrayPlatform : ITrayIconPlatform
         set
         {
             _menuState = value;
-            Invoke(() =>
-            {
-                if (value is null) return;
-                _icon.Text = value.Tooltip;
-                _temperature.Text = value.Entries[0].Label;
-                _temperature.Enabled = value.Entries[0].Enabled;
-                _temperature.ToolTipText = value.DeviceStatus;
-                _open.Text = value.Entries[1].Label;
-                _toggle.Text = value.Entries[2].Label;
-                _exit.Text = value.Entries[3].Label;
-            });
+            Invoke(() => RebuildMenu(value));
         }
     }
 
@@ -90,18 +77,61 @@ public sealed class NotifyIconTrayPlatform : ITrayIconPlatform
         _disposed = true;
         _icon.MouseClick -= OnMouseClick;
         _icon.DoubleClick -= OnDoubleClick;
-        _open.Click -= OnOpenClick;
-        _toggle.Click -= OnToggleClick;
-        _exit.Click -= OnExitClick;
         _icon.Visible = false;
-        _icon.ContextMenuStrip?.Dispose();
+        var menu = _icon.ContextMenuStrip;
+        _icon.ContextMenuStrip = null;
+        DisposeMenu(menu);
         _icon.Dispose();
         _ownedIcon.Dispose();
         LeftClick = null;
         DoubleClick = null;
-        OpenRequested = null;
-        ToggleRequested = null;
-        ExitRequested = null;
+        CommandRequested = null;
+    }
+
+    private void RebuildMenu(TrayMenuState? state)
+    {
+        Forms.ContextMenuStrip? replacement = null;
+        if (state is not null)
+        {
+            replacement = new Forms.ContextMenuStrip();
+            try
+            {
+                foreach (var entry in state.Entries)
+                {
+                    var item = new Forms.ToolStripMenuItem(entry.Label)
+                    {
+                        Enabled = entry.Enabled,
+                        Tag = entry.Kind,
+                        ToolTipText = entry.Kind == TrayCommandKind.Temperature ? state.DeviceStatus : string.Empty,
+                    };
+                    if (entry.Kind != TrayCommandKind.Temperature)
+                    {
+                        item.Click += OnCommandClick;
+                    }
+                    replacement.Items.Add(item);
+                }
+                _icon.Text = state.Tooltip;
+            }
+            catch
+            {
+                DisposeMenu(replacement);
+                throw;
+            }
+        }
+
+        var previous = _icon.ContextMenuStrip;
+        _icon.ContextMenuStrip = replacement;
+        DisposeMenu(previous);
+    }
+
+    private void DisposeMenu(Forms.ContextMenuStrip? menu)
+    {
+        if (menu is null) return;
+        foreach (Forms.ToolStripItem item in menu.Items)
+        {
+            item.Click -= OnCommandClick;
+        }
+        menu.Dispose();
     }
 
     private void InvokeSynchronously(Action action)
@@ -131,7 +161,11 @@ public sealed class NotifyIconTrayPlatform : ITrayIconPlatform
         if (args.Button == Forms.MouseButtons.Left) LeftClick?.Invoke(this, EventArgs.Empty);
     }
     private void OnDoubleClick(object? sender, EventArgs args) => DoubleClick?.Invoke(this, EventArgs.Empty);
-    private void OnOpenClick(object? sender, EventArgs args) => OpenRequested?.Invoke(this, EventArgs.Empty);
-    private void OnToggleClick(object? sender, EventArgs args) => ToggleRequested?.Invoke(this, EventArgs.Empty);
-    private void OnExitClick(object? sender, EventArgs args) => ExitRequested?.Invoke(this, EventArgs.Empty);
+    private void OnCommandClick(object? sender, EventArgs args)
+    {
+        if (sender is Forms.ToolStripItem { Tag: TrayCommandKind kind } && kind != TrayCommandKind.Temperature)
+        {
+            CommandRequested?.Invoke(this, kind);
+        }
+    }
 }

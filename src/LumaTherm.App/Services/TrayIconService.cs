@@ -1,5 +1,8 @@
+using System.ComponentModel;
 using System.Threading.Channels;
+using LumaTherm.App.Localization;
 using LumaTherm.Core.Runtime;
+using LumaTherm.Core.Settings;
 
 namespace LumaTherm.App.Services;
 
@@ -11,6 +14,9 @@ public sealed class TrayIconService : IAsyncDisposable
     private readonly ITrayWindow _window;
     private readonly ITrayApplication _application;
     private readonly IThermalRuntime _runtime;
+    private readonly ILocalizationService _localization;
+    private readonly Func<AppSettings> _currentSettings;
+    private readonly INotifyPropertyChanged _settingsChangeSource;
     private readonly Func<Task> _toggleModeAsync;
     private readonly WindowClosePolicy _closePolicy;
     private readonly Func<bool> _notificationsEnabled;
@@ -28,6 +34,9 @@ public sealed class TrayIconService : IAsyncDisposable
         ITrayWindow window,
         ITrayApplication application,
         IThermalRuntime runtime,
+        ILocalizationService localization,
+        Func<AppSettings> currentSettings,
+        INotifyPropertyChanged settingsChangeSource,
         Func<Task> toggleModeAsync,
         WindowClosePolicy closePolicy,
         Func<bool> notificationsEnabled,
@@ -37,7 +46,10 @@ public sealed class TrayIconService : IAsyncDisposable
         _window = window ?? throw new ArgumentNullException(nameof(window));
         _application = application ?? throw new ArgumentNullException(nameof(application));
         _runtime = runtime ?? throw new ArgumentNullException(nameof(runtime));
+        _localization = localization ?? throw new ArgumentNullException(nameof(localization));
         _toggleModeAsync = toggleModeAsync ?? throw new ArgumentNullException(nameof(toggleModeAsync));
+        _currentSettings = currentSettings ?? throw new ArgumentNullException(nameof(currentSettings));
+        _settingsChangeSource = settingsChangeSource ?? throw new ArgumentNullException(nameof(settingsChangeSource));
         _closePolicy = closePolicy ?? throw new ArgumentNullException(nameof(closePolicy));
         _notificationsEnabled = notificationsEnabled ?? throw new ArgumentNullException(nameof(notificationsEnabled));
         _errorSink = errorSink;
@@ -50,48 +62,67 @@ public sealed class TrayIconService : IAsyncDisposable
 
         _platform.LeftClick += OnShowRequested;
         _platform.DoubleClick += OnShowRequested;
-        _platform.OpenRequested += OnShowRequested;
-        _platform.ToggleRequested += OnToggleRequested;
-        _platform.ExitRequested += OnExitRequested;
+        _platform.CommandRequested += OnCommandRequested;
+        _localization.LanguageChanged += OnLanguageChanged;
         _runtime.SnapshotChanged += OnSnapshotChanged;
         _previousStatus = _runtime.CurrentSnapshot.Status;
+        _settingsChangeSource.PropertyChanged += OnSettingsChanged;
         ApplySnapshot(_runtime.CurrentSnapshot, notify: false);
         _platform.Visible = true;
         _operationConsumer = ConsumeOperationsAsync();
     }
 
-    public static TrayMenuState BuildMenuState(RuntimeSnapshot snapshot)
+    public static TrayMenuState BuildMenuState(
+        RuntimeSnapshot snapshot,
+        AppSettings settings,
+        ILocalizationService localization)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
-        var temperature = snapshot.Temperature is null ? "—°C" : $"{snapshot.Temperature.Celsius:0}°C";
-        var tooltip = TruncateTooltip($"LumaTherm · {temperature} · {GetStatusLabel(snapshot.Status)}", TooltipLimit);
-        var toggle = snapshot.IsModeEnabled ? "Выключить режим" : "Включить режим";
+        ArgumentNullException.ThrowIfNull(settings);
+        ArgumentNullException.ThrowIfNull(localization);
+        var temperature = snapshot.Temperature is null ? "—" : $"{snapshot.Temperature.Celsius:0}°C";
+        var tooltip = TruncateTooltip(
+            $"{localization.Get("App.Name")} · {temperature} · {GetStatusLabel(snapshot.Status, localization)}",
+            TooltipLimit);
+        var entries = new List<TrayMenuEntry>();
+        if (settings.TrayMenu.ShowTemperature)
+        {
+            entries.Add(new TrayMenuEntry(TrayCommandKind.Temperature, temperature, false));
+        }
+        if (settings.TrayMenu.ShowOpenCommand)
+        {
+            entries.Add(new TrayMenuEntry(TrayCommandKind.Open, localization.Get("Tray.Open"), true));
+        }
+        if (settings.TrayMenu.ShowModeToggle)
+        {
+            var toggleKey = snapshot.IsModeEnabled ? "Tray.DisableMode" : "Tray.EnableMode";
+            entries.Add(new TrayMenuEntry(TrayCommandKind.ToggleMode, localization.Get(toggleKey), true));
+        }
+        entries.Add(new TrayMenuEntry(TrayCommandKind.Exit, localization.Get("Tray.Exit"), true));
+
         var device = snapshot.LightingDevice is null
-            ? "Подсветка не обнаружена"
-            : $"{snapshot.LightingDevice.Name} · {(snapshot.LightingDevice.IsAvailable ? "Доступна" : "Недоступна")}";
-        return new TrayMenuState(
-            tooltip,
-            device,
-            [
-                new TrayMenuEntry(temperature, false),
-                new TrayMenuEntry("Открыть LumaTherm", true),
-                new TrayMenuEntry(toggle, true),
-                new TrayMenuEntry("Выход", true),
-            ]);
+            ? localization.Get("Runtime.LightingNotFound")
+            : $"{snapshot.LightingDevice.Name} · {localization.Get(snapshot.LightingDevice.IsAvailable ? "Tray.Available" : "Tray.Unavailable")}";
+        return new TrayMenuState(tooltip, device, entries);
     }
 
-    public static string GetStatusLabel(RuntimeStatus status) => status switch
+    public static string GetStatusLabel(RuntimeStatus status, ILocalizationService localization)
     {
-        RuntimeStatus.Disabled => "Выключено",
-        RuntimeStatus.Connecting => "Подключение",
-        RuntimeStatus.Active => "Активно",
-        RuntimeStatus.HoldingLastColor => "Удержание цвета",
-        RuntimeStatus.SensorUnavailable => "Нет датчика",
-        RuntimeStatus.LightingUnavailable => "Нет подсветки",
-        RuntimeStatus.Suspended => "Приостановлено",
-        RuntimeStatus.Faulted => "Ошибка",
-        _ => "Неизвестно",
-    };
+        ArgumentNullException.ThrowIfNull(localization);
+        var key = status switch
+        {
+            RuntimeStatus.Disabled => "Tray.StatusDisabled",
+            RuntimeStatus.Connecting => "Tray.StatusConnecting",
+            RuntimeStatus.Active => "Tray.StatusActive",
+            RuntimeStatus.HoldingLastColor => "Tray.StatusHolding",
+            RuntimeStatus.SensorUnavailable => "Tray.StatusSensorUnavailable",
+            RuntimeStatus.LightingUnavailable => "Tray.StatusLightingUnavailable",
+            RuntimeStatus.Suspended => "Tray.StatusSuspended",
+            RuntimeStatus.Faulted => "Tray.StatusFaulted",
+            _ => "Tray.StatusUnknown",
+        };
+        return localization.Get(key);
+    }
 
     public static string TruncateTooltip(string value, int maximumLength = TooltipLimit)
     {
@@ -172,11 +203,11 @@ public sealed class TrayIconService : IAsyncDisposable
             _disposed = true;
             _platform.LeftClick -= OnShowRequested;
             _platform.DoubleClick -= OnShowRequested;
-            _platform.OpenRequested -= OnShowRequested;
-            _platform.ToggleRequested -= OnToggleRequested;
-            _platform.ExitRequested -= OnExitRequested;
+            _platform.CommandRequested -= OnCommandRequested;
+            _localization.LanguageChanged -= OnLanguageChanged;
             _runtime.SnapshotChanged -= OnSnapshotChanged;
             _operations.Writer.TryComplete();
+            _settingsChangeSource.PropertyChanged -= OnSettingsChanged;
         }
 
         await _operationConsumer;
@@ -189,23 +220,40 @@ public sealed class TrayIconService : IAsyncDisposable
         return Task.CompletedTask;
     });
 
-    private void OnToggleRequested(object? sender, EventArgs args)
+    private void OnCommandRequested(object? sender, TrayCommandKind kind)
     {
-        if (Volatile.Read(ref _exitRequested) == 0)
+        switch (kind)
         {
-            Enqueue(_toggleModeAsync);
-        }
-    }
-
-    private void OnExitRequested(object? sender, EventArgs args)
-    {
-        if (Interlocked.CompareExchange(ref _exitRequested, 1, 0) == 0)
-        {
-            Enqueue(ExitAsync);
+            case TrayCommandKind.Open:
+                OnShowRequested(sender, EventArgs.Empty);
+                break;
+            case TrayCommandKind.ToggleMode when Volatile.Read(ref _exitRequested) == 0:
+                Enqueue(_toggleModeAsync);
+                break;
+            case TrayCommandKind.Exit when Interlocked.CompareExchange(ref _exitRequested, 1, 0) == 0:
+                Enqueue(ExitAsync);
+                break;
         }
     }
 
     private void OnSnapshotChanged(object? sender, RuntimeSnapshot snapshot) => ApplySnapshot(snapshot, notify: true);
+
+    private void OnLanguageChanged(object? sender, EventArgs args) => ApplySnapshot(_runtime.CurrentSnapshot, notify: false);
+
+    private void OnSettingsChanged(object? sender, PropertyChangedEventArgs args)
+    {
+        if (args.PropertyName is not (null or "" or "CurrentSettings" or "LiveSettings"))
+        {
+            return;
+        }
+
+        var previousLanguage = _localization.CurrentLanguage;
+        _localization.Apply(_currentSettings().Language);
+        if (_localization.CurrentLanguage == previousLanguage)
+        {
+            ApplySnapshot(_runtime.CurrentSnapshot, notify: false);
+        }
+    }
 
     private void ApplySnapshot(RuntimeSnapshot snapshot, bool notify)
     {
@@ -216,7 +264,7 @@ public sealed class TrayIconService : IAsyncDisposable
                 return;
             }
 
-            _platform.MenuState = BuildMenuState(snapshot);
+            _platform.MenuState = BuildMenuState(snapshot, _currentSettings(), _localization);
             if (notify && ShouldNotify(snapshot))
             {
                 _platform.ShowNotification("LumaTherm · Внимание", NotificationMessage(snapshot.Status));

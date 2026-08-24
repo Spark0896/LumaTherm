@@ -1,3 +1,8 @@
+using System.ComponentModel;
+using System.Drawing;
+using LumaTherm.App.Localization;
+using LumaTherm.App.Tests.Ui;
+using Forms = System.Windows.Forms;
 using LumaTherm.App.Services;
 using LumaTherm.Core.Lighting;
 using LumaTherm.Core.Runtime;
@@ -6,24 +11,180 @@ using LumaTherm.Core.Settings;
 
 namespace LumaTherm.App.Tests.Services;
 
+[Collection(ThermalCoreUiCollection.Name)]
 public sealed class TrayIconServiceTests
 {
-    [Theory]
-    [InlineData(RuntimeStatus.Disabled, false, "Включить режим")]
-    [InlineData(RuntimeStatus.Active, true, "Выключить режим")]
-    [InlineData(RuntimeStatus.SensorUnavailable, true, "Выключить режим")]
-    [InlineData(RuntimeStatus.Faulted, true, "Выключить режим")]
-    public void BuildMenuState_CreatesExactlyFourRussianEntries(RuntimeStatus status, bool enabled, string toggleLabel)
-    {
-        var state = TrayIconService.BuildMenuState(Snapshot(status, enabled, 68));
+    private readonly ThermalCoreStaFixture _sta;
 
-        Assert.Equal("LumaTherm · 68°C · " + (status == RuntimeStatus.Active ? "Активно" : TrayIconService.GetStatusLabel(status)), state.Tooltip);
-        Assert.Equal(4, state.Entries.Count);
-        Assert.Equal(new TrayMenuEntry("68°C", false), state.Entries[0]);
-        Assert.Equal(new TrayMenuEntry("Открыть LumaTherm", true), state.Entries[1]);
-        Assert.Equal(new TrayMenuEntry(toggleLabel, true), state.Entries[2]);
-        Assert.Equal(new TrayMenuEntry("Выход", true), state.Entries[3]);
-        Assert.Contains("GIGABYTE Device", state.DeviceStatus);
+    public TrayIconServiceTests(ThermalCoreStaFixture sta) => _sta = sta;
+
+    [Fact]
+    public void BuildMenuState_AllOptionalEntriesHidden_ContainsOnlyEnabledExit()
+    {
+        var state = TrayIconService.BuildMenuState(
+            Snapshot(RuntimeStatus.Disabled, false, 68),
+            Settings(new TrayMenuOptions(false, false, false)),
+            new FakeLocalization(AppLanguage.English));
+
+        Assert.Equal([new TrayMenuEntry(TrayCommandKind.Exit, "Exit", true)], state.Entries);
+    }
+
+    [Fact]
+    public void BuildMenuState_AllOptionalEntriesVisible_UsesTypedStableOrderAndActualTemperature()
+    {
+        var state = TrayIconService.BuildMenuState(
+            Snapshot(RuntimeStatus.Active, true, 68),
+            Settings(TrayMenuOptions.Default),
+            new FakeLocalization(AppLanguage.English));
+
+        Assert.Equal(
+            [
+                new TrayMenuEntry(TrayCommandKind.Temperature, "68°C", false),
+                new TrayMenuEntry(TrayCommandKind.Open, "Open LumaTherm", true),
+                new TrayMenuEntry(TrayCommandKind.ToggleMode, "Disable mode", true),
+                new TrayMenuEntry(TrayCommandKind.Exit, "Exit", true),
+            ],
+            state.Entries);
+        Assert.Equal("LumaTherm · 68°C · Active", state.Tooltip);
+        Assert.Equal("GIGABYTE Device · Available", state.DeviceStatus);
+    }
+
+    [Fact]
+    public void BuildMenuState_MissingSensorUsesEmDashInsteadOfStaleTemperature()
+    {
+        var state = TrayIconService.BuildMenuState(
+            Snapshot(RuntimeStatus.SensorUnavailable, true, temperature: null),
+            Settings(TrayMenuOptions.Default),
+            new FakeLocalization(AppLanguage.English));
+
+        Assert.Equal(new TrayMenuEntry(TrayCommandKind.Temperature, "—", false), state.Entries[0]);
+        Assert.Equal("LumaTherm · — · No sensor", state.Tooltip);
+    }
+
+    [Theory]
+    [InlineData(AppLanguage.Russian, false, "Открыть LumaTherm", "Включить режим", "Выход")]
+    [InlineData(AppLanguage.Russian, true, "Открыть LumaTherm", "Выключить режим", "Выход")]
+    [InlineData(AppLanguage.English, false, "Open LumaTherm", "Enable mode", "Exit")]
+    [InlineData(AppLanguage.English, true, "Open LumaTherm", "Disable mode", "Exit")]
+    public void BuildMenuState_LocalizesCommandsAndReflectsLiveMode(
+        AppLanguage language,
+        bool modeEnabled,
+        string open,
+        string toggle,
+        string exit)
+    {
+        var state = TrayIconService.BuildMenuState(
+            Snapshot(modeEnabled ? RuntimeStatus.Active : RuntimeStatus.Disabled, modeEnabled, 68),
+            Settings(TrayMenuOptions.Default),
+            new FakeLocalization(language));
+
+        Assert.Equal(open, state.Entries.Single(entry => entry.Kind == TrayCommandKind.Open).Label);
+        Assert.Equal(toggle, state.Entries.Single(entry => entry.Kind == TrayCommandKind.ToggleMode).Label);
+        Assert.Equal(exit, state.Entries.Single(entry => entry.Kind == TrayCommandKind.Exit).Label);
+    }
+
+    [Fact]
+    public async Task Menu_RebuildsAfterPreferenceAndLanguageChanges()
+    {
+        var fixture = new TrayFixture();
+        await using var service = fixture.CreateService();
+        Assert.Equal(4, fixture.Platform.MenuState!.Entries.Count);
+
+        fixture.Runtime.SetSettings(Settings(new TrayMenuOptions(false, false, false)) with { Language = AppLanguage.Russian });
+        Assert.Equal([TrayCommandKind.Exit], fixture.Platform.MenuState!.Entries.Select(entry => entry.Kind));
+        Assert.Equal("Выход", fixture.Platform.MenuState.Entries[0].Label);
+
+        fixture.Localization.Apply(AppLanguage.English);
+
+        Assert.Equal("Exit", fixture.Platform.MenuState.Entries[0].Label);
+    }
+
+    [Fact]
+    public async Task Menu_RebuildsAfterTemperatureAndModeSnapshotChanges()
+    {
+        var fixture = new TrayFixture();
+        await using var service = fixture.CreateService();
+
+        fixture.Runtime.Publish(Snapshot(RuntimeStatus.Active, true, 72));
+
+        Assert.Equal(
+            "72°C",
+            fixture.Platform.MenuState!.Entries.Single(entry => entry.Kind == TrayCommandKind.Temperature).Label);
+        Assert.Equal(
+            "Disable mode",
+            fixture.Platform.MenuState.Entries.Single(entry => entry.Kind == TrayCommandKind.ToggleMode).Label);
+    }
+
+    [Fact]
+    public async Task TypedCommandRouting_InvokesOnlyMatchingActionsAndTemperatureIsNonActionable()
+    {
+        var fixture = new TrayFixture();
+        await using var service = fixture.CreateService();
+
+        fixture.Platform.RaiseCommand(TrayCommandKind.Open);
+        fixture.Platform.RaiseCommand(TrayCommandKind.ToggleMode);
+        await WaitUntilAsync(() => fixture.Window.BringToFrontCalls == 1 && fixture.ToggleCalls == 1);
+
+        var showCalls = fixture.Window.BringToFrontCalls;
+        var toggleCalls = fixture.ToggleCalls;
+        fixture.Platform.RaiseCommand(TrayCommandKind.Temperature);
+        await Task.Delay(50, TestContext.Current.CancellationToken);
+
+        Assert.Equal(showCalls, fixture.Window.BringToFrontCalls);
+        Assert.Equal(toggleCalls, fixture.ToggleCalls);
+        Assert.False(fixture.ClosePolicy.IsExplicitExitRequested);
+        Assert.Equal(0, fixture.Runtime.StopCalls);
+    }
+
+
+    [Fact]
+    public void NotifyPlatform_RebuildsFreshTypedMenuAndDisposesReplacedAndCurrentItems()
+    {
+        _sta.Run(() =>
+        {
+            var notifyIcon = new Forms.NotifyIcon();
+            var ownedIcon = (Icon)SystemIcons.Application.Clone();
+            var platform = new NotifyIconTrayPlatform(ownedIcon, notifyIcon);
+            var routed = new List<TrayCommandKind>();
+            platform.CommandRequested += (_, kind) => routed.Add(kind);
+            platform.MenuState = new TrayMenuState(
+                "LumaTherm",
+                "device",
+                [
+                    new TrayMenuEntry(TrayCommandKind.Exit, "Exit", true),
+                    new TrayMenuEntry(TrayCommandKind.Temperature, "68°C", true),
+                    new TrayMenuEntry(TrayCommandKind.ToggleMode, "Disable mode", true),
+                    new TrayMenuEntry(TrayCommandKind.Open, "Open LumaTherm", true),
+                ]);
+            var firstMenu = Assert.IsType<Forms.ContextMenuStrip>(notifyIcon.ContextMenuStrip);
+            var firstItems = firstMenu.Items.Cast<Forms.ToolStripMenuItem>().ToArray();
+
+            foreach (var item in firstItems)
+            {
+                item.PerformClick();
+            }
+
+            Assert.Equal(
+                [TrayCommandKind.Exit, TrayCommandKind.ToggleMode, TrayCommandKind.Open],
+                routed);
+
+            platform.MenuState = new TrayMenuState(
+                "LumaTherm",
+                "device",
+                [new TrayMenuEntry(TrayCommandKind.Exit, "Exit", true)]);
+            var currentMenu = Assert.IsType<Forms.ContextMenuStrip>(notifyIcon.ContextMenuStrip);
+            var currentItems = currentMenu.Items.Cast<Forms.ToolStripMenuItem>().ToArray();
+
+            Assert.NotSame(firstMenu, currentMenu);
+            Assert.True(firstMenu.IsDisposed);
+            Assert.All(firstItems, item => Assert.True(item.IsDisposed));
+            Assert.Single(currentItems);
+
+            platform.Dispose();
+
+            Assert.True(currentMenu.IsDisposed);
+            Assert.All(currentItems, item => Assert.True(item.IsDisposed));
+        });
     }
 
     [Fact]
@@ -222,16 +383,20 @@ public sealed class TrayIconServiceTests
     {
         var fixture = new TrayFixture();
         var service = fixture.CreateService();
+        var menuAssignments = fixture.Platform.MenuStateAssignments;
 
         await service.DisposeAsync();
         await service.DisposeAsync();
         fixture.Platform.RaiseToggle();
         fixture.Runtime.Publish(Snapshot(RuntimeStatus.Faulted, true, 68));
+        fixture.Runtime.SetSettings(Settings(new TrayMenuOptions(false, false, false)) with { Language = AppLanguage.Russian });
+        fixture.Localization.Apply(AppLanguage.Russian);
         await Task.Delay(50, TestContext.Current.CancellationToken);
 
         Assert.Equal(1, fixture.Platform.DisposeCalls);
         Assert.Equal(0, fixture.ToggleCalls);
         Assert.Empty(fixture.Platform.Notifications);
+        Assert.Equal(menuAssignments, fixture.Platform.MenuStateAssignments);
     }
 
     private static async Task WaitUntilAsync(Func<bool> condition)
@@ -241,15 +406,59 @@ public sealed class TrayIconServiceTests
         while (!condition()) await Task.Delay(10, linked.Token);
     }
 
-    private static RuntimeSnapshot Snapshot(RuntimeStatus status, bool modeEnabled, double temperature) => new(
+    private static RuntimeSnapshot Snapshot(RuntimeStatus status, bool modeEnabled, double? temperature) => new(
         status,
-        new TemperatureReading(temperature, "NVML", "RTX 5070", DateTimeOffset.UtcNow),
+        temperature is null
+            ? null
+            : new TemperatureReading(temperature.Value, "NVML", "RTX 5070", DateTimeOffset.UtcNow),
         null,
         null,
         new LightingDeviceInfo("lamp", "GIGABYTE Device", 12, true),
         null,
         DateTimeOffset.UtcNow,
         modeEnabled);
+
+    private static AppSettings Settings(TrayMenuOptions options) =>
+        AppSettings.Default with { TrayMenu = options };
+
+    private sealed class FakeLocalization(AppLanguage language) : ILocalizationService
+    {
+        public AppLanguage CurrentLanguage { get; private set; } = language;
+        public event EventHandler? LanguageChanged;
+
+        public string Get(string key)
+        {
+            var english = CurrentLanguage == AppLanguage.English;
+            return key switch
+            {
+                "App.Name" => "LumaTherm",
+                "Tray.Open" => english ? "Open LumaTherm" : "Открыть LumaTherm",
+                "Tray.EnableMode" => english ? "Enable mode" : "Включить режим",
+                "Tray.DisableMode" => english ? "Disable mode" : "Выключить режим",
+                "Tray.Exit" => english ? "Exit" : "Выход",
+                "Tray.Available" => english ? "Available" : "Доступна",
+                "Tray.Unavailable" => english ? "Unavailable" : "Недоступна",
+                "Tray.StatusDisabled" => english ? "Disabled" : "Выключено",
+                "Tray.StatusConnecting" => english ? "Connecting" : "Подключение",
+                "Tray.StatusActive" => english ? "Active" : "Активно",
+                "Tray.StatusHolding" => english ? "Holding color" : "Удержание цвета",
+                "Tray.StatusSensorUnavailable" => english ? "No sensor" : "Нет датчика",
+                "Tray.StatusLightingUnavailable" => english ? "No lighting" : "Нет подсветки",
+                "Tray.StatusSuspended" => english ? "Suspended" : "Приостановлено",
+                "Tray.StatusFaulted" => english ? "Error" : "Ошибка",
+                "Tray.StatusUnknown" => english ? "Unknown" : "Неизвестно",
+                "Runtime.LightingNotFound" => english ? "Lighting not found" : "Подсветка не обнаружена",
+                _ => throw new KeyNotFoundException(key),
+            };
+        }
+
+        public void Apply(AppLanguage value)
+        {
+            if (CurrentLanguage == value) return;
+            CurrentLanguage = value;
+            LanguageChanged?.Invoke(this, EventArgs.Empty);
+        }
+    }
 
     private sealed class TrayFixture
     {
@@ -263,6 +472,7 @@ public sealed class TrayIconServiceTests
             ClosePolicy = new WindowClosePolicy(() => true);
         }
         public FakeTrayPlatform Platform { get; } = new();
+        public FakeLocalization Localization { get; } = new(AppLanguage.English);
         public FakeWindow Window { get; } = new();
         public FakeApplication Application { get; } = new();
         public FakeRuntime Runtime => _runtime;
@@ -283,6 +493,9 @@ public sealed class TrayIconServiceTests
                 Window,
                 Application,
                 Runtime,
+                Localization,
+                () => Runtime.CurrentSettings,
+                Runtime,
                 async () => { ToggleCalls++; await Toggle(); },
                 ClosePolicy,
                 () => NotificationsEnabled,
@@ -294,15 +507,15 @@ public sealed class TrayIconServiceTests
     {
         private bool _visible;
         public event EventHandler? LeftClick;
+        private TrayMenuState? _menuState;
         public event EventHandler? DoubleClick;
-        public event EventHandler? OpenRequested;
-        public event EventHandler? ToggleRequested;
-        public event EventHandler? ExitRequested;
         public List<(string Title, string Message)> Notifications { get; } = [];
         public List<string> Order { get; set; } = [];
         public int DisposeCalls { get; private set; }
+        public event EventHandler<TrayCommandKind>? CommandRequested;
         public int HideCalls { get; private set; }
         public Exception? HideFailure { get; set; }
+        public int MenuStateAssignments { get; private set; }
         public Exception? DisposeFailure { get; set; }
         public bool Visible
         {
@@ -318,7 +531,15 @@ public sealed class TrayIconServiceTests
                 _visible = value;
             }
         }
-        public TrayMenuState? MenuState { get; set; }
+        public TrayMenuState? MenuState
+        {
+            get => _menuState;
+            set
+            {
+                _menuState = value;
+                MenuStateAssignments++;
+            }
+        }
         public void ShowNotification(string title, string message) => Notifications.Add((title, message));
         public void Dispose()
         {
@@ -328,9 +549,10 @@ public sealed class TrayIconServiceTests
         }
         public void RaiseLeftClick() => LeftClick?.Invoke(this, EventArgs.Empty);
         public void RaiseDoubleClick() => DoubleClick?.Invoke(this, EventArgs.Empty);
-        public void RaiseOpen() => OpenRequested?.Invoke(this, EventArgs.Empty);
-        public void RaiseToggle() => ToggleRequested?.Invoke(this, EventArgs.Empty);
-        public void RaiseExit() => ExitRequested?.Invoke(this, EventArgs.Empty);
+        public void RaiseOpen() => RaiseCommand(TrayCommandKind.Open);
+        public void RaiseToggle() => RaiseCommand(TrayCommandKind.ToggleMode);
+        public void RaiseExit() => RaiseCommand(TrayCommandKind.Exit);
+        public void RaiseCommand(TrayCommandKind kind) => CommandRequested?.Invoke(this, kind);
     }
 
     private sealed class FakeWindow : ITrayWindow
@@ -360,16 +582,25 @@ public sealed class TrayIconServiceTests
         public void RequestShutdown() { Order.Add("app.shutdown"); ShutdownRequested.TrySetResult(); }
     }
 
-    private sealed class FakeRuntime(List<string> order) : IThermalRuntime
+    private sealed class FakeRuntime(List<string> order) : IThermalRuntime, INotifyPropertyChanged
     {
         private RuntimeSnapshot _snapshot = Snapshot(RuntimeStatus.Disabled, false, 68);
         public Exception? StopFailure { get; set; }
         public event EventHandler<RuntimeSnapshot>? SnapshotChanged;
         public RuntimeSnapshot CurrentSnapshot => _snapshot;
-        public AppSettings CurrentSettings => AppSettings.Default;
+        public event PropertyChangedEventHandler? PropertyChanged;
+        private AppSettings _settings = AppSettings.Default;
+        public int StopCalls { get; private set; }
+        public AppSettings CurrentSettings => _settings;
         public void Publish(RuntimeSnapshot snapshot) { _snapshot = snapshot; SnapshotChanged?.Invoke(this, snapshot); }
+        public void SetSettings(AppSettings settings)
+        {
+            _settings = settings;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CurrentSettings)));
+        }
         public Task StopAsync(CancellationToken cancellationToken)
         {
+            StopCalls++;
             order.Add("runtime.stop");
             return StopFailure is null ? Task.CompletedTask : Task.FromException(StopFailure);
         }

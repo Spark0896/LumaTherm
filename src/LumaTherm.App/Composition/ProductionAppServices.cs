@@ -59,7 +59,7 @@ public static class ProductionAppServices
                 localization.Apply(settings.Language);
                 return new WpfUiSession(runtime, startup, settings, lightingDiscovery ?? EmptyLightingDeviceDiscovery.Instance);
             },
-            (ui, runtime) => new WpfTraySession((WpfUiSession)ui, runtime, application, exception => WriteFailure(logger, "app.unhandled", exception)),
+            (ui, runtime) => new WpfTraySession((WpfUiSession)ui, runtime, application, localization, exception => WriteFailure(logger, "app.unhandled", exception)),
             runtime => new PowerEventService(new WindowsPowerEventSource(), runtime, exception => WriteFailure(logger, "runtime.power_failed", exception)),
             (_, _) => new ReadOnlyDiscoverySession(lighting ?? throw new InvalidOperationException("Lighting composition is unavailable."), () => logger),
             new WpfAppDispatcher(application.Dispatcher));
@@ -236,13 +236,16 @@ public static class ProductionAppServices
     private sealed class WpfTraySession : IAppTraySession
     {
         private readonly TrayIconService _service;
-        public WpfTraySession(WpfUiSession ui, IThermalRuntime runtime, System.Windows.Application application, Action<Exception> failure)
+        public WpfTraySession(WpfUiSession ui, IThermalRuntime runtime, System.Windows.Application application, ILocalizationService localization, Action<Exception> failure)
         {
             _service = new TrayIconService(
                 new NotifyIconTrayPlatform(),
                 new WpfTrayWindow(ui.Window),
                 new WpfTrayApplication(application),
                 runtime,
+                localization,
+                () => ui.Settings.LiveSettings,
+                ui.Settings,
                 () => runtime.SetModeEnabledAsync(!runtime.CurrentSettings.IsModeEnabled, CancellationToken.None),
                 ui.ClosePolicy,
                 () => ui.Settings.LiveSettings.NotificationsEnabled,
