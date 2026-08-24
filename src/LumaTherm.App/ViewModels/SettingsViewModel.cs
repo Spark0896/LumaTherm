@@ -201,16 +201,30 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
         DetachProfileEditor();
     }
 
-    private async Task RunSettingsMutationAsync(Func<Task> mutation)
+    private async Task RunSettingsMutationAsync(Func<CancellationToken, Task> mutation)
     {
-        await _settingsMutationGate.WaitAsync();
+        if (_disposeCancellation.IsCancellationRequested)
+        {
+            return;
+        }
+
+        var lockTaken = false;
         try
         {
-            await mutation();
+            await _settingsMutationGate.WaitAsync(_disposeCancellation.Token);
+            lockTaken = true;
+            _disposeCancellation.Token.ThrowIfCancellationRequested();
+            await mutation(_disposeCancellation.Token);
+        }
+        catch (OperationCanceledException) when (_disposeCancellation.IsCancellationRequested)
+        {
         }
         finally
         {
-            _settingsMutationGate.Release();
+            if (lockTaken)
+            {
+                _settingsMutationGate.Release();
+            }
         }
     }
 
@@ -282,15 +296,17 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
         }
     }
 
-    private async Task SaveAsync()
+    private async Task SaveAsync(CancellationToken cancellationToken)
     {
         await AutostartInitialization;
+        cancellationToken.ThrowIfCancellationRequested();
         AppSettings candidate;
 
         try
         {
             candidate = CreateCandidate();
-            await _runtime.UpdatePreferencesAsync(candidate, CancellationToken.None);
+            await _runtime.UpdatePreferencesAsync(candidate, cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
         }
         catch (ArgumentException exception)
         {
@@ -310,18 +326,24 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
         {
             try
             {
-                await _startupService.SetEnabledAsync(candidate.IsAutostartEnabled, CancellationToken.None);
+                await _startupService.SetEnabledAsync(candidate.IsAutostartEnabled, cancellationToken);
+                cancellationToken.ThrowIfCancellationRequested();
                 _authoritativeAutostartEnabled = candidate.IsAutostartEnabled;
                 _hasAuthoritativeAutostart = true;
                 _isAutostartDirty = false;
             }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
             catch (Exception)
             {
-                ValidationMessage = await RollBackRuntimeAfterStartupFailureAsync();
+                ValidationMessage = await RollBackRuntimeAfterStartupFailureAsync(cancellationToken);
                 return;
             }
         }
 
+        cancellationToken.ThrowIfCancellationRequested();
         _isAutostartDirty = false;
         Commit(_runtime.CurrentSettings, null);
     }
@@ -329,6 +351,7 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
     private void ResetDefaults()
     {
         LoadEditableValues(AppSettings.Default);
+        _isAutostartDirty = true;
         ValidationMessage = null;
     }
 
@@ -363,12 +386,16 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
         ShowTrayModeToggle = settings.TrayMenu.ShowModeToggle;
     }
 
-    private async Task<string> RollBackRuntimeAfterStartupFailureAsync()
+    private async Task<string> RollBackRuntimeAfterStartupFailureAsync(CancellationToken cancellationToken)
     {
         try
         {
-            await _runtime.UpdatePreferencesAsync(_liveSettings, CancellationToken.None);
+            await _runtime.UpdatePreferencesAsync(_liveSettings, cancellationToken);
             return "Не удалось изменить автозапуск.";
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
         }
         catch (Exception)
         {
@@ -506,6 +533,7 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
+            throw;
         }
         catch (Exception)
         {

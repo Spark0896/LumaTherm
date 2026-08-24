@@ -50,6 +50,56 @@ public sealed class SettingsViewModelTests
     }
 
     [Fact]
+    public async Task DisposeWhileSaveAwaitsAutostartRead_PreventsRuntimeAndStartupWrites()
+    {
+        var recorder = new OperationRecorder();
+        var runtime = new FakeThermalRuntime(recorder);
+        var startup = new PendingStartupService(recorder);
+        var vm = new SettingsViewModel(runtime, startup, AppSettings.Default);
+        vm.IsAutostartEnabled = true;
+
+        var save = vm.SaveCommand.ExecuteAsync();
+        await startup.ReadEntered;
+
+        vm.Dispose();
+        startup.CompleteRead(enabled: false);
+        await save;
+
+        Assert.Equal(0, runtime.UpdateCalls);
+        Assert.Equal(0, runtime.PersistenceCount);
+        Assert.Equal(0, startup.SetCalls);
+        Assert.False(startup.IsEnabled);
+        Assert.Null(vm.ValidationMessage);
+    }
+
+    [Fact]
+    public async Task ResetBeforeAutostartReadCompletes_RemainsOffAndSaveDisablesAuthoritativeStartup()
+    {
+        var recorder = new OperationRecorder();
+        var runtime = new FakeThermalRuntime(recorder);
+        var startup = new PendingStartupService(recorder);
+        using var vm = new SettingsViewModel(
+            runtime,
+            startup,
+            AppSettings.Default with { IsAutostartEnabled = true });
+
+        await startup.ReadEntered;
+        vm.ResetDefaultsCommand.Execute(null);
+        startup.CompleteRead(enabled: true);
+        await vm.AutostartInitialization;
+
+        Assert.False(vm.IsAutostartEnabled);
+
+        await vm.SaveCommand.ExecuteAsync();
+
+        Assert.False(vm.IsAutostartEnabled);
+        Assert.False(runtime.CurrentSettings.IsAutostartEnabled);
+        Assert.False(startup.IsEnabled);
+        Assert.Equal(1, runtime.UpdateCalls);
+        Assert.Equal(1, startup.SetCalls);
+    }
+
+    [Fact]
     public async Task PickSelectedColor_SuccessUpdatesOnlyDraftSelectedPoint()
     {
         var recorder = new OperationRecorder();
@@ -819,6 +869,39 @@ public sealed class SettingsViewModelTests
 
             IsEnabled = enabled;
             return Task.CompletedTask;
+        }
+    }
+
+    private sealed class PendingStartupService(OperationRecorder recorder) : IStartupService
+    {
+        private readonly TaskCompletionSource<bool> _read = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource _readEntered = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public bool IsEnabled { get; private set; }
+        public int GetCalls { get; private set; }
+        public int SetCalls { get; private set; }
+        public Task ReadEntered => _readEntered.Task;
+
+        public async Task<bool> GetEnabledAsync(CancellationToken cancellationToken)
+        {
+            GetCalls++;
+            _readEntered.TrySetResult();
+            return await _read.Task.WaitAsync(cancellationToken);
+        }
+
+        public Task SetEnabledAsync(bool enabled, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            SetCalls++;
+            IsEnabled = enabled;
+            recorder.Record($"startup:{enabled.ToString().ToLowerInvariant()}");
+            return Task.CompletedTask;
+        }
+
+        public void CompleteRead(bool enabled)
+        {
+            IsEnabled = enabled;
+            _read.TrySetResult(enabled);
         }
     }
 
