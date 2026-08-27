@@ -84,3 +84,63 @@ Expected environmental noise was limited to Russian-localized .NET/VSTest progre
 - Reviewed diagnostics: stable UI text does not replace existing exception propagation or logging.
 - `git diff --check` is clean.
 - No packaging manifests, installer metadata, publish scripts, CI release flow, or Task 14+ scope was modified.
+
+## Fix Round 1 — independent review findings
+
+### Root cause and RED evidence
+
+1. About secondary text referenced the application key `SecondaryTextBrush`, but the shared palette did not define it. The connected WPF runtime therefore resolved each local `Foreground` to the black dependency-property default over `PanelBackground #20252B`.
+
+   ```powershell
+   & .\.dotnet\dotnet.exe test .\tests\LumaTherm.App.Tests -c Release -p:NuGetAudit=false --filter "FullyQualifiedName~Task13LocalizationRuntimeTests.ExistingAboutSecondaryText_ResolvesMeaningfulContrastInRussianAndEnglish"
+   ```
+
+   RED exit code: `1`; failed 1 / total 1. The behavior assertion read the actual resolved brushes and reported `#FF000000 on #FF20252B` for the Russian About subtitle. The first post-resource run exposed an unhosted-test limitation (the disconnected view retained RU during EN switching); the test was corrected to host the same About instance in an invisible real WPF window, matching shipping resource invalidation behavior.
+
+2. Settings preserved the selected unavailable device as a typed `LightingDeviceInfo(IsAvailable: false)`, but `ApplySnapshot` filtered lookup to available devices only. `LanguageChanged` reran `ApplySnapshot`, which therefore replaced the unavailable label with `Runtime.LightingNotFound` even though selection identity and availability state were intact.
+
+   ```powershell
+   & .\.dotnet\dotnet.exe test .\tests\LumaTherm.App.Tests -c Release -p:NuGetAudit=false --filter "FullyQualifiedName~Task13LocalizationRuntimeTests.SavedUnavailableDevice_LanguageRoundTripPreservesSelectionAndUnavailableProjection"
+   ```
+
+   RED exit code: `1`; failed 1 / total 1. After RU→EN, expected `Lighting is unavailable`, actual `Lighting not found`; `lamp-missing` remained selected, proving the projection—not the semantic state—was corrupted.
+
+### Minimal fixes and GREEN evidence
+
+- Added application-scoped `SecondaryText #A9B5BD` and frozen `SecondaryTextBrush`. The runtime test checks all three actual About secondary foregrounds at `>= 4.5:1` against the panel in both RU and EN on the same hosted view.
+- Changed Settings snapshot projection to inspect the selected typed device: unavailable maps to localized `Runtime.LightingUnavailable`, available maps to its device name, absent maps to `Runtime.LightingNotFound`; a real runtime snapshot device still takes precedence. The round trip asserts RU→EN→RU name, hardware status, choice label, `IsAvailable == false`, and selected identity.
+- Each isolated regression passed after its respective fix: exit code `0`, passed 1 / total 1.
+
+Focused review-fix suite:
+
+```powershell
+& .\.dotnet\dotnet.exe test .\tests\LumaTherm.App.Tests -c Release -p:NuGetAudit=false --filter "FullyQualifiedName~Task13LocalizationRuntimeTests|FullyQualifiedName~SettingsViewModelTests|FullyQualifiedName~SettingsUiRuntimeTestsAbout|FullyQualifiedName~AboutViewModelTests|FullyQualifiedName~ThermalCoreRuntimeTests.Theme_ResolvesExactColorsAndFrozenBrushesAtRuntime"
+```
+
+Exit code: `0`; passed 52, failed 0, skipped 0.
+
+Full App:
+
+```powershell
+& .\.dotnet\dotnet.exe test .\tests\LumaTherm.App.Tests -c Release -p:NuGetAudit=false
+```
+
+Exit code: `0`; passed 265, failed 0, skipped 0.
+
+Full solution:
+
+```powershell
+& .\.dotnet\dotnet.exe test .\LumaTherm.sln -c Release -p:NuGetAudit=false
+```
+
+Exit code: `0`; passed 560 total: Core 123, Infrastructure 111, App 265, Smoke 19, Packaging 42; failed 0, skipped 0.
+
+Release build:
+
+```powershell
+& .\.dotnet\dotnet.exe build .\LumaTherm.sln -c Release -p:NuGetAudit=false
+```
+
+Exit code: `0`; warnings 0, errors 0. Expected noise remained Russian-localized .NET/VSTest progress plus parallel solution output; restore reported every project up to date.
+
+Fix Round 1 stayed inside Task 13 and did not change runtime/background ownership or any Task 14/packaging artifact.

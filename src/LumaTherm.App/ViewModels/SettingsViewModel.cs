@@ -559,9 +559,13 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
             ? string.Create(CultureInfo.InvariantCulture, $"{reading.Celsius:0}°C")
             : "—";
         GpuName = snapshot.Temperature?.DeviceName ?? _localization.Get("Runtime.GpuNotFound");
-        LightingDeviceName = snapshot.LightingDevice?.Name
-            ?? LightingDevices.FirstOrDefault(device => device.Id == SelectedLightingDeviceId && device.IsAvailable)?.Name
-            ?? _localization.Get("Runtime.LightingNotFound");
+        var selectedDevice = LightingDevices.FirstOrDefault(device => device.Id == SelectedLightingDeviceId);
+        LightingDeviceName = snapshot.LightingDevice?.Name ?? selectedDevice switch
+        {
+            { IsAvailable: false } => _localization.Get("Runtime.LightingUnavailable"),
+            { IsAvailable: true } => selectedDevice.Name,
+            _ => _localization.Get("Runtime.LightingNotFound"),
+        };
     }
 
     private static string ValidationKey(ArgumentException exception) => exception.Message switch

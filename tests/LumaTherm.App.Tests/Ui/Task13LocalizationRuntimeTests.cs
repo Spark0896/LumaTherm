@@ -92,6 +92,107 @@ public sealed class Task13LocalizationRuntimeTests(ThermalCoreStaFixture sta)
     }
 
     [Fact]
+    public void SavedUnavailableDevice_LanguageRoundTripPreservesSelectionAndUnavailableProjection()
+    {
+        sta.Run(() =>
+        {
+            var localization = new LocalizationService(Application.Current.Resources, new CultureInfo("ru-RU"));
+            localization.Apply(AppLanguage.Russian);
+            var saved = AppSettings.Default with { PreferredLightingDeviceId = "lamp-missing" };
+            using var settings = new SettingsViewModel(
+                new FakeRuntime(),
+                new FakeStartup(),
+                saved,
+                new FakePicker(),
+                new FakeDiscovery(new LumaTherm.Core.Lighting.LightingDeviceInfo("lamp-a", "Desk Lamp", 8, true)),
+                localization);
+
+            try
+            {
+                settings.DiscoverLightingDevicesCommand.ExecuteAsync().GetAwaiter().GetResult();
+
+                AssertSavedUnavailable(settings,
+                    "Подсветка недоступна",
+                    "Сохранённое устройство недоступно или занято другим контроллером.",
+                    "lamp-missing (недоступно)");
+
+                localization.Apply(AppLanguage.English);
+                AssertSavedUnavailable(settings,
+                    "Lighting is unavailable",
+                    "The saved device is unavailable or in use by another controller.",
+                    "lamp-missing (unavailable)");
+
+                localization.Apply(AppLanguage.Russian);
+                AssertSavedUnavailable(settings,
+                    "Подсветка недоступна",
+                    "Сохранённое устройство недоступно или занято другим контроллером.",
+                    "lamp-missing (недоступно)");
+            }
+            finally
+            {
+                localization.Apply(AppLanguage.English);
+            }
+        });
+    }
+
+    [Fact]
+    public void ExistingAboutSecondaryText_ResolvesMeaningfulContrastInRussianAndEnglish()
+    {
+        sta.Run(() =>
+        {
+            var localization = new LocalizationService(Application.Current.Resources, new CultureInfo("ru-RU"));
+            localization.Apply(AppLanguage.Russian);
+            using var about = new AboutViewModel(new FakeFeed(), new FakeLauncher(), localization);
+            var view = new AboutView { DataContext = about };
+            var host = new Window
+            {
+                Content = view,
+                Width = 884,
+                Height = 552,
+                Opacity = 0,
+                ShowInTaskbar = false,
+                ShowActivated = false,
+            };
+            try
+            {
+                host.Show();
+                PumpBindings(view);
+                AssertAboutSecondaryContrast(view,
+                    "Версия, лицензия, исходный код и обновления",
+                    "LumaTherm управляет подсветкой по температуре GPU на совместимых устройствах.",
+                    "LumaTherm — бесплатная программа с открытым исходным кодом по лицензии MIT.");
+
+                localization.Apply(AppLanguage.English);
+                PumpBindings(view);
+
+                AssertAboutSecondaryContrast(view,
+                    "Version, license, source code, and updates",
+                    "LumaTherm controls thermal lighting by linking GPU temperature to compatible lighting devices.",
+                    "LumaTherm is free and open source software under the MIT License.");
+            }
+            finally
+            {
+                host.Close();
+                localization.Apply(AppLanguage.English);
+            }
+        });
+    }
+
+    private static void AssertSavedUnavailable(
+        SettingsViewModel settings,
+        string expectedName,
+        string expectedStatus,
+        string expectedChoiceName)
+    {
+        Assert.Equal("lamp-missing", settings.SelectedLightingDeviceId);
+        Assert.Equal(expectedName, settings.LightingDeviceName);
+        Assert.Equal(expectedStatus, settings.LightingHardwareStatus);
+        var choice = Assert.Single(settings.LightingDevices, device => device.Id == "lamp-missing");
+        Assert.False(choice.IsAvailable);
+        Assert.Equal(expectedChoiceName, choice.Name);
+    }
+
+    [Fact]
     public void EnglishCompiledSurfaces_ExposeNoCyrillicTextOrAccessibilityLabelsAndKeepIdleDeviceState()
     {
         sta.Run(() =>
@@ -243,6 +344,22 @@ public sealed class Task13LocalizationRuntimeTests(ThermalCoreStaFixture sta)
         return (Math.Max(first, second) + 0.05) / (Math.Min(first, second) + 0.05);
     }
 
+    private static void AssertAboutSecondaryContrast(AboutView view, params string[] expectedTexts)
+    {
+        var panel = Assert.IsType<SolidColorBrush>(Application.Current.Resources["PanelBackgroundBrush"]);
+        foreach (var expected in expectedTexts)
+        {
+            var blocks = Descendants(view).OfType<TextBlock>().ToArray();
+            var matches = blocks.Where(block => block.Text == expected).ToArray();
+            Assert.True(matches.Length == 1,
+                $"Expected one About text '{expected}', found {matches.Length}. Actual: {string.Join(" | ", blocks.Select(block => block.Text))}");
+            var block = matches[0];
+            var foreground = Assert.IsType<SolidColorBrush>(block.Foreground);
+            Assert.True(Contrast(foreground.Color, panel.Color) >= 4.5,
+                $"About secondary text '{expected}' has insufficient contrast ({foreground.Color} on {panel.Color}).");
+        }
+    }
+
     private sealed class FakeRuntime : IThermalRuntime
     {
         public event EventHandler<RuntimeSnapshot>? SnapshotChanged { add { } remove { } }
@@ -282,10 +399,10 @@ public sealed class Task13LocalizationRuntimeTests(ThermalCoreStaFixture sta)
         public RgbColor? Pick(RgbColor current) => null;
     }
 
-    private sealed class FakeDiscovery : ILightingDeviceDiscovery
+    private sealed class FakeDiscovery(params LumaTherm.Core.Lighting.LightingDeviceInfo[] devices) : ILightingDeviceDiscovery
     {
         public Task<IReadOnlyList<LumaTherm.Core.Lighting.LightingDeviceInfo>> DiscoverAsync(CancellationToken cancellationToken) =>
-            Task.FromResult<IReadOnlyList<LumaTherm.Core.Lighting.LightingDeviceInfo>>([]);
+            Task.FromResult<IReadOnlyList<LumaTherm.Core.Lighting.LightingDeviceInfo>>(devices);
     }
 
     private sealed class FakeFeed : IReleaseFeed

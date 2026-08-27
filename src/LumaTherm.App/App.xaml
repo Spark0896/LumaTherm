@@ -15,6 +15,7 @@
             <Color x:Key="PanelBackground">#20252B</Color>
             <Color x:Key="PanelSecondary">#1B2025</Color>
             <Color x:Key="PrimaryText">#EEF4F8</Color>
+            <Color x:Key="SecondaryText">#A9B5BD</Color>
             <Color x:Key="MutedText">#7E8994</Color>
             <Color x:Key="ColdColor">#50C8FF</Color>
             <Color x:Key="WarmColor">#FFC64A</Color>
@@ -26,6 +27,7 @@
             <SolidColorBrush x:Key="PanelBackgroundBrush" Color="{StaticResource PanelBackground}" po:Freeze="True" />
             <SolidColorBrush x:Key="PanelSecondaryBrush" Color="{StaticResource PanelSecondary}" po:Freeze="True" />
             <SolidColorBrush x:Key="PrimaryTextBrush" Color="{StaticResource PrimaryText}" po:Freeze="True" />
+            <SolidColorBrush x:Key="SecondaryTextBrush" Color="{StaticResource SecondaryText}" po:Freeze="True" />
             <SolidColorBrush x:Key="MutedTextBrush" Color="{StaticResource MutedText}" po:Freeze="True" />
             <SolidColorBrush x:Key="ColdColorBrush" Color="{StaticResource ColdColor}" po:Freeze="True" />
             <SolidColorBrush x:Key="WarmColorBrush" Color="{StaticResource WarmColor}" po:Freeze="True" />
