@@ -41,34 +41,7 @@ Name: "{autoprograms}\LumaTherm"; Filename: "{app}\payload\app\LumaTherm.exe"; T
 Filename: "powershell.exe"; Parameters: "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File ""{app}\payload\Unregister-LumaTherm.ps1"" -Force"; Flags: runhidden waituntilterminated; RunOnceId: "UnregisterLumaThermIdentity"
 
 [Code]
-var
-  CertificateImportApproved: Boolean;
-
-function HasExactCommandLineParameter(const Wanted: String): Boolean;
-var
-  Index: Integer;
-begin
-  Result := False;
-  for Index := 1 to ParamCount do
-    if CompareText(ParamStr(Index), Wanted) = 0 then
-    begin
-      Result := True;
-      Exit;
-    end;
-end;
-
-function InitializeSetup: Boolean;
-begin
-  if WizardSilent then
-    CertificateImportApproved := HasExactCommandLineParameter('/ALLOWCERTIMPORT')
-  else
-    CertificateImportApproved := SuppressibleMsgBox(
-      'LumaTherm must import the bundled public signing certificate into LocalMachine\TrustedPeople to register Windows lighting identity. No private key is imported. Allow this certificate import?',
-      mbConfirmation, MB_YESNO, IDNO) = IDYES;
-  Result := CertificateImportApproved;
-  if not Result then
-    Log('LumaTherm certificate import was not explicitly approved; setup stopped before replacement or registration.');
-end;
+#include "LumaTherm.Consent.iss"
 
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 var
@@ -95,9 +68,9 @@ begin
   if CurStep = ssPostInstall then
   begin
     Helper := ExpandConstant('{app}\payload\Register-LumaTherm.ps1');
-    Parameters := ExpandConstant('-NoProfile -NonInteractive -ExecutionPolicy Bypass -File ""{app}\payload\Register-LumaTherm.ps1"" -PortableDirectory ""{app}\payload"" -NonInteractive');
-    if CertificateImportApproved then
-      Parameters := Parameters + ' -ConfirmCertificateImport';
+    Parameters := BuildRegistrationParameters;
+    if Parameters = '' then
+      RaiseException('Registration consent policy refused to authorize certificate import.');
     if not Exec('powershell.exe', Parameters, '', SW_HIDE, ewWaitUntilTerminated, ResultCode) then
       RaiseException('Registration failed: unable to start the LumaTherm identity helper.');
     if ResultCode <> 0 then

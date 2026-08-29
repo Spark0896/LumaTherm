@@ -178,7 +178,6 @@ public sealed class InstallerScriptTests
         Assert.DoesNotContain(lines, line => line.Contains("settings.json", StringComparison.OrdinalIgnoreCase) && line.Contains("[UninstallDelete]", StringComparison.Ordinal));
         Assert.Contains(lines, line => line.Contains("DestDir: \"{app}\\payload\"", StringComparison.Ordinal));
         Assert.Contains(lines, line => line.Contains("{app}\\payload\\app\\LumaTherm.exe", StringComparison.Ordinal));
-        Assert.Contains(lines, line => line.Contains("-PortableDirectory \"\"{app}\\payload\"\"", StringComparison.Ordinal));
         Assert.Contains(lines, line => line.Contains("Registration failed", StringComparison.Ordinal));
         Assert.Contains(lines, line => line.Contains("RaiseException", StringComparison.Ordinal));
         Assert.DoesNotContain(lines, line => line.Contains("DestDir: \"{app}\\app\"", StringComparison.Ordinal));

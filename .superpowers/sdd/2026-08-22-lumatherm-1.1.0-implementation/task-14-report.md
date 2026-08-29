@@ -231,3 +231,113 @@ All five PowerShell scripts parse without errors. `git diff --check` reports no 
 ### Remaining external blockers and safety statement
 
 ISCC remains unavailable, no approved external PFX/password was supplied, and the repository still has no LICENSE. Therefore the real Full release and Inno compilation remain correctly deferred to Task 16. This fix round performed only test-fixture/audit simulations and the mutation-free Plan; it did not execute real signing, certificate import/store removal, Add/Remove-AppxPackage, installer/uninstaller, or hardware writes.
+
+## Fix Round 2 — material executable coverage
+
+Date: 2026-08-29
+
+The scoped re-review found no new production security defect. It required three mutation-sensitive executable checks that the first fix round had not fully restored. The complete TDD and `writing-good-tests.md` instructions were re-read before editing.
+
+### Publisher/certificate mismatch gate
+
+The new Full-mode integration fixture supplies a real external temporary X509 PFX, present fake SDK/Inno tools, and a safe copied `whoami.exe` at the production dotnet boundary. If the publisher gate is bypassed, the fake external process is reached and emits its unique invalid-argument sentinel; the fixture also observes the repository release/public trees.
+
+Mutation RED: the real subject-equality gate was temporarily removed, then:
+
+```powershell
+& .\.dotnet\dotnet.exe test .\tests\LumaTherm.Packaging.Tests -c Release --no-restore -p:NuGetAudit=false --filter FullyQualifiedName~FullRejectsPublisherCertificateMismatchBeforeAnyToolOrPublicWrite
+```
+
+Exit 1: 1 failed of 1. The result was `Release restore failed` instead of `Publisher does not match`, proving that the mutation reached the external tool boundary. The production gate was immediately restored. GREEN: the same command exited 0 with 1/1 passed; the tool sentinel, `artifacts`, and `dist` were all absent.
+
+### Real asset-generator parity
+
+The new asset integration test parses every PNG reference from the real sparse manifest, requires the exact four approved filenames, copies only the authoritative logo XAML into a unique temporary repository root, executes the real `LumaTherm.AssetBuilder` through the pinned repository dotnet host, requires an exact generated PNG file set, and compares every generated PNG byte-for-byte with its committed counterpart. The GUID output directory is deleted after every run.
+
+Mutation RED: `StoreLogo.png` generation was temporarily changed from 50x50 to 49x50. The focused command:
+
+```powershell
+& .\.dotnet\dotnet.exe test .\tests\LumaTherm.Packaging.Tests -c Release --no-restore -p:NuGetAudit=false --filter FullyQualifiedName~AssetBuilderReproducesEveryManifestReferencedPngByteForByte
+```
+
+Exited 1 with 1/1 failed and a byte mismatch at PNG width byte position 19 (`50` expected, `49` actual). The generator mutation was immediately reversed. GREEN: the identical command exited 0 with 1/1 passed.
+
+### Executable Inno consent boundary
+
+The source-token-only consent test was replaced. `Resolve-LumaThermInstallerConsent.ps1` now provides a pure executable policy boundary and generates the committed `LumaTherm.Consent.iss`. The actual installer includes that generated boundary and obtains the exact registration command from it. Tests execute eight policy rows:
+
+- visible Default and Decline refuse;
+- visible Accept approves;
+- silent mode refuses without a caller token even if a visible decision says Accept;
+- silent mode accepts exact `/ALLOWCERTIMPORT` case-insensitively;
+- `/ALLOWCERTIMPORT=1` and a leading-space variant refuse;
+- only approval returns the exact registration command ending in `-ConfirmCertificateImport`.
+
+RED before implementation:
+
+```powershell
+& .\.dotnet\dotnet.exe test .\tests\LumaTherm.Packaging.Tests -c Release -p:NuGetAudit=false --filter "FullyQualifiedName~InstallerConsentPolicyRequiresVisibleAcceptanceOrExactSilentOptIn|FullyQualifiedName~GeneratedInnoConsentBoundaryMatchesTheCommittedInclude"
+```
+
+Exit 1: 9 failed of 9 because the executable policy/generator script did not exist. GREEN after the minimal boundary/include wiring: exit 0, 9/9 passed. Generated include parity is exact after newline normalization. The stale legacy assertion that required the registration argument to remain in the main `.iss` source was removed; its behavior is now covered by these executable rows, generated parity, and actual compiler validation.
+
+### Official compiler acquisition and actual `.iss` compilation
+
+No local ISCC was found in either standard Program Files location, PATH, or the user profile. Official sources confirmed that Inno Setup 6.7.3 supports `/PORTABLE=1`. The immutable official release was acquired from:
+
+`https://github.com/jrsoftware/issrc/releases/download/is-6_7_3/innosetup-6.7.3.exe`
+
+The downloaded SHA-256 exactly matched the published value:
+
+`9c73c3bae7ed48d44112a0f48e66742c00090bdb5bef71d9d3c056c66e97b732`
+
+The first portable invocation populated only its unique temp root, but PowerShell left `$LASTEXITCODE` blank. Work stopped at that boundary and the recovery was explicitly approved. Before retry, the first root had no `unins*.exe`, association/uninstall registry reference, PATH reference, or related running process. The same hash-verified file was then invoked with:
+
+```powershell
+Start-Process -Wait -PassThru -WindowStyle Hidden <verified-official-installer> /PORTABLE=1 /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /DIR=<unique-temp-compiler> /TASKS=""
+```
+
+Exit code was exactly 0. Every extracted object remained under the new temp root, no reparse point or uninstaller was created, and targeted association/uninstall registry state, CurrentUser/LocalMachine Root and TrustedPeople certificate stores, and process/user/machine PATH snapshots were unchanged.
+
+Compiler identity evidence was the hash-verified Inno Setup 6.7.3 distribution and the `ISCC /?` banner `Inno Setup 6 Command-Line Compiler`; this ISCC build reports file `ProductVersion` as `0.0.0.0`, which is recorded rather than replaced with an inferred file-resource value.
+
+With `LUMATHERM_TEST_ISCC` set only for the test process, the actual script was compiled by the test boundary equivalent to:
+
+```powershell
+ISCC.exe /Qp /O<unique-temp-output> /DPayloadRoot=<unique-temp-payload> packaging\LumaTherm.iss
+```
+
+The focused compiler test exited 0 and found `LumaTherm-1.1.0-win-x64-setup.exe`. That output was deleted in `finally` and was never executed. The 12 combined publisher, asset, consent, generator-parity, and compile-only cases passed 12/12.
+
+After testing, both exact compiler/download temp roots and three verified-empty test-parent directories were removed. Final checks found zero compiler/setup processes, temp remnants, registry references, or PATH references. The earlier certificate-store comparison remained unchanged. Inno was not persisted and PATH/system associations were not modified.
+
+### Fresh final verification
+
+Packaging with the verified temporary ISCC enabled only for actual compile validation:
+
+```powershell
+$env:LUMATHERM_TEST_ISCC = '<verified-temp-ISCC>'
+& .\.dotnet\dotnet.exe test .\tests\LumaTherm.Packaging.Tests -c Release -p:NuGetAudit=false
+```
+
+Exit 0: 66 passed, 0 failed, 0 skipped. The case count increased from 55 to 66: publisher gate +1, asset generator +1, the former single source-token consent case replaced by eight behavior rows (+7 net), generated parity +1, and actual compile boundary +1.
+
+Direct mutation-free Plan:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build-release.ps1 -Mode Plan
+```
+
+Exit 0. The Plan still reports the exact artifacts/stable AppId, filesystem-only discovery, empty Plan/allowed write roots, 15 stages, SignTool and MakeAppx available, default persistent ISCC unavailable, no PFX, no LICENSE, no private-key outputs, and every forbidden side effect false.
+
+The full solution command was executed, but the task tool stream repeatedly omitted only the Packaging footer/final exit after all test processes ended. Completion was therefore established without extrapolation by fresh explicit project exits: Packaging 66, Core 123, Infrastructure 111, App 265, and Smoke 19, all exit 0. Aggregate: 584 passed, 0 failed, 0 skipped across every solution test project.
+
+Release build:
+
+```powershell
+& .\.dotnet\dotnet.exe build .\LumaTherm.sln -c Release -p:NuGetAudit=false
+```
+
+Exit 0: 0 warnings, 0 errors.
+
+All six PowerShell scripts parse without errors and `git diff --check` reports no whitespace errors. No real LumaTherm signing, certificate import/store removal, package registration/removal, installer/uninstaller execution, or hardware write occurred. Remaining external Full-release blockers are unchanged: no persistent ISCC installation, no approved external PFX/password, and no repository LICENSE.

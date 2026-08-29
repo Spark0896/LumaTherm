@@ -294,18 +294,85 @@ public sealed class Task14SecurityRegressionTests
         Assert.False(Directory.Exists(Path.Combine(fixture.RepositoryRoot, "artifacts", "release")));
     }
 
-    [Fact]
-    public void InnoRoutesCertificateSpecificVisibleConsentAndExplicitSilentOptIn()
+    [Theory]
+    [InlineData(false, "Default", null, false)]
+    [InlineData(false, "Decline", null, false)]
+    [InlineData(false, "Accept", null, true)]
+    [InlineData(true, "Accept", null, false)]
+    [InlineData(true, "Default", "/ALLOWCERTIMPORT", true)]
+    [InlineData(true, "Default", "/allowcertimport", true)]
+    [InlineData(true, "Accept", "/ALLOWCERTIMPORT=1", false)]
+    [InlineData(true, "Accept", " /ALLOWCERTIMPORT", false)]
+    public void InstallerConsentPolicyRequiresVisibleAcceptanceOrExactSilentOptIn(
+        bool wizardSilent, string visibleDecision, string? installerArgument, bool expectedApproved)
     {
-        var inno = File.ReadAllText(Path.Combine(RepositoryLayout.Root, "packaging", "LumaTherm.iss"));
-        Assert.Contains("bundled public signing certificate", inno, StringComparison.Ordinal);
-        Assert.Contains("LocalMachine\\TrustedPeople", inno, StringComparison.Ordinal);
-        Assert.Contains("WizardSilent", inno, StringComparison.Ordinal);
-        Assert.Contains("/ALLOWCERTIMPORT", inno, StringComparison.Ordinal);
-        Assert.Contains("SuppressibleMsgBox", inno, StringComparison.Ordinal);
-        Assert.Contains("IDNO", inno, StringComparison.Ordinal);
-        Assert.Contains("if CertificateImportApproved then", inno, StringComparison.Ordinal);
-        Assert.Contains("Parameters := Parameters + ' -ConfirmCertificateImport'", inno, StringComparison.Ordinal);
+        var arguments = new List<string> { "-Mode", "Evaluate", "-VisibleDecision", visibleDecision };
+        if (wizardSilent) { arguments.Add("-WizardSilent"); }
+        if (installerArgument is not null) { arguments.AddRange(new[] { "-InstallerArgument", installerArgument }); }
+
+        var result = PowerShellTestHost.Run(
+            Path.Combine(RepositoryLayout.Root, "scripts", "Resolve-LumaThermInstallerConsent.ps1"), arguments,
+            timeout: TimeSpan.FromSeconds(15));
+
+        Assert.True(result.ExitCode == 0, result.StandardError + result.StandardOutput);
+        using var json = JsonDocument.Parse(result.StandardOutput);
+        Assert.Equal(expectedApproved, json.RootElement.GetProperty("approved").GetBoolean());
+        const string approvedArguments = "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File \"{app}\\payload\\Register-LumaTherm.ps1\" -PortableDirectory \"{app}\\payload\" -NonInteractive -ConfirmCertificateImport";
+        Assert.Equal(expectedApproved ? approvedArguments : string.Empty,
+            json.RootElement.GetProperty("registrationArguments").GetString());
+    }
+
+    [Fact]
+    public void GeneratedInnoConsentBoundaryMatchesTheCommittedInclude()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "LumaTherm-consent-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            var generated = Path.Combine(root, "LumaTherm.Consent.iss");
+            var result = PowerShellTestHost.Run(
+                Path.Combine(RepositoryLayout.Root, "scripts", "Resolve-LumaThermInstallerConsent.ps1"),
+                new[] { "-Mode", "GenerateInno", "-OutputPath", generated }, timeout: TimeSpan.FromSeconds(15));
+
+            Assert.True(result.ExitCode == 0, result.StandardError + result.StandardOutput);
+            var committedText = File.ReadAllText(Path.Combine(RepositoryLayout.Root, "packaging", "LumaTherm.Consent.iss"))
+                .Replace("\r\n", "\n", StringComparison.Ordinal);
+            var generatedText = File.ReadAllText(generated).Replace("\r\n", "\n", StringComparison.Ordinal);
+            Assert.Equal(committedText, generatedText);
+        }
+        finally { if (Directory.Exists(root)) Directory.Delete(root, recursive: true); }
+    }
+
+    [Fact]
+    public void ActualInnoScriptCompilesWhenOfficialCompilerIsProvided()
+    {
+        var iscc = Environment.GetEnvironmentVariable("LUMATHERM_TEST_ISCC");
+        if (string.IsNullOrWhiteSpace(iscc)) { return; }
+        Assert.True(File.Exists(iscc), $"Official ISCC path does not exist: {iscc}");
+        var root = Path.Combine(Path.GetTempPath(), "LumaTherm-inno-compile-tests", Guid.NewGuid().ToString("N"));
+        var payload = Path.Combine(root, "payload");
+        var output = Path.Combine(root, "output");
+        Directory.CreateDirectory(payload);
+        Directory.CreateDirectory(output);
+        File.WriteAllText(Path.Combine(payload, "compile-probe.txt"), "compile only; never execute installer");
+        try
+        {
+            var startInfo = new ProcessStartInfo(iscc)
+            {
+                WorkingDirectory = RepositoryLayout.Root,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+            startInfo.ArgumentList.Add("/Qp");
+            startInfo.ArgumentList.Add($"/O{output}");
+            startInfo.ArgumentList.Add($"/DPayloadRoot={payload}");
+            startInfo.ArgumentList.Add(Path.Combine(RepositoryLayout.Root, "packaging", "LumaTherm.iss"));
+            var result = BoundedProcessTestHost.Run(startInfo, TimeSpan.FromSeconds(60), TimeSpan.FromSeconds(5));
+
+            Assert.True(result.ExitCode == 0, result.StandardError + result.StandardOutput);
+            Assert.True(File.Exists(Path.Combine(output, "LumaTherm-1.1.0-win-x64-setup.exe")));
+        }
+        finally { if (Directory.Exists(root)) Directory.Delete(root, recursive: true); }
     }
 
     private static bool TryCreateJunction(string junction, string target)

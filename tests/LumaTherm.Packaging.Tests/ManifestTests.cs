@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Xml.Linq;
 
@@ -68,6 +69,62 @@ public sealed class ManifestTests
         Assert.Equal(expectedWidth, ReadBigEndianInt32(bytes, 16));
         Assert.Equal(expectedHeight, ReadBigEndianInt32(bytes, 20));
         Assert.Equal(expectedHash, Convert.ToHexString(SHA256.HashData(bytes)));
+    }
+
+    [Fact]
+    public void AssetBuilderReproducesEveryManifestReferencedPngByteForByte()
+    {
+        var manifest = XDocument.Load(Path.Combine(RepositoryLayout.Root, "packaging", "sparse", "AppxManifest.xml"));
+        var referencedAssets = manifest.Descendants()
+            .SelectMany(element => element.Attributes().Select(attribute => attribute.Value)
+                .Concat(element.HasElements ? Array.Empty<string>() : new[] { element.Value.Trim() }))
+            .Where(value => value.EndsWith(".png", StringComparison.OrdinalIgnoreCase))
+            .Select(value => Path.GetFileName(value)!)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(name => name, StringComparer.Ordinal)
+            .ToArray();
+        Assert.Equal(new[]
+        {
+            "Square150x150Logo.png",
+            "Square44x44Logo.png",
+            "StoreLogo.png",
+            "Wide310x150Logo.png"
+        }, referencedAssets);
+
+        var generatedRoot = Path.Combine(Path.GetTempPath(), "LumaTherm-asset-builder-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            var generatedSource = Path.Combine(generatedRoot, "src", "LumaTherm.App", "Assets");
+            Directory.CreateDirectory(generatedSource);
+            File.Copy(Path.Combine(RepositoryLayout.Root, "src", "LumaTherm.App", "Assets", "LogoGeometry.xaml"),
+                Path.Combine(generatedSource, "LogoGeometry.xaml"));
+            var startInfo = new ProcessStartInfo(Path.Combine(RepositoryLayout.Root, ".dotnet", "dotnet.exe"))
+            {
+                WorkingDirectory = RepositoryLayout.Root
+            };
+            startInfo.ArgumentList.Add("run");
+            startInfo.ArgumentList.Add("--project");
+            startInfo.ArgumentList.Add(Path.Combine(RepositoryLayout.Root, "tools", "LumaTherm.AssetBuilder", "LumaTherm.AssetBuilder.csproj"));
+            startInfo.ArgumentList.Add("-c");
+            startInfo.ArgumentList.Add("Release");
+            startInfo.ArgumentList.Add("-p:NuGetAudit=false");
+            startInfo.ArgumentList.Add("--");
+            startInfo.ArgumentList.Add(generatedRoot);
+            var result = BoundedProcessTestHost.Run(startInfo, TimeSpan.FromSeconds(60), TimeSpan.FromSeconds(5));
+            Assert.True(result.ExitCode == 0, result.StandardError + result.StandardOutput);
+
+            var generatedAssets = Path.Combine(generatedRoot, "packaging", "Assets");
+            Assert.Equal(referencedAssets, Directory.GetFiles(generatedAssets, "*.png")
+                .Select(path => Path.GetFileName(path)!).OrderBy(name => name, StringComparer.Ordinal).ToArray());
+            foreach (var fileName in referencedAssets)
+            {
+                var committed = Path.Combine(RepositoryLayout.Root, "packaging", "Assets", fileName);
+                var generated = Path.Combine(generatedAssets, fileName);
+                Assert.True(File.Exists(committed), $"Manifest-referenced asset is missing: {fileName}");
+                Assert.Equal(File.ReadAllBytes(committed), File.ReadAllBytes(generated));
+            }
+        }
+        finally { if (Directory.Exists(generatedRoot)) Directory.Delete(generatedRoot, recursive: true); }
     }
 
     private static int ReadBigEndianInt32(byte[] bytes, int offset) =>

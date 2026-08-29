@@ -94,6 +94,22 @@ public sealed class ReleaseScriptTests
     }
 
     [Fact]
+    public void FullRejectsPublisherCertificateMismatchBeforeAnyToolOrPublicWrite()
+    {
+        using var fixture = ReleaseFixture.Create();
+
+        var result = fixture.Run("-Mode", "Full", "-SdkBuildToolsPath", fixture.SdkRoot,
+            "-InnoSetupPath", fixture.IsccPath, "-CertificatePath", fixture.PfxPath,
+            "-CertificatePassword", fixture.Password, "-Publisher", "CN=Unexpected Publisher");
+
+        Assert.NotEqual(0, result.ExitCode);
+        Assert.Contains("Publisher does not match", result.StandardError + result.StandardOutput, StringComparison.Ordinal);
+        Assert.DoesNotContain("Invalid argument/option", result.StandardError + result.StandardOutput, StringComparison.OrdinalIgnoreCase);
+        Assert.False(Directory.Exists(Path.Combine(fixture.RepositoryRoot, "artifacts")));
+        Assert.False(Directory.Exists(Path.Combine(fixture.RepositoryRoot, "dist")));
+    }
+
+    [Fact]
     public void PortableAssemblyContainsAppIdentityCertificateHelpersDocsAndInternalChecksums()
     {
         using var fixture = ReleaseFixture.Create();
@@ -195,6 +211,10 @@ public sealed class ReleaseScriptTests
             var isccPath = Path.Combine(root, "inno", "ISCC.exe");
             Directory.CreateDirectory(Path.GetDirectoryName(isccPath)!);
             File.WriteAllText(isccPath, "fake");
+
+            var dotnetPath = Path.Combine(repository, ".dotnet", "dotnet.exe");
+            Directory.CreateDirectory(Path.GetDirectoryName(dotnetPath)!);
+            File.Copy(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "whoami.exe"), dotnetPath);
 
             const string password = "fixture-private-password";
             var pfxPath = Path.Combine(root, "secrets", "release-signing.pfx");
