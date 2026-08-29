@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
@@ -17,7 +18,7 @@ public sealed class InstallerScriptTests
         Assert.True(result.ExitCode == 0, result.StandardError + result.StandardOutput);
         using var json = JsonDocument.Parse(result.StandardOutput);
         var root = json.RootElement;
-        Assert.Equal(new[] { "pathsVerified", "checksumsVerified", "signatureVerified", "registrationPlanned" },
+        Assert.Equal(new[] { "pathsVerified", "checksumsVerified", "signedAnchorVerified", "applicationSignatureVerified", "signaturesVerified", "registrationPlanned" },
             root.GetProperty("events").EnumerateArray().Select(value => value.GetString()).ToArray());
         Assert.Equal(fixture.PackagePath, root.GetProperty("identityPackage").GetString());
         Assert.Equal(fixture.ApplicationDirectory, root.GetProperty("applicationDirectory").GetString());
@@ -61,7 +62,7 @@ public sealed class InstallerScriptTests
         using var json = JsonDocument.Parse(accepted.StandardOutput);
         var events = json.RootElement.GetProperty("events").EnumerateArray().Select(value => value.GetString()).ToArray();
         Assert.True(Array.IndexOf(events, "certificateImportConfirmed") < Array.IndexOf(events, "certificateImportPlanned"));
-        Assert.True(Array.IndexOf(events, "signatureReverified") < Array.IndexOf(events, "registrationPlanned"));
+        Assert.True(Array.IndexOf(events, "signaturesReverified") < Array.IndexOf(events, "registrationPlanned"));
     }
 
     [Fact]
@@ -222,19 +223,27 @@ public sealed class InstallerScriptTests
             var root = Path.Combine(RepositoryLayout.Root, "artifacts", "packaging-tests", Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(Path.Combine(root, "app"));
             File.WriteAllText(Path.Combine(root, "app", "LumaTherm.exe"), "self-contained app");
-            File.WriteAllText(Path.Combine(root, "LumaTherm-1.1.0-sparse.msix"), "signed sparse identity");
             File.Copy(Path.Combine(RepositoryLayout.Root, "scripts", "Register-LumaTherm.ps1"), Path.Combine(root, "Register-LumaTherm.ps1"));
             File.Copy(Path.Combine(RepositoryLayout.Root, "scripts", "Unregister-LumaTherm.ps1"), Path.Combine(root, "Unregister-LumaTherm.ps1"));
+            File.WriteAllText(Path.Combine(root, "README.md"), "readme");
+            File.WriteAllText(Path.Combine(root, "LICENSE"), "license");
 
             using var rsa = RSA.Create(2048);
             var request = new CertificateRequest("CN=LumaTherm Local", rsa, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
             using var certificate = request.CreateSelfSigned(DateTimeOffset.UtcNow.AddMinutes(-1), DateTimeOffset.UtcNow.AddDays(1));
             File.WriteAllBytes(Path.Combine(root, "LumaTherm.cer"), certificate.Export(X509ContentType.Cert));
+            WriteAnchorPackage(root);
             WriteChecksums(root);
             return new PortableFixture(root, certificate.Thumbprint);
         }
 
-        public PowerShellResult Register(params string[] arguments) => Run("Register-LumaTherm.ps1", arguments);
+        public PowerShellResult Register(params string[] arguments)
+        {
+            var all = arguments.ToList();
+            AddDefault(all, "-ApplicationSignatureStatusForTest", "Valid");
+            AddDefault(all, "-ApplicationSignatureThumbprintForTest", Thumbprint);
+            return Run("Register-LumaTherm.ps1", all);
+        }
         public PowerShellResult Unregister(params string[] arguments) => Run("Unregister-LumaTherm.ps1", arguments);
         public PowerShellResult UnregisterWithLocalAppData(string localAppData, params string[] arguments) => PowerShellTestHost.Run(
             Path.Combine(Root, "Unregister-LumaTherm.ps1"), arguments,
@@ -243,9 +252,34 @@ public sealed class InstallerScriptTests
         private PowerShellResult Run(string script, IReadOnlyList<string> arguments) => PowerShellTestHost.Run(
             Path.Combine(Root, script), arguments, new Dictionary<string, string> { ["LUMATHERM_PACKAGING_TEST"] = "1" });
 
+        private static void AddDefault(List<string> arguments, string key, string value)
+        {
+            if (arguments.Contains(key, StringComparer.OrdinalIgnoreCase)) return;
+            arguments.Add(key);
+            arguments.Add(value);
+        }
+
+        private static string Sha(string path) => Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(path)));
+
+        private static void WriteAnchorPackage(string root)
+        {
+            var names = new[] { "app/LumaTherm.exe", "LICENSE", "LumaTherm.cer", "README.md", "Register-LumaTherm.ps1", "Unregister-LumaTherm.ps1" };
+            var anchor = JsonSerializer.Serialize(new
+            {
+                version = 1,
+                files = names.Select(name => new { path = name, sha256 = Sha(Path.Combine(root, name.Replace('/', Path.DirectorySeparatorChar))) }).ToArray()
+            });
+            using var archive = ZipFile.Open(Path.Combine(root, "LumaTherm-1.1.0-sparse.msix"), ZipArchiveMode.Create);
+            var payload = archive.CreateEntry("PayloadHashes.json");
+            using (var writer = new StreamWriter(payload.Open(), new UTF8Encoding(false))) writer.Write(anchor);
+            var manifest = archive.CreateEntry("AppxManifest.xml");
+            using var manifestWriter = new StreamWriter(manifest.Open(), new UTF8Encoding(false));
+            manifestWriter.Write("<Package />");
+        }
+
         private static void WriteChecksums(string root)
         {
-            var names = new[] { "app/LumaTherm.exe", "LumaTherm-1.1.0-sparse.msix", "LumaTherm.cer", "Register-LumaTherm.ps1", "Unregister-LumaTherm.ps1" };
+            var names = new[] { "app/LumaTherm.exe", "LICENSE", "LumaTherm-1.1.0-sparse.msix", "LumaTherm.cer", "README.md", "Register-LumaTherm.ps1", "Unregister-LumaTherm.ps1" };
             var lines = names.Select(name => $"{Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(Path.Combine(root, name.Replace('/', Path.DirectorySeparatorChar)))))} *{name}");
             File.WriteAllLines(Path.Combine(root, "SHA256SUMS.txt"), lines, new UTF8Encoding(false));
         }

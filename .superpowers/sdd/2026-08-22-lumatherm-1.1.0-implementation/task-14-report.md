@@ -128,3 +128,106 @@ Parser exit 0: all 5 scripts OK. Diff check exit 0 with no whitespace errors. Gi
 ## Self-review
 
 The final diff is limited to the Task 14 files named in the brief plus this report. The legacy `packaging/AppxManifest.xml` is deleted so there is one authoritative sparse manifest. No generated build/test outputs are staged. No private keys, passwords, certificate-store changes, package registrations/removals, installer/uninstaller executions, or hardware writes were produced during Task 14.
+
+## Fix Round 1 — independent security review
+
+Date: 2026-08-29
+
+The independent review rejected the first implementation with one Critical and seven Important findings. Each finding was reproduced and corrected without running a real signer, certificate-store operation, package registration/removal, installer/uninstaller, or hardware operation.
+
+### Verified RED -> GREEN evidence
+
+The initial security regression class was run with:
+
+```powershell
+& .\.dotnet\dotnet.exe test .\tests\LumaTherm.Packaging.Tests -c Release -p:NuGetAudit=false --filter FullyQualifiedName~Task14SecurityRegressionTests
+```
+
+Initial RED: exit 1, 19 failed and 4 passed of 23. Failures named the absent signed payload anchor, executable signer validation, explicit silent consent, exact post-registration verification/rollback, ancestor reparse rejection, ambiguous unregister rejection, honest Plan metadata, transactional success, and PFX indirection rejection. The four downstream-failure cases initially passed only because the old parameter binder rejected `TestTransaction`; their assertions were tightened to require the exact injected failure message before implementation.
+
+First GREEN attempt: 21 passed, 2 failed of 23. Diagnostic assertions exposed two root causes:
+
+- audit-only registration planning incorrectly continued into post-registration verification;
+- Windows PowerShell 5.1 materialized the JSON candidate array as one object with array-valued properties.
+
+After minimal fixes, the two focused cases passed 2/2. The complete security regression class then passed 23/23. Expanded rollback, missing-tool, and consent cases brought that class to 29/29.
+
+A second focused RED added exact publish-output and accurate Full write-domain requirements:
+
+```powershell
+& .\.dotnet\dotnet.exe test .\tests\LumaTherm.Packaging.Tests -c Release -p:NuGetAudit=false --filter "FullyQualifiedName~PlanNamesEveryArtifactToolCommandAndForbiddenSideEffect|FullyQualifiedName~PortableAssemblyRejectsUnexpectedPublishOutputsBeforeCreatingZip"
+```
+
+RED: exit 1, 2 failed of 2. GREEN after the minimal builder changes: exit 0, 2 passed of 2.
+
+### Review finding resolutions
+
+1. Portable trust chain (Critical)
+   - `LumaTherm.exe` Authenticode status and signer thumbprint are independently verified against bundled `LumaTherm.cer`.
+   - `PayloadHashes.json` is generated after application signing, included inside the subsequently signed sparse MSIX, and read only after the sparse signer/thumbprint check.
+   - The signed anchor exactly covers the app, certificate, helpers, README and LICENSE. The sparse package authenticates itself; the rewriteable internal checksum is treated as transport integrity only.
+   - Replaced executable plus rewritten checksums, wrong executable signer, changed anchored content, unexpected content and invalid executable signatures all fail before registration.
+2. Explicit certificate consent
+   - Visible Inno setup shows a certificate-specific prompt naming the public certificate and `LocalMachine\TrustedPeople`, defaulting to No.
+   - Silent setup refuses unless the caller supplies exact `/ALLOWCERTIMPORT`; only an approved path passes `-ConfirmCertificateImport` to the helper.
+   - Helper tests execute visible accept/decline and silent accept/refuse paths.
+3. Post-registration verification
+   - After exact `Add-AppxPackage`, registration verifies one exact name/publisher, version `1.1.0.0`, application ID `LumaTherm`, exact lighting extension and effective external location.
+   - Real external-location verification uses WinRT `Package.EffectiveExternalLocation`, the documented package identity API for external-location packages, and compares its path with the resolved application directory.
+   - Any mismatch rolls back the exact newly added package and fails.
+4. Transactional public artifacts
+   - Portable ZIP and installer are built under private `artifacts\release\public-staging`.
+   - Setup, portable ZIP and checksums are promoted together only after compilation, signing, Authenticode/thumbprint verification and checksum validation.
+   - Compile, sign, verify and checksum failure injection proves no final-named releasable partials appear and a prior `dist` remains intact.
+5. Reparse containment and PFX indirection
+   - Release and portable path validation now walks every existing component from the volume root and rejects any junction/symlink/reparse point before writes or privileged operations.
+   - External PFX paths reject reparse indirection, resolve the actual item, and enforce the resolved path remains outside repository and dist.
+   - Junction tests preserve external sentinels for release-tree, portable-ancestor and PFX-indirection cases.
+6. Honest, read-only Plan
+   - SDK discovery is filesystem-only at the pinned NuGet package location. Plan runs no msbuild or external tool process.
+   - Snapshot tests prove the controlled fixture is unchanged.
+   - `planWriteRoots` and legacy `allowedWriteRoots` are empty; `fullBuildWriteRoots` separately enumerates release/dist and every project `bin/obj`; `cacheWriteRoots` identifies the NuGet package cache.
+7. Trust rollback
+   - A newly imported exact thumbprint is removed after package/executable reverify, Add-AppxPackage, or post-verification failure.
+   - Preexisting trust is never removed. Tests cover all three failure boundaries plus the preexisting certificate case.
+8. Restored material coverage
+   - Coverage now includes exact/extra checksums and signed anchor entries, ambiguous unregister input, missing SignTool/MakeAppx/ISCC/PFX, invalid package/app signatures, self-contained single-file publish arguments and exact output, downstream cleanup/promotion, Inno consent/upgrade failure routing, and preserved opt-in settings cleanup.
+   - Packaging case count increased from 25 to 55: 30 added cases including theory rows. No security-equivalent test was removed.
+
+### Fresh final verification
+
+```powershell
+& .\.dotnet\dotnet.exe test .\tests\LumaTherm.Packaging.Tests -c Release -p:NuGetAudit=false
+```
+
+Exit 0: 55 passed, 0 failed, 0 skipped.
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build-release.ps1 -Mode Plan
+```
+
+Exit 0. JSON reports the exact three artifact names and stable AppId, `toolDiscoveryStrategy: filesystem-only`, empty `planWriteRoots`/`allowedWriteRoots`, explicit Full project/cache write domains, 15 ordered stages including signed-anchor emission and final promotion, SignTool and MakeAppx available, ISCC unavailable, no private-key outputs, no supplied certificate, no LICENSE, and every forbidden Plan side effect including process/file writes false.
+
+```powershell
+& .\.dotnet\dotnet.exe test .\LumaTherm.sln -c Release -p:NuGetAudit=false
+```
+
+Exit 0: 573 passed, 0 failed, 0 skipped:
+
+- Core: 123
+- Infrastructure: 111
+- Packaging: 55
+- App: 265
+- Smoke: 19
+
+```powershell
+& .\.dotnet\dotnet.exe build .\LumaTherm.sln -c Release -p:NuGetAudit=false
+```
+
+Exit 0: 0 warnings, 0 errors.
+
+All five PowerShell scripts parse without errors. `git diff --check` reports no whitespace errors; the only noise is the existing LF-to-CRLF notice for `packaging/LumaTherm.iss`.
+
+### Remaining external blockers and safety statement
+
+ISCC remains unavailable, no approved external PFX/password was supplied, and the repository still has no LICENSE. Therefore the real Full release and Inno compilation remain correctly deferred to Task 16. This fix round performed only test-fixture/audit simulations and the mutation-free Plan; it did not execute real signing, certificate import/store removal, Add/Remove-AppxPackage, installer/uninstaller, or hardware writes.

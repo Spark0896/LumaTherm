@@ -24,12 +24,17 @@ public sealed class ReleaseScriptTests
         Assert.All(root.GetProperty("forbiddenSideEffects").EnumerateObject(), property => Assert.False(property.Value.GetBoolean(), property.Name));
         Assert.Equal(new[] { "SignTool", "MakeAppx", "ISCC" }, root.GetProperty("tools").EnumerateObject().Select(property => property.Name).OrderBy(name => name).OrderByNameForTools());
         var commands = root.GetProperty("plannedCommands").EnumerateArray().Select(command => command.GetProperty("name").GetString()).ToArray();
-        Assert.Equal(new[] { "restore", "test", "publish", "make-sparse-package", "sign-app", "sign-sparse-package", "verify-app", "verify-sparse-package", "assemble-portable", "compile-installer", "sign-installer", "verify-installer", "emit-checksums" }, commands);
+        Assert.Equal(new[] { "restore", "test", "publish", "sign-app", "verify-app", "emit-signed-payload-anchor", "make-sparse-package", "sign-sparse-package", "verify-sparse-package", "assemble-portable", "compile-installer", "sign-installer", "verify-installer", "emit-checksums", "promote-public-artifacts" }, commands);
         var compileArguments = root.GetProperty("plannedCommands").EnumerateArray()
             .Single(command => command.GetProperty("name").GetString() == "compile-installer")
             .GetProperty("arguments").EnumerateArray().Select(value => value.GetString()).ToArray();
         Assert.Contains(compileArguments, value => value!.StartsWith("/DPayloadRoot=", StringComparison.Ordinal));
-        Assert.All(root.GetProperty("allowedWriteRoots").EnumerateArray(), value => Assert.True(Path.IsPathFullyQualified(value.GetString()!)));
+        Assert.Empty(root.GetProperty("allowedWriteRoots").EnumerateArray());
+        Assert.Empty(root.GetProperty("planWriteRoots").EnumerateArray());
+        Assert.All(root.GetProperty("fullBuildWriteRoots").EnumerateArray(), value => Assert.True(Path.IsPathFullyQualified(value.GetString()!)));
+        Assert.Contains(root.GetProperty("fullBuildWriteRoots").EnumerateArray(), value => value.GetString()!.EndsWith("src\\LumaTherm.App\\obj", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(root.GetProperty("fullBuildWriteRoots").EnumerateArray(), value => value.GetString()!.EndsWith("tests\\LumaTherm.Packaging.Tests\\bin", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(root.GetProperty("cacheWriteRoots").EnumerateArray(), value => value.GetString()!.EndsWith(".nuget\\packages", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
@@ -114,6 +119,26 @@ public sealed class ReleaseScriptTests
         Assert.Equal(0, second.ExitCode);
         Assert.Equal(firstHash, SHA256.HashData(File.ReadAllBytes(zip)));
     }
+    [Fact]
+    public void PortableAssemblyRejectsUnexpectedPublishOutputsBeforeCreatingZip()
+    {
+        using var fixture = ReleaseFixture.Create();
+        var publish = Path.Combine(fixture.Root, "published-extra");
+        Directory.CreateDirectory(publish);
+        File.WriteAllText(Path.Combine(publish, "LumaTherm.exe"), "signed app");
+        File.WriteAllText(Path.Combine(publish, "unexpected.dll"), "not anchored");
+        var sparse = Path.Combine(fixture.Root, "LumaTherm-1.1.0-sparse.msix");
+        File.WriteAllText(sparse, "signed sparse package");
+        var certificate = Path.Combine(fixture.Root, "LumaTherm.cer");
+        File.WriteAllText(certificate, "public cert");
+
+        var result = fixture.Run("-Mode", "AssemblePortable", "-PublishedAppPath", publish, "-SparsePackagePath", sparse, "-CertificatePublicPath", certificate);
+
+        Assert.NotEqual(0, result.ExitCode);
+        Assert.Contains("unexpected published", result.StandardError + result.StandardOutput, StringComparison.OrdinalIgnoreCase);
+        Assert.False(File.Exists(Path.Combine(fixture.RepositoryRoot, "dist", "LumaTherm-1.1.0-portable-win-x64.zip")));
+    }
+
 
     [Fact]
     public void PublicChecksumsCoverExactlySetupAndPortableArtifactsInStableOrder()
