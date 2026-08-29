@@ -1,5 +1,5 @@
-using System.Xml.Linq;
 using System.Security.Cryptography;
+using System.Xml.Linq;
 
 namespace LumaTherm.Packaging.Tests;
 
@@ -8,37 +8,51 @@ public sealed class ManifestTests
     private static readonly XNamespace Foundation = "http://schemas.microsoft.com/appx/manifest/foundation/windows10";
     private static readonly XNamespace Uap = "http://schemas.microsoft.com/appx/manifest/uap/windows10";
     private static readonly XNamespace Uap3 = "http://schemas.microsoft.com/appx/manifest/uap/windows10/3";
-    private static readonly XNamespace Desktop = "http://schemas.microsoft.com/appx/manifest/desktop/windows10";
-    private static readonly XNamespace Rescap = "http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities";
+    private static readonly XNamespace Uap10 = "http://schemas.microsoft.com/appx/manifest/uap/windows10/10";
+    private static readonly XNamespace Msix = "urn:schemas-microsoft-com:msix.v1";
 
     [Fact]
-    public void ManifestDeclaresExactFullTrustLightingAndDefaultOffStartupContracts()
+    public void NativeAndSparseManifestsDeclareTheSameExactIdentity()
     {
-        var document = XDocument.Load(Path.Combine(RepositoryLayout.Root, "packaging", "AppxManifest.xml"));
-        var package = Assert.IsType<XElement>(document.Root);
-        var identity = Assert.Single(package.Elements(Foundation + "Identity"));
+        var sparsePath = Path.Combine(RepositoryLayout.Root, "packaging", "sparse", "AppxManifest.xml");
+        Assert.True(File.Exists(sparsePath));
+        Assert.False(File.Exists(Path.Combine(RepositoryLayout.Root, "packaging", "AppxManifest.xml")));
+
+        var sparse = XDocument.Load(sparsePath);
+        var identity = Assert.Single(sparse.Root!.Elements(Foundation + "Identity"));
         Assert.Equal("LumaTherm", (string?)identity.Attribute("Name"));
         Assert.Equal("CN=LumaTherm Local", (string?)identity.Attribute("Publisher"));
         Assert.Equal("1.1.0.0", (string?)identity.Attribute("Version"));
         Assert.Equal("x64", (string?)identity.Attribute("ProcessorArchitecture"));
 
+        var application = Assert.Single(sparse.Descendants(Foundation + "Application"));
+        Assert.Equal("LumaTherm", (string?)application.Attribute("Id"));
+
+        var native = XDocument.Load(Path.Combine(RepositoryLayout.Root, "src", "LumaTherm.App", "app.manifest"));
+        var nativeIdentity = Assert.Single(native.Descendants(Msix + "identity"));
+        Assert.Equal((string?)identity.Attribute("Name"), (string?)nativeIdentity.Attribute("packageName"));
+        Assert.Equal((string?)identity.Attribute("Publisher"), (string?)nativeIdentity.Attribute("publisher"));
+        Assert.Equal((string?)application.Attribute("Id"), (string?)nativeIdentity.Attribute("applicationId"));
+    }
+
+    [Fact]
+    public void SparseManifestUsesExternalLocationAndOnlyTheLightingExtension()
+    {
+        var document = XDocument.Load(Path.Combine(RepositoryLayout.Root, "packaging", "sparse", "AppxManifest.xml"));
+        var package = document.Root!;
+        Assert.Equal("true", Assert.Single(package.Descendants(Uap10 + "AllowExternalContent")).Value);
+
         var app = Assert.Single(package.Descendants(Foundation + "Application"));
         Assert.Equal("LumaTherm.exe", (string?)app.Attribute("Executable"));
-        Assert.Equal("Windows.FullTrustApplication", (string?)app.Attribute("EntryPoint"));
-        Assert.Contains(package.Descendants(Rescap + "Capability"), e => (string?)e.Attribute("Name") == "runFullTrust");
+        Assert.Equal("windowsApp", (string?)app.Attribute(Uap10 + "RuntimeBehavior"));
+        Assert.Equal("mediumIL", (string?)app.Attribute(Uap10 + "TrustLevel"));
 
-        var lighting = Assert.Single(package.Descendants(Uap3 + "Extension"), e => (string?)e.Attribute("Category") == "windows.appExtension");
+        var lighting = Assert.Single(package.Descendants(Uap3 + "Extension"));
+        Assert.Equal("windows.appExtension", (string?)lighting.Attribute("Category"));
         var extension = Assert.Single(lighting.Elements(Uap3 + "AppExtension"));
         Assert.Equal("com.microsoft.windows.lighting", (string?)extension.Attribute("Name"));
         Assert.Equal("public", (string?)extension.Attribute("PublicFolder"));
-
-        var startup = Assert.Single(package.Descendants(Desktop + "StartupTask"));
-        Assert.Equal("LumaThermStartup", (string?)startup.Attribute("TaskId"));
-        Assert.Equal("false", (string?)startup.Attribute("Enabled"));
-        Assert.DoesNotContain(package.Descendants().Where(e => e.Name.LocalName == "StartupTask"), e => string.Equals((string?)e.Attribute("Enabled"), "true", StringComparison.OrdinalIgnoreCase));
-
-        Assert.Single(package.Elements(Foundation + "Properties"));
-        Assert.Single(package.Elements(Foundation + "Dependencies"));
+        Assert.DoesNotContain(package.Descendants(), node => node.Name.LocalName is "StartupTask" or "Capability");
         Assert.Single(app.Elements(Uap + "VisualElements"));
     }
 
@@ -54,27 +68,6 @@ public sealed class ManifestTests
         Assert.Equal(expectedWidth, ReadBigEndianInt32(bytes, 16));
         Assert.Equal(expectedHeight, ReadBigEndianInt32(bytes, 20));
         Assert.Equal(expectedHash, Convert.ToHexString(SHA256.HashData(bytes)));
-    }
-
-    [Fact]
-    public void ManifestReferencedAssetsAndPublicFolderExist()
-    {
-        var document = XDocument.Load(Path.Combine(RepositoryLayout.Root, "packaging", "AppxManifest.xml"));
-        var assetValues = document.Descendants().Attributes().Select(a => a.Value)
-            .Concat(document.Descendants().Select(e => e.Value))
-            .Where(value => value.StartsWith("Assets\\", StringComparison.Ordinal) && value.EndsWith(".png", StringComparison.OrdinalIgnoreCase))
-            .Distinct(StringComparer.OrdinalIgnoreCase);
-
-        Assert.NotEmpty(assetValues);
-        Assert.Equal(
-            new[] { "Assets\\Square150x150Logo.png", "Assets\\Square44x44Logo.png", "Assets\\StoreLogo.png", "Assets\\Wide310x150Logo.png" },
-            assetValues.OrderBy(value => value, StringComparer.Ordinal).ToArray());
-        foreach (var relative in assetValues)
-        {
-            Assert.True(File.Exists(Path.Combine(RepositoryLayout.Root, "packaging", relative)), relative);
-        }
-
-        Assert.True(File.Exists(Path.Combine(RepositoryLayout.Root, "packaging", "public", ".gitkeep")));
     }
 
     private static int ReadBigEndianInt32(byte[] bytes, int offset) =>

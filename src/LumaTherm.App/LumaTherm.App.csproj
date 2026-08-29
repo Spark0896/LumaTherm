@@ -7,6 +7,7 @@
     <OutputType>WinExe</OutputType>
     <StartupObject>LumaTherm.App.Program</StartupObject>
     <ApplicationIcon>Assets\LumaTherm.ico</ApplicationIcon>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\LumaTherm.Core\LumaTherm.Core.csproj" />

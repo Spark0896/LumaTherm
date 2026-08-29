@@ -1,426 +1,271 @@
 [CmdletBinding()]
 param(
-    [ValidateSet('Full', 'Plan', 'PrepareLayout', 'EmitChecksums')]
-    [string]$Mode = 'Full',
+    [ValidateSet('Plan', 'Full', 'AssemblePortable', 'EmitChecksums')][string]$Mode = 'Full',
     [string]$CertificatePath,
     [string]$CertificatePassword,
-    [string]$Publisher,
+    [string]$Publisher = 'CN=LumaTherm Local',
     [string]$SdkBuildToolsPath,
+    [string]$InnoSetupPath,
     [string]$PublishedAppPath,
-    [ValidateSet('NonAdmin')][string]$AdministratorStatusForTest
+    [string]$SparsePackagePath,
+    [string]$CertificatePublicPath,
+    [string]$RepositoryRootForTest
 )
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
-
-if (-not [string]::IsNullOrWhiteSpace($SdkBuildToolsPath) -and
-    ($Mode -ne 'Plan' -or $env:LUMATHERM_PACKAGING_TEST -ne '1')) {
-    throw '-SdkBuildToolsPath is permitted only in Plan mode with LUMATHERM_PACKAGING_TEST=1.'
+$version = '1.1.0'
+$stableAppId = '{9F6F5FEA-A89E-4D1C-9D0C-6C7C9FB5D310}'
+$setupName = "LumaTherm-$version-win-x64-setup.exe"
+$portableZipName = "LumaTherm-$version-portable-win-x64.zip"
+$sparsePackageName = "LumaTherm-$version-sparse.msix"
+$isTest = $env:LUMATHERM_PACKAGING_TEST -eq '1'
+if (-not [string]::IsNullOrWhiteSpace($RepositoryRootForTest) -and -not $isTest) {
+    throw 'Repository root override is reserved for controlled packaging tests.'
 }
-if (-not [string]::IsNullOrWhiteSpace($AdministratorStatusForTest) -and $env:LUMATHERM_PACKAGING_TEST -ne '1') {
-    throw '-AdministratorStatusForTest requires LUMATHERM_PACKAGING_TEST=1.'
-}
-
-function Test-IsAdministrator {
-    if (-not [string]::IsNullOrWhiteSpace($AdministratorStatusForTest)) {
-        return $false
-    }
-    $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
-    $principal = [Security.Principal.WindowsPrincipal]::new($identity)
-    return $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-}
-
-if ($Mode -eq 'Full' -and -not (Test-IsAdministrator)) {
-    throw 'Full release signing requires an elevated Administrator PowerShell because exact temporary trust is added to LocalMachine\TrustedPeople. Re-run explicitly with UAC elevation.'
-}
-
-$repositoryRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
-$artifactsRoot = Join-Path $repositoryRoot 'artifacts'
+$repositoryRoot = if ([string]::IsNullOrWhiteSpace($RepositoryRootForTest)) { [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..')).TrimEnd('\') } else { [IO.Path]::GetFullPath($RepositoryRootForTest).TrimEnd('\') }
+$artifactsRoot = Join-Path $repositoryRoot 'artifacts\release'
+$publishRoot = Join-Path $artifactsRoot 'publish'
+$sparseLayoutRoot = Join-Path $artifactsRoot 'sparse-layout'
+$portableRoot = Join-Path $artifactsRoot 'portable'
 $distRoot = Join-Path $repositoryRoot 'dist'
-$localSigningBaseRoot = Join-Path $repositoryRoot 'packaging\local-signing'
-$localSigningRunRoot = Join-Path $localSigningBaseRoot ('run-' + [Guid]::NewGuid().ToString('N'))
-$manifestPath = Join-Path $repositoryRoot 'packaging\AppxManifest.xml'
-$layoutRoot = Join-Path $artifactsRoot 'package-layout'
-$publishRoot = Join-Path $artifactsRoot 'publish\win-x64'
-$msixName = 'LumaTherm-1.0.1-win-x64.msix'
-$zipName = 'LumaTherm-1.0.1-portable-win-x64.zip'
-$dotnetArtifactsRoot = Join-Path $artifactsRoot 'dotnet'
-$safeDotnetOutputArguments = @('-p:UseArtifactsOutput=true', "-p:ArtifactsPath=$dotnetArtifactsRoot")
+$manifestPath = Join-Path $repositoryRoot 'packaging\sparse\AppxManifest.xml'
 
-function Assert-PathUnderAllowedRoot {
-    param([Parameter(Mandatory = $true)][string]$Path)
-    $fullPath = [System.IO.Path]::GetFullPath($Path)
-    $allowed = @($artifactsRoot, $distRoot, $localSigningBaseRoot)
-    foreach ($root in $allowed) {
-        $fullRoot = [System.IO.Path]::GetFullPath($root).TrimEnd('\') + '\'
-        if ($fullPath.StartsWith($fullRoot, [System.StringComparison]::OrdinalIgnoreCase) -or
-            $fullPath.TrimEnd('\').Equals($fullRoot.TrimEnd('\'), [System.StringComparison]::OrdinalIgnoreCase)) {
-            $repository = [System.IO.Path]::GetFullPath($repositoryRoot).TrimEnd('\')
-            if (-not ($fullPath.Equals($repository, [System.StringComparison]::OrdinalIgnoreCase) -or
-                $fullPath.StartsWith($repository + '\', [System.StringComparison]::OrdinalIgnoreCase))) {
-                throw "Path is outside the physical repository root: $fullPath"
-            }
-            $repositoryItem = Get-Item -LiteralPath $repository -Force
-            if (($repositoryItem.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
-                throw "Repository root itself is a reparse point: $repository"
-            }
-            $current = $repository
-            $relative = $fullPath.Substring($repository.Length).TrimStart('\')
-            foreach ($segment in @($relative.Split('\') | Where-Object { $_.Length -gt 0 })) {
-                $current = Join-Path $current $segment
-                if (Test-Path -LiteralPath $current) {
-                    $item = Get-Item -LiteralPath $current -Force
-                    if (($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
-                        throw "Refusing a sensitive operation through a reparse point: $current"
-                    }
-                }
-            }
-            return
-        }
-    }
-    throw "Refusing to write outside artifacts, dist, or packaging/local-signing: $fullPath"
+function Test-IsBelow([string]$Path, [string]$Root) {
+    $full = [IO.Path]::GetFullPath($Path).TrimEnd('\')
+    $rootFull = [IO.Path]::GetFullPath($Root).TrimEnd('\')
+    return $full.Equals($rootFull, [StringComparison]::OrdinalIgnoreCase) -or $full.StartsWith($rootFull + '\', [StringComparison]::OrdinalIgnoreCase)
 }
 
-function Assert-SafeRecursiveTree {
-    param([Parameter(Mandatory = $true)][string]$Path)
-    $fullPath = [System.IO.Path]::GetFullPath($Path)
-    $repository = [System.IO.Path]::GetFullPath($repositoryRoot).TrimEnd('\')
-    if (-not ($fullPath.Equals($repository, [System.StringComparison]::OrdinalIgnoreCase) -or
-        $fullPath.StartsWith($repository + '\', [System.StringComparison]::OrdinalIgnoreCase))) {
-        throw "Recursive operation path is outside the physical repository root: $fullPath"
-    }
-
-    $current = $repository
-    foreach ($segment in @($fullPath.Substring($repository.Length).TrimStart('\').Split('\') | Where-Object { $_.Length -gt 0 })) {
-        $current = Join-Path $current $segment
-        if (Test-Path -LiteralPath $current) {
-            $ancestor = Get-Item -LiteralPath $current -Force
-            if (($ancestor.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
-                throw "Refusing a recursive operation through a reparse point: $current"
-            }
-        }
-    }
-    if (-not (Test-Path -LiteralPath $fullPath)) { return }
-
-    $pending = [System.Collections.Generic.Stack[string]]::new()
-    $pending.Push($fullPath)
-    while ($pending.Count -gt 0) {
-        $directory = $pending.Pop()
-        $directoryItem = Get-Item -LiteralPath $directory -Force
-        if (($directoryItem.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
-            throw "Refusing a recursive operation containing a reparse point: $directory"
-        }
-        if (-not $directoryItem.PSIsContainer) { continue }
-        foreach ($child in @(Get-ChildItem -LiteralPath $directory -Force)) {
-            if (($child.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
-                throw "Refusing a recursive operation containing a reparse point: $($child.FullName)"
-            }
-            if ($child.PSIsContainer) { $pending.Push($child.FullName) }
+function Assert-SafeTree([string]$Path) {
+    $full = [IO.Path]::GetFullPath($Path)
+    if (-not (Test-Path -LiteralPath $full)) { throw "Required path is missing: $full" }
+    $item = Get-Item -LiteralPath $full -Force
+    if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { throw "Refusing a reparse-point path: $full" }
+    if ($item.PSIsContainer) {
+        foreach ($child in @(Get-ChildItem -LiteralPath $full -Recurse -Force)) {
+            if (($child.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { throw "Refusing a tree containing a reparse point: $($child.FullName)" }
         }
     }
 }
 
-function Get-ManifestPublisher {
-    [xml]$manifest = Get-Content -LiteralPath $manifestPath -Raw
-    return [string]$manifest.Package.Identity.Publisher
+function Remove-OwnedDirectory([string]$Path) {
+    if (-not ((Test-IsBelow $Path $artifactsRoot) -or (Test-IsBelow $Path $distRoot))) { throw "Refusing cleanup outside release roots: $Path" }
+    if (Test-Path -LiteralPath $Path) { Assert-SafeTree $Path; Remove-Item -LiteralPath $Path -Recurse -Force }
 }
 
-function Open-SigningCertificate {
-    param([Parameter(Mandatory = $true)][string]$Path, [string]$Password)
-    $fullPath = [System.IO.Path]::GetFullPath($Path)
-    if (-not (Test-Path -LiteralPath $fullPath -PathType Leaf)) { throw "Certificate PFX not found: $fullPath" }
-    $flags = [System.Security.Cryptography.X509Certificates.X509KeyStorageFlags]::EphemeralKeySet
-    return [System.Security.Cryptography.X509Certificates.X509Certificate2]::new($fullPath, $Password, $flags)
-}
-
-function Resolve-SdkTools {
-    param([string]$PackageRoot)
-    $isTestOverride = -not [string]::IsNullOrWhiteSpace($PackageRoot)
-    if ([string]::IsNullOrWhiteSpace($PackageRoot)) {
+function Resolve-SdkTools([string]$Override) {
+    $packageRoot = $Override
+    if (-not [string]::IsNullOrWhiteSpace($Override) -and (-not $isTest -or $Mode -notin @('Plan', 'Full'))) {
+        throw 'SDK tool override is reserved for controlled Plan/Full packaging tests.'
+    }
+    if ([string]::IsNullOrWhiteSpace($packageRoot)) {
         $dotnet = Join-Path $repositoryRoot '.dotnet\dotnet.exe'
-        if (-not (Test-Path -LiteralPath $dotnet -PathType Leaf)) {
-            throw "Local dotnet SDK was not found: $dotnet"
-        }
         $project = Join-Path $repositoryRoot 'packaging\LumaTherm.Packaging.csproj'
-        $propertyOutput = & $dotnet msbuild $project '-getProperty:PkgMicrosoft_Windows_SDK_BuildTools' '-p:NuGetAudit=false' $safeDotnetOutputArguments[0] $safeDotnetOutputArguments[1]
-        $resolvedLine = $propertyOutput | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Last 1
-        if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($resolvedLine)) {
-            $propertyOutput = & $dotnet msbuild $project '-getProperty:PkgMicrosoft_Windows_SDK_BuildTools' '-p:NuGetAudit=false'
-            $resolvedLine = $propertyOutput | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Last 1
-        }
-        if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($resolvedLine)) { throw 'Unable to resolve pinned Microsoft.Windows.SDK.BuildTools package. Restore the packaging project first.' }
-        $PackageRoot = $resolvedLine.Trim()
-    }
-    $PackageRoot = [System.IO.Path]::GetFullPath($PackageRoot)
-    if (-not $isTestOverride) {
-        $expectedSuffix = [System.IO.Path]::Combine('microsoft.windows.sdk.buildtools', '10.0.26100.8249')
-        if (-not $PackageRoot.TrimEnd('\').EndsWith($expectedSuffix, [System.StringComparison]::OrdinalIgnoreCase)) {
-            throw "Resolved SDK BuildTools path is not the pinned package/version: $PackageRoot"
+        if (Test-Path -LiteralPath $dotnet -PathType Leaf) {
+            $output = & $dotnet msbuild $project '-getProperty:PkgMicrosoft_Windows_SDK_BuildTools' '-p:NuGetAudit=false' 2>$null
+            if ($LASTEXITCODE -eq 0) { $packageRoot = ($output | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Last 1).Trim() }
         }
     }
-    $makeAppx = Get-ChildItem -LiteralPath (Join-Path $PackageRoot 'bin') -Filter 'MakeAppx.exe' -File -Recurse |
-        Where-Object { $_.Directory.Name -eq 'x64' } | Sort-Object FullName -Descending | Select-Object -First 1
-    $signTool = Get-ChildItem -LiteralPath (Join-Path $PackageRoot 'bin') -Filter 'SignTool.exe' -File -Recurse |
-        Where-Object { $_.Directory.Name -eq 'x64' } | Sort-Object FullName -Descending | Select-Object -First 1
-    if ($null -eq $makeAppx -or $null -eq $signTool) {
-        throw "Pinned SDK BuildTools package does not contain x64 MakeAppx.exe and SignTool.exe: $PackageRoot"
+    $makeAppx = $null
+    $signTool = $null
+    if (-not [string]::IsNullOrWhiteSpace($packageRoot) -and (Test-Path -LiteralPath $packageRoot -PathType Container)) {
+        $makeAppx = Get-ChildItem -LiteralPath (Join-Path $packageRoot 'bin') -Filter MakeAppx.exe -File -Recurse -ErrorAction SilentlyContinue |
+            Where-Object { $_.Directory.Name -eq 'x64' } | Sort-Object FullName -Descending | Select-Object -First 1
+        $signTool = Get-ChildItem -LiteralPath (Join-Path $packageRoot 'bin') -Filter SignTool.exe -File -Recurse -ErrorAction SilentlyContinue |
+            Where-Object { $_.Directory.Name -eq 'x64' } | Sort-Object FullName -Descending | Select-Object -First 1
     }
     return [pscustomobject]@{
-        MakeAppx = [System.IO.Path]::GetFullPath($makeAppx.FullName)
-        SignTool = [System.IO.Path]::GetFullPath($signTool.FullName)
+        MakeAppx = if ($null -eq $makeAppx) { '' } else { [IO.Path]::GetFullPath($makeAppx.FullName) }
+        SignTool = if ($null -eq $signTool) { '' } else { [IO.Path]::GetFullPath($signTool.FullName) }
     }
 }
 
-function New-CleanPackageLayout {
-    param([Parameter(Mandatory = $true)][string]$PublishedPath)
-    $PublishedPath = [System.IO.Path]::GetFullPath($PublishedPath)
-    Assert-PathUnderAllowedRoot -Path $PublishedPath
-    if (-not (Test-Path -LiteralPath $PublishedPath -PathType Container)) { throw "Published app folder not found: $PublishedPath" }
-    Assert-SafeRecursiveTree -Path $PublishedPath
-    $manifestExecutable = Join-Path $PublishedPath 'LumaTherm.exe'
-    $projectExecutable = Join-Path $PublishedPath 'LumaTherm.App.exe'
-    if ((Test-Path -LiteralPath $manifestExecutable) -and (Test-Path -LiteralPath $projectExecutable)) {
-        throw 'Published app contains ambiguous LumaTherm executables.'
+function Resolve-Inno([string]$Override) {
+    if (-not [string]::IsNullOrWhiteSpace($Override)) {
+        if (-not $isTest -or $Mode -notin @('Plan', 'Full')) { throw 'Inno Setup override is reserved for controlled Plan/Full packaging tests.' }
+        return [IO.Path]::GetFullPath($Override)
     }
-    if (Test-Path -LiteralPath $projectExecutable -PathType Leaf) {
-        Move-Item -LiteralPath $projectExecutable -Destination $manifestExecutable
-    }
-    if (-not (Test-Path -LiteralPath $manifestExecutable -PathType Leaf)) {
-        throw 'Published app does not contain the LumaTherm executable.'
-    }
-    Assert-PathUnderAllowedRoot -Path $layoutRoot
-    if (Test-Path -LiteralPath $layoutRoot) {
-        Assert-SafeRecursiveTree -Path $layoutRoot
-        Remove-Item -LiteralPath $layoutRoot -Recurse -Force
-    }
-    New-Item -ItemType Directory -Path $layoutRoot | Out-Null
-    Assert-SafeRecursiveTree -Path $layoutRoot
-    Assert-SafeRecursiveTree -Path $PublishedPath
-    Get-ChildItem -LiteralPath $PublishedPath -Force | Copy-Item -Destination $layoutRoot -Recurse -Force
-    Copy-Item -LiteralPath $manifestPath -Destination (Join-Path $layoutRoot 'AppxManifest.xml') -Force
-    $packageAssets = Join-Path $repositoryRoot 'packaging\Assets'
-    Assert-SafeRecursiveTree -Path $layoutRoot
-    Assert-SafeRecursiveTree -Path $packageAssets
-    Copy-Item -LiteralPath $packageAssets -Destination $layoutRoot -Recurse -Force
-    $publicFolder = Join-Path $repositoryRoot 'packaging\public'
-    Assert-SafeRecursiveTree -Path $layoutRoot
-    Assert-SafeRecursiveTree -Path $publicFolder
-    Copy-Item -LiteralPath $publicFolder -Destination $layoutRoot -Recurse -Force
+    $candidate = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'
+    if (Test-Path -LiteralPath $candidate -PathType Leaf) { return [IO.Path]::GetFullPath($candidate) }
+    $command = Get-Command ISCC.exe -ErrorAction SilentlyContinue
+    if ($null -ne $command) { return [IO.Path]::GetFullPath($command.Source) }
+    return [IO.Path]::GetFullPath($candidate)
 }
 
-function Write-DistributionChecksums {
-    Assert-PathUnderAllowedRoot -Path $distRoot
-    $required = @($msixName, $zipName, 'LumaTherm.cer', 'install.ps1', 'uninstall.ps1')
-    $distributionFiles = @(Get-ChildItem -LiteralPath $distRoot -File | Where-Object { $_.Name -ne 'SHA256SUMS.txt' })
-    $caseGroups = $distributionFiles | Group-Object { $_.Name.ToUpperInvariant() }
-    if ($caseGroups | Where-Object { $_.Count -gt 1 }) { throw 'Distribution contains case-ambiguous artifact names.' }
-    $requiredNames = @{}
-    foreach ($requiredName in $required) { $requiredNames[$requiredName.ToUpperInvariant()] = $true }
-    $unexpected = @($distributionFiles | Where-Object { -not $requiredNames.ContainsKey($_.Name.ToUpperInvariant()) })
-    if ($unexpected.Count -gt 0) { throw "Distribution contains an unchecksummed artifact: $($unexpected[0].Name)" }
-    $sortedRequired = [string[]]$required.Clone()
-    [Array]::Sort($sortedRequired, [System.StringComparer]::OrdinalIgnoreCase)
-    $lines = foreach ($name in $sortedRequired) {
-        $path = Join-Path $distRoot $name
-        if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw "Required distribution artifact is missing: $name" }
-        $stream = [System.IO.File]::OpenRead($path)
-        try {
-            $algorithm = [System.Security.Cryptography.SHA256]::Create()
-            try { $hash = [BitConverter]::ToString($algorithm.ComputeHash($stream)).Replace('-', '') }
-            finally { $algorithm.Dispose() }
-        } finally { $stream.Dispose() }
-        "$hash *$name"
-    }
-    Set-Content -LiteralPath (Join-Path $distRoot 'SHA256SUMS.txt') -Value $lines -Encoding ASCII
-}
-
-$publishArguments = @(
-    'publish', (Join-Path $repositoryRoot 'src\LumaTherm.App\LumaTherm.App.csproj'),
-    '-c', 'Release', '-r', 'win-x64', '--self-contained', 'true', '--no-restore',
-    '-p:PublishSingleFile=true', '-p:IncludeNativeLibrariesForSelfExtract=true',
-    '-p:DebugType=None', '-p:DebugSymbols=false', '-p:NuGetAudit=false',
-    $safeDotnetOutputArguments[0], $safeDotnetOutputArguments[1],
-    '-o', $publishRoot
-)
-$restoreArguments = @('restore', (Join-Path $repositoryRoot 'LumaTherm.sln'), '-r', 'win-x64', '-p:NuGetAudit=false', $safeDotnetOutputArguments[0], $safeDotnetOutputArguments[1])
-$testArguments = @('test', (Join-Path $repositoryRoot 'LumaTherm.sln'), '-c', 'Release', '--no-restore', '-p:NuGetAudit=false', $safeDotnetOutputArguments[0], $safeDotnetOutputArguments[1], '--results-directory', (Join-Path $artifactsRoot 'TestResults'))
-
-if ($Mode -eq 'PrepareLayout') {
-    if ([string]::IsNullOrWhiteSpace($PublishedAppPath)) { throw '-PublishedAppPath is required for PrepareLayout.' }
-    New-CleanPackageLayout -PublishedPath $PublishedAppPath
-    Write-Output ([pscustomobject]@{ layoutPath = $layoutRoot } | ConvertTo-Json -Compress)
-    exit 0
-}
-
-if ($Mode -eq 'EmitChecksums') {
-    Write-DistributionChecksums
-    Write-Output ([pscustomobject]@{ checksumPath = (Join-Path $distRoot 'SHA256SUMS.txt') } | ConvertTo-Json -Compress)
-    exit 0
-}
-
-$manifestPublisher = Get-ManifestPublisher
-if ([string]::IsNullOrWhiteSpace($Publisher)) { $Publisher = $manifestPublisher }
-
-if ($Mode -eq 'Plan') {
-    $planCertificate = $null
+function Open-ExternalCertificate {
+    if ([string]::IsNullOrWhiteSpace($CertificatePath)) { throw 'An external PFX is required for a Full release.' }
+    $full = [IO.Path]::GetFullPath($CertificatePath)
+    if ((Test-IsBelow $full $repositoryRoot) -or (Test-IsBelow $full $distRoot)) { throw 'The external PFX must be outside the repository and dist roots.' }
+    if (-not (Test-Path -LiteralPath $full -PathType Leaf)) { throw 'The external PFX does not exist.' }
     try {
-        $certificateSubject = $manifestPublisher
-        if (-not [string]::IsNullOrWhiteSpace($CertificatePath)) {
-            $planCertificate = Open-SigningCertificate -Path $CertificatePath -Password $CertificatePassword
-            $certificateSubject = $planCertificate.Subject
-        }
-        if (-not $Publisher.Equals($certificateSubject, [System.StringComparison]::OrdinalIgnoreCase)) {
-            throw "Publisher '$Publisher' does not match signing certificate subject '$certificateSubject'."
-        }
-    } finally {
-        if ($null -ne $planCertificate) { $planCertificate.Dispose() }
+        $flags = [Security.Cryptography.X509Certificates.X509KeyStorageFlags]::EphemeralKeySet
+        return [Security.Cryptography.X509Certificates.X509Certificate2]::new($full, $CertificatePassword, $flags)
+    } catch { throw 'Unable to open the external PFX with the supplied password.' }
+}
+
+function Get-Sha256Hex([string]$Path) {
+    $stream = [IO.File]::OpenRead($Path)
+    try {
+        $algorithm = [Security.Cryptography.SHA256]::Create()
+        try { return [BitConverter]::ToString($algorithm.ComputeHash($stream)).Replace('-', '') }
+        finally { $algorithm.Dispose() }
+    } finally { $stream.Dispose() }
+}
+
+function Write-Checksums([string]$Root, [string[]]$Names) {
+    $lines = foreach ($name in @($Names | Sort-Object)) {
+        $path = Join-Path $Root $name
+        if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw "Required artifact is missing: $name" }
+        "$(Get-Sha256Hex $path) *$name"
     }
-    $tools = Resolve-SdkTools -PackageRoot $SdkBuildToolsPath
-    $plan = [ordered]@{
-        makeAppxPath = $tools.MakeAppx
-        signToolPath = $tools.SignTool
-        publishArguments = $publishArguments
-        restoreArguments = $restoreArguments
-        testArguments = $testArguments
-        packageLayout = $layoutRoot
-        msixName = $msixName
-        zipName = $zipName
-        allowedWriteRoots = @($artifactsRoot, $distRoot, $localSigningBaseRoot)
-        localSigningDirectory = $localSigningRunRoot
-        temporaryTrustStore = 'Cert:\LocalMachine\TrustedPeople'
-        localCertificateWorkflow = if ([string]::IsNullOrWhiteSpace($CertificatePath)) { @(
-            'require:elevated-administrator', 'create:CurrentUser/My', 'export:owned-run-directory', 'sign:SHA256',
-            'import-if-absent:LocalMachine/TrustedPeople', 'verify:/pa',
-            'remove-if-owned:LocalMachine/TrustedPeople', 'remove:CurrentUser/My',
-            'verify:owned-store-cleanup', 'remove:owned-run-directory'
-        ) } else { @() }
-        localCertificateProfile = [ordered]@{
-            subject = 'CN=LumaTherm Local'
-            enhancedKeyUsage = '1.3.6.1.5.5.7.3.3'
-            keyUsage = 'DigitalSignature'
-        }
+    Set-Content -LiteralPath (Join-Path $Root 'SHA256SUMS.txt') -Value $lines -Encoding ASCII
+}
+
+function New-DeterministicZip([string]$Source, [string]$Destination) {
+    Add-Type -AssemblyName System.IO.Compression
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    if (Test-Path -LiteralPath $Destination) { Remove-Item -LiteralPath $Destination -Force }
+    $stream = [IO.File]::Open($Destination, [IO.FileMode]::CreateNew)
+    try {
+        $archive = [IO.Compression.ZipArchive]::new($stream, [IO.Compression.ZipArchiveMode]::Create, $false)
+        try {
+            foreach ($file in @(Get-ChildItem -LiteralPath $Source -File -Recurse | Sort-Object FullName)) {
+                $relative = $file.FullName.Substring($Source.TrimEnd('\').Length + 1).Replace('\', '/')
+                $entry = $archive.CreateEntry($relative, [IO.Compression.CompressionLevel]::Optimal)
+                $entry.LastWriteTime = [DateTimeOffset]::new(2000, 1, 1, 0, 0, 0, [TimeSpan]::Zero)
+                $input = [IO.File]::OpenRead($file.FullName)
+                $output = $entry.Open()
+                try { $input.CopyTo($output) } finally { $output.Dispose(); $input.Dispose() }
+            }
+        } finally { $archive.Dispose() }
+    } finally { $stream.Dispose() }
+}
+
+function Assemble-Portable([string]$Published, [string]$Sparse, [string]$Cer) {
+    foreach ($path in @($Published, $Sparse, $Cer)) { Assert-SafeTree $path }
+    if (-not (Test-Path -LiteralPath $Published -PathType Container)) { throw 'Published app path must be a directory.' }
+    Remove-OwnedDirectory $portableRoot
+    New-Item -ItemType Directory -Path (Join-Path $portableRoot 'app'), $distRoot -Force | Out-Null
+    Get-ChildItem -LiteralPath $Published -Force | Copy-Item -Destination (Join-Path $portableRoot 'app') -Recurse -Force
+    Copy-Item -LiteralPath $Sparse -Destination (Join-Path $portableRoot $sparsePackageName) -Force
+    Copy-Item -LiteralPath $Cer -Destination (Join-Path $portableRoot 'LumaTherm.cer') -Force
+    foreach ($name in @('Register-LumaTherm.ps1', 'Unregister-LumaTherm.ps1')) { Copy-Item -LiteralPath (Join-Path $repositoryRoot "scripts\$name") -Destination $portableRoot -Force }
+    foreach ($name in @('README.md', 'LICENSE')) {
+        $source = Join-Path $repositoryRoot $name
+        if (-not (Test-Path -LiteralPath $source -PathType Leaf)) { throw "Required portable input is missing: $name" }
+        Copy-Item -LiteralPath $source -Destination $portableRoot -Force
     }
-    Write-Output ($plan | ConvertTo-Json -Depth 4 -Compress)
+    $internalNames = @(Get-ChildItem -LiteralPath $portableRoot -File -Recurse | ForEach-Object { $_.FullName.Substring($portableRoot.Length + 1).Replace('\', '/') })
+    Write-Checksums -Root $portableRoot -Names $internalNames
+    New-DeterministicZip -Source $portableRoot -Destination (Join-Path $distRoot $portableZipName)
+}
+
+function Write-PublicChecksums {
+    $allowed = @($setupName, $portableZipName)
+    $actual = @(Get-ChildItem -LiteralPath $distRoot -File | Where-Object { $_.Name -ne 'SHA256SUMS.txt' })
+    $unexpected = @($actual | Where-Object { $_.Name -notin $allowed })
+    if ($unexpected.Count -gt 0) { throw "Unexpected public artifact: $($unexpected[0].Name)" }
+    Write-Checksums -Root $distRoot -Names $allowed
+}
+
+if ($Mode -eq 'AssemblePortable') {
+    if (-not $isTest) { throw 'AssemblePortable is a controlled packaging-test mode.' }
+    Assemble-Portable -Published $PublishedAppPath -Sparse $SparsePackagePath -Cer $CertificatePublicPath
+    [pscustomobject]@{ portableZip = (Join-Path $distRoot $portableZipName) } | ConvertTo-Json -Compress | Write-Output
+    exit 0
+}
+if ($Mode -eq 'EmitChecksums') {
+    if (-not $isTest) { throw 'EmitChecksums is a controlled packaging-test mode.' }
+    Write-PublicChecksums
+    [pscustomobject]@{ checksumPath = (Join-Path $distRoot 'SHA256SUMS.txt') } | ConvertTo-Json -Compress | Write-Output
     exit 0
 }
 
-Assert-PathUnderAllowedRoot -Path $artifactsRoot
-Assert-PathUnderAllowedRoot -Path $distRoot
-New-Item -ItemType Directory -Path $artifactsRoot, $distRoot -Force | Out-Null
-$dotnetPath = Join-Path $repositoryRoot '.dotnet\dotnet.exe'
-& $dotnetPath @restoreArguments
-if ($LASTEXITCODE -ne 0) { throw 'Release restore failed.' }
-& $dotnetPath @testArguments
-if ($LASTEXITCODE -ne 0) { throw 'Release tests failed.' }
-$tools = Resolve-SdkTools -PackageRoot $SdkBuildToolsPath
-Assert-PathUnderAllowedRoot -Path $distRoot
-if (Test-Path -LiteralPath $distRoot) {
-    Assert-SafeRecursiveTree -Path $distRoot
-    Remove-Item -LiteralPath $distRoot -Recurse -Force
-}
-New-Item -ItemType Directory -Path $distRoot | Out-Null
-Assert-PathUnderAllowedRoot -Path $publishRoot
-if (Test-Path -LiteralPath $publishRoot) {
-    Assert-SafeRecursiveTree -Path $publishRoot
-    Remove-Item -LiteralPath $publishRoot -Recurse -Force
-}
-& $dotnetPath @publishArguments
-if ($LASTEXITCODE -ne 0) { throw 'Self-contained win-x64 publish failed.' }
-New-CleanPackageLayout -PublishedPath $publishRoot
-
-$createdCertificate = $null
+$tools = Resolve-SdkTools $SdkBuildToolsPath
+$iscc = Resolve-Inno $InnoSetupPath
 $certificate = $null
-$plainPassword = $CertificatePassword
-$pfxPath = $CertificatePath
-$machineTrustedCertificateAdded = $false
-$machineTrustedCertificatePath = $null
-$transientThumbprint = $null
-Assert-PathUnderAllowedRoot -Path $localSigningRunRoot
-New-Item -ItemType Directory -Path $localSigningRunRoot -Force | Out-Null
 try {
-    if ([string]::IsNullOrWhiteSpace($pfxPath)) {
-        $randomBytes = New-Object byte[] 32
-        $random = [System.Security.Cryptography.RandomNumberGenerator]::Create()
-        try { $random.GetBytes($randomBytes) }
-        finally { $random.Dispose() }
-        $plainPassword = [Convert]::ToBase64String($randomBytes)
-        $securePassword = ConvertTo-SecureString -String $plainPassword -AsPlainText -Force
-        $createdCertificate = New-SelfSignedCertificate -Type Custom -Subject 'CN=LumaTherm Local' -FriendlyName 'LumaTherm Local Package Signing' -KeyAlgorithm RSA -KeyLength 2048 -HashAlgorithm SHA256 -KeyUsage DigitalSignature -TextExtension @('2.5.29.37={text}1.3.6.1.5.5.7.3.3') -KeyExportPolicy Exportable -CertStoreLocation 'Cert:\CurrentUser\My' -NotAfter (Get-Date).AddYears(1)
-        $transientThumbprint = $createdCertificate.Thumbprint
-        $pfxPath = Join-Path $localSigningRunRoot 'LumaTherm-local.pfx'
-        Assert-PathUnderAllowedRoot -Path $localSigningRunRoot
-        Export-PfxCertificate -Cert $createdCertificate -FilePath $pfxPath -Password $securePassword | Out-Null
-        Export-Certificate -Cert $createdCertificate -FilePath (Join-Path $localSigningRunRoot 'LumaTherm.cer') -Type CERT | Out-Null
-    } else {
-        $pfxPath = [System.IO.Path]::GetFullPath($pfxPath)
-        if (-not (Test-Path -LiteralPath $pfxPath -PathType Leaf)) { throw "Certificate PFX not found: $pfxPath" }
-    }
+    if (-not [string]::IsNullOrWhiteSpace($CertificatePath)) {
+        $certificate = Open-ExternalCertificate
+        if (-not $Publisher.Equals($certificate.Subject, [StringComparison]::OrdinalIgnoreCase)) { throw 'Publisher does not match the external signing certificate subject.' }
+        $certificateSource = 'external-provided'
+    } else { $certificateSource = 'not-provided' }
 
-    $certificate = Open-SigningCertificate -Path $pfxPath -Password $plainPassword
-    if (-not $Publisher.Equals($certificate.Subject, [System.StringComparison]::OrdinalIgnoreCase)) {
-        throw "Publisher '$Publisher' does not match signing certificate subject '$($certificate.Subject)'."
-    }
-
-    [xml]$layoutManifest = Get-Content -LiteralPath (Join-Path $layoutRoot 'AppxManifest.xml') -Raw
-    $layoutManifest.Package.Identity.Publisher = $Publisher
-    $layoutManifest.Save((Join-Path $layoutRoot 'AppxManifest.xml'))
-    $msixPath = Join-Path $distRoot $msixName
-    if (Test-Path -LiteralPath $msixPath) { Remove-Item -LiteralPath $msixPath -Force }
-    & $tools.MakeAppx pack /d $layoutRoot /p $msixPath /o
-    if ($LASTEXITCODE -ne 0) { throw 'MakeAppx packaging failed.' }
-    & $tools.SignTool sign /fd SHA256 /f $pfxPath /p $plainPassword $msixPath
-    if ($LASTEXITCODE -ne 0) { throw 'SignTool signing failed.' }
-    if ($null -ne $createdCertificate) {
-        $machineTrustedCertificatePath = 'Cert:\LocalMachine\TrustedPeople\' + $createdCertificate.Thumbprint
-        if (-not (Test-Path -LiteralPath $machineTrustedCertificatePath)) {
-            $machineTrustedCertificateAdded = $true
-            Import-Certificate -FilePath (Join-Path $localSigningRunRoot 'LumaTherm.cer') -CertStoreLocation 'Cert:\LocalMachine\TrustedPeople' | Out-Null
+    $dotnet = Join-Path $repositoryRoot '.dotnet\dotnet.exe'
+    $publishArguments = @('publish', (Join-Path $repositoryRoot 'src\LumaTherm.App\LumaTherm.App.csproj'), '-c', 'Release', '-r', 'win-x64', '--self-contained', 'true', '-p:PublishSingleFile=true', '-p:IncludeNativeLibrariesForSelfExtract=true', '-p:DebugType=None', '-p:DebugSymbols=false', '-p:NuGetAudit=false', '-o', $publishRoot)
+    $plan = [ordered]@{
+        version = $version
+        setupName = $setupName
+        portableZipName = $portableZipName
+        sparsePackageName = $sparsePackageName
+        checksumName = 'SHA256SUMS.txt'
+        stableAppId = $stableAppId
+        certificateSource = $certificateSource
+        allowedWriteRoots = @([IO.Path]::GetFullPath($artifactsRoot), [IO.Path]::GetFullPath($distRoot))
+        tools = [ordered]@{
+            SignTool = [ordered]@{ path = $tools.SignTool; available = (-not [string]::IsNullOrWhiteSpace($tools.SignTool) -and (Test-Path -LiteralPath $tools.SignTool -PathType Leaf)) }
+            MakeAppx = [ordered]@{ path = $tools.MakeAppx; available = (-not [string]::IsNullOrWhiteSpace($tools.MakeAppx) -and (Test-Path -LiteralPath $tools.MakeAppx -PathType Leaf)) }
+            ISCC = [ordered]@{ path = $iscc; available = (Test-Path -LiteralPath $iscc -PathType Leaf) }
         }
+        plannedCommands = @(
+            [ordered]@{ name = 'restore'; file = $dotnet; arguments = @('restore', 'LumaTherm.sln', '-r', 'win-x64', '-p:NuGetAudit=false') },
+            [ordered]@{ name = 'test'; file = $dotnet; arguments = @('test', 'LumaTherm.sln', '-c', 'Release', '-p:NuGetAudit=false') },
+            [ordered]@{ name = 'publish'; file = $dotnet; arguments = $publishArguments },
+            [ordered]@{ name = 'make-sparse-package'; file = $tools.MakeAppx; arguments = @('pack', '/d', $sparseLayoutRoot, '/p', (Join-Path $artifactsRoot $sparsePackageName), '/o') },
+            [ordered]@{ name = 'sign-app'; file = $tools.SignTool; arguments = @('sign', '/fd', 'SHA256', '/f', '<external-pfx>', '/p', '<secure-password>', (Join-Path $publishRoot 'LumaTherm.exe')) },
+            [ordered]@{ name = 'sign-sparse-package'; file = $tools.SignTool; arguments = @('sign', '/fd', 'SHA256', '/f', '<external-pfx>', '/p', '<secure-password>', (Join-Path $artifactsRoot $sparsePackageName)) },
+            [ordered]@{ name = 'verify-app'; file = $tools.SignTool; arguments = @('verify', '/pa', '/v', (Join-Path $publishRoot 'LumaTherm.exe')) },
+            [ordered]@{ name = 'verify-sparse-package'; file = $tools.SignTool; arguments = @('verify', '/pa', '/v', (Join-Path $artifactsRoot $sparsePackageName)) },
+            [ordered]@{ name = 'assemble-portable'; file = 'internal'; arguments = @($portableZipName) },
+            [ordered]@{ name = 'compile-installer'; file = $iscc; arguments = @('/Qp', "/O$distRoot", "/DPayloadRoot=$portableRoot", (Join-Path $repositoryRoot 'packaging\LumaTherm.iss')) },
+            [ordered]@{ name = 'sign-installer'; file = $tools.SignTool; arguments = @('sign', '/fd', 'SHA256', '/f', '<external-pfx>', '/p', '<secure-password>', (Join-Path $distRoot $setupName)) },
+            [ordered]@{ name = 'verify-installer'; file = $tools.SignTool; arguments = @('verify', '/pa', '/v', (Join-Path $distRoot $setupName)) },
+            [ordered]@{ name = 'emit-checksums'; file = 'internal'; arguments = @('SHA256SUMS.txt') }
+        )
+        forbiddenSideEffects = [ordered]@{ certificateImport = $false; packageRegistration = $false; systemStoreWrite = $false; install = $false; uninstall = $false; hardwareWrite = $false; signing = $false }
+        privateKeyOutputs = @()
+        inputs = [ordered]@{ manifest = $manifestPath; innoScript = (Join-Path $repositoryRoot 'packaging\LumaTherm.iss'); licenseAvailable = (Test-Path -LiteralPath (Join-Path $repositoryRoot 'LICENSE') -PathType Leaf) }
     }
-    & $tools.SignTool verify /pa /v $msixPath
-    if ($LASTEXITCODE -ne 0) { throw 'SignTool verification failed.' }
+    if ($Mode -eq 'Plan') { $plan | ConvertTo-Json -Depth 8 -Compress | Write-Output; exit 0 }
 
-    $zipPath = Join-Path $distRoot $zipName
-    if (Test-Path -LiteralPath $zipPath) { Remove-Item -LiteralPath $zipPath -Force }
-    Assert-SafeRecursiveTree -Path $publishRoot
-    Compress-Archive -Path (Join-Path $publishRoot '*') -DestinationPath $zipPath -CompressionLevel Optimal
-    if ($null -ne $createdCertificate) {
-        Copy-Item -LiteralPath (Join-Path $localSigningRunRoot 'LumaTherm.cer') -Destination (Join-Path $distRoot 'LumaTherm.cer') -Force
-    } else {
-        Export-Certificate -Cert $certificate -FilePath (Join-Path $distRoot 'LumaTherm.cer') -Type CERT -Force | Out-Null
+    if ($null -eq $certificate) { throw 'An external PFX is required for a Full release.' }
+    foreach ($tool in @($tools.MakeAppx, $tools.SignTool, $iscc)) { if ([string]::IsNullOrWhiteSpace($tool) -or -not (Test-Path -LiteralPath $tool -PathType Leaf)) { throw 'MakeAppx, SignTool, and ISCC must all be available for a Full release.' } }
+    foreach ($input in @($manifestPath, (Join-Path $repositoryRoot 'packaging\LumaTherm.iss'), (Join-Path $repositoryRoot 'README.md'), (Join-Path $repositoryRoot 'LICENSE'))) { if (-not (Test-Path -LiteralPath $input -PathType Leaf)) { throw "Required release input is missing: $([IO.Path]::GetFileName($input))" } }
+
+    Remove-OwnedDirectory $artifactsRoot
+    Remove-OwnedDirectory $distRoot
+    New-Item -ItemType Directory -Path $artifactsRoot, $distRoot, $publishRoot, $sparseLayoutRoot -Force | Out-Null
+    & $dotnet restore (Join-Path $repositoryRoot 'LumaTherm.sln') -r win-x64 '-p:NuGetAudit=false'; if ($LASTEXITCODE -ne 0) { throw 'Release restore failed.' }
+    & $dotnet test (Join-Path $repositoryRoot 'LumaTherm.sln') -c Release '--no-restore' '-p:NuGetAudit=false'; if ($LASTEXITCODE -ne 0) { throw 'Release tests failed.' }
+    & $dotnet @publishArguments; if ($LASTEXITCODE -ne 0) { throw 'Self-contained publish failed.' }
+    $projectExe = Join-Path $publishRoot 'LumaTherm.App.exe'
+    $appExe = Join-Path $publishRoot 'LumaTherm.exe'
+    if (Test-Path -LiteralPath $projectExe) { Move-Item -LiteralPath $projectExe -Destination $appExe }
+    if (-not (Test-Path -LiteralPath $appExe -PathType Leaf)) { throw 'Published LumaTherm executable is missing.' }
+    Copy-Item -LiteralPath $manifestPath -Destination (Join-Path $sparseLayoutRoot 'AppxManifest.xml')
+    Copy-Item -LiteralPath (Join-Path $repositoryRoot 'packaging\Assets') -Destination $sparseLayoutRoot -Recurse
+    Copy-Item -LiteralPath (Join-Path $repositoryRoot 'packaging\public') -Destination $sparseLayoutRoot -Recurse
+    $sparsePath = Join-Path $artifactsRoot $sparsePackageName
+    & $tools.MakeAppx pack /d $sparseLayoutRoot /p $sparsePath /o; if ($LASTEXITCODE -ne 0) { throw 'MakeAppx sparse package build failed.' }
+    & $tools.SignTool sign /fd SHA256 /f $CertificatePath /p $CertificatePassword $appExe; if ($LASTEXITCODE -ne 0) { throw 'Application signing failed.' }
+    & $tools.SignTool sign /fd SHA256 /f $CertificatePath /p $CertificatePassword $sparsePath; if ($LASTEXITCODE -ne 0) { throw 'Sparse package signing failed.' }
+    foreach ($signed in @($appExe, $sparsePath)) { & $tools.SignTool verify /pa /v $signed; if ($LASTEXITCODE -ne 0) { throw "Authenticode verification failed: $([IO.Path]::GetFileName($signed))" } }
+    $cerPath = Join-Path $artifactsRoot 'LumaTherm.cer'
+    [IO.File]::WriteAllBytes($cerPath, $certificate.Export([Security.Cryptography.X509Certificates.X509ContentType]::Cert))
+    Assemble-Portable -Published $publishRoot -Sparse $sparsePath -Cer $cerPath
+    $iss = Join-Path $repositoryRoot 'packaging\LumaTherm.iss'
+    & $iscc '/Qp' "/O$distRoot" "/DPayloadRoot=$portableRoot" $iss; if ($LASTEXITCODE -ne 0) { throw 'Inno Setup compilation failed.' }
+    $setupPath = Join-Path $distRoot $setupName
+    & $tools.SignTool sign /fd SHA256 /f $CertificatePath /p $CertificatePassword $setupPath; if ($LASTEXITCODE -ne 0) { throw 'Installer signing failed.' }
+    & $tools.SignTool verify /pa /v $setupPath; if ($LASTEXITCODE -ne 0) { throw 'Installer Authenticode verification failed.' }
+    foreach ($signed in @($appExe, $sparsePath, $setupPath)) {
+        $signature = Get-AuthenticodeSignature -LiteralPath $signed
+        if ($signature.Status -ne 'Valid' -or $null -eq $signature.SignerCertificate -or -not $signature.SignerCertificate.Thumbprint.Equals($certificate.Thumbprint, [StringComparison]::OrdinalIgnoreCase)) { throw "Signer verification failed: $([IO.Path]::GetFileName($signed))" }
     }
-    Copy-Item -LiteralPath (Join-Path $repositoryRoot 'scripts\install.ps1') -Destination $distRoot -Force
-    Copy-Item -LiteralPath (Join-Path $repositoryRoot 'scripts\uninstall.ps1') -Destination $distRoot -Force
-    Write-DistributionChecksums
+    Write-PublicChecksums
     Write-Host "Release artifacts created in $distRoot"
 } finally {
-    $plainPassword = $null
     $CertificatePassword = $null
     if ($null -ne $certificate) { $certificate.Dispose() }
-    $cleanupFailures = [System.Collections.Generic.List[string]]::new()
-    if ($machineTrustedCertificateAdded -and -not [string]::IsNullOrWhiteSpace($machineTrustedCertificatePath)) {
-        try { if (Test-Path -LiteralPath $machineTrustedCertificatePath) { Remove-Item -LiteralPath $machineTrustedCertificatePath -Force } }
-        catch { $cleanupFailures.Add("LocalMachine/TrustedPeople cleanup failed: $($_.Exception.Message)") }
-    }
-    if ($null -ne $createdCertificate) {
-        $myCertificatePath = "Cert:\CurrentUser\My\" + $createdCertificate.Thumbprint
-        try { if (Test-Path -LiteralPath $myCertificatePath) { Remove-Item -LiteralPath $myCertificatePath -Force } }
-        catch { $cleanupFailures.Add("CurrentUser/My cleanup failed: $($_.Exception.Message)") }
-        try {
-            if (($machineTrustedCertificateAdded -and (Test-Path -LiteralPath $machineTrustedCertificatePath)) -or (Test-Path -LiteralPath $myCertificatePath)) {
-                throw 'Owned transient certificate remains in a certificate store.'
-            }
-        } catch { $cleanupFailures.Add("Certificate cleanup verification failed: $($_.Exception.Message)") }
-    }
-    try {
-        Assert-PathUnderAllowedRoot -Path $localSigningRunRoot
-        if (Test-Path -LiteralPath $localSigningRunRoot) {
-            Assert-SafeRecursiveTree -Path $localSigningRunRoot
-            Remove-Item -LiteralPath $localSigningRunRoot -Recurse -Force
-        }
-    } catch { $cleanupFailures.Add("Owned signing directory cleanup failed: $($_.Exception.Message)") }
-    if ($cleanupFailures.Count -gt 0) { throw ($cleanupFailures -join [Environment]::NewLine) }
-    if (-not [string]::IsNullOrWhiteSpace($transientThumbprint)) {
-        Write-Host "Removed transient signing certificate $transientThumbprint from owned CurrentUser/My and LocalMachine/TrustedPeople entries and verified cleanup."
-    }
 }

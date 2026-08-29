@@ -10,7 +10,8 @@ internal static class PowerShellTestHost
         string script,
         IReadOnlyList<string> arguments,
         IReadOnlyDictionary<string, string>? environment = null,
-        TimeSpan? timeout = null)
+        TimeSpan? timeout = null,
+        bool invokeViaCommand = false)
     {
         var startInfo = new ProcessStartInfo
         {
@@ -25,8 +26,17 @@ internal static class PowerShellTestHost
         startInfo.ArgumentList.Add("-NonInteractive");
         startInfo.ArgumentList.Add("-ExecutionPolicy");
         startInfo.ArgumentList.Add("Bypass");
-        startInfo.ArgumentList.Add("-File");
-        startInfo.ArgumentList.Add(script);
+        if (invokeViaCommand)
+        {
+            startInfo.ArgumentList.Add("-Command");
+            startInfo.ArgumentList.Add("&");
+            startInfo.ArgumentList.Add(script);
+        }
+        else
+        {
+            startInfo.ArgumentList.Add("-File");
+            startInfo.ArgumentList.Add(script);
+        }
         foreach (var argument in arguments)
         {
             startInfo.ArgumentList.Add(argument);
