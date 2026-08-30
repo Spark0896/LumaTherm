@@ -314,3 +314,65 @@ The signatures are not timestamped. After required trust cleanup, all three stil
 The successful elevated helper exited 0 with `removed=1; remaining=0`. The failed-at-test signer `CF6960D0DF770664359C0B167CAC705A293A9429` and successful signer `CE29DF766EF5D8070BB802C14A1D5A446BDD3823` are absent from both `CurrentUser\TrustedPeople` and `LocalMachine\TrustedPeople`. The protected `17DE7A023246766D898A26DA2BFC8D797B48B987` remains exactly once in each store. There are 0 `lumatherm-machine-sign-*` temp directories and 0 repository files with `.pfx`, `.p12`, `.pvk`, or `.key` extensions. Temporary audit extraction was removed, and idle .NET build servers were shut down.
 
 No installer or application was launched. No installation, sparse-package registration, old-version removal, hardware write, GUI action, tag, remote, push, release, upload, or publication occurred. Those remain separate action-time checkpoints.
+
+## Authorized installer acceptance — FAILED at sparse-package registration
+
+The user later gave action-time authorization to run the freshly verified installer, update the existing 1.0.1 installation, preserve settings, enable Desktop and Start Menu shortcuts, and launch the installed application for a process/window check. Hardware RGB writes, live thermal-mode changes, and publication remained excluded.
+
+Preflight re-read `dist\LumaTherm-1.1.0-win-x64-setup.exe` as SHA-256 `FD4099FBBBCB011C6E3269CE60A8A390FE07D7841D14AF9249E40FB4AAAC5759`, an exact match for the verified release. The old package was `LumaTherm_1.0.1.0_x64__jzd30fs6ag6cm` (Status Ok). Settings were `C:\Users\User\AppData\Local\LumaTherm\settings.json`, length 542, SHA-256 `4DDC31323D58625CBC875F6110558C7D15E806CFE0A096E7A9BA088D46574B3F`.
+
+Windows UI automation was unavailable before any interaction: its required reset/retries failed with `windows sandbox failed: helper_unknown_error: apply deny-read ACLs`. No UI or UAC dialog was automated. The deterministic shipping-installer fallback was:
+
+```powershell
+Start-Process `
+    -FilePath '.\dist\LumaTherm-1.1.0-win-x64-setup.exe' `
+    -ArgumentList @(
+        '/SILENT',
+        '/SUPPRESSMSGBOXES',
+        '/ALLOWCERTIMPORT',
+        '/TASKS="desktopicon,startmenuicon"',
+        '/NORESTART',
+        '/CLOSEAPPLICATIONS') `
+    -Verb RunAs `
+    -WindowStyle Normal `
+    -Wait
+```
+
+The user manually approved UAC. The installer process exited 0, but independent acceptance checks found an incomplete state:
+
+```text
+Old AppX identity 1.0.1 removal: succeeded
+New AppX identity 1.1.0 registration: absent
+Installed Inno version/location: 1.1.0 / C:\Program Files\LumaTherm\
+Installed app SHA-256: 04A3ADA69FD386F7C08AF6FD046ACCB65B3359CFE692A1B2D07E033272306E66
+Installed sparse MSIX SHA-256: 4381A50C968CFBC416A10A0BB3CF98A6EFC273115FFBE6CC1000F6253BE133FF
+Installed CER SHA-256: FB2EEF83E82A11A153F13321BA111329EC99687FCC27BAE167E5DD9F0D31C00C
+Installed payload hashes match verified release: true
+Start Menu target: C:\Program Files\LumaTherm\payload\app\LumaTherm.exe
+Desktop target/arguments: C:\Windows\explorer.exe / shell:AppsFolder\LumaTherm_jzd30fs6ag6cm!LumaTherm
+Desktop shortcut updated: false
+Settings SHA-256 after attempt: 4DDC31323D58625CBC875F6110558C7D15E806CFE0A096E7A9BA088D46574B3F
+Settings preserved exactly: true
+LumaTherm process: absent
+Application launch attempted: false
+```
+
+The AppX operational log contains the successful 1.0.1 removal at 23:24:16–23:24:17 but no 1.1.0 Add event. Source inspection confirms that Inno post-install calls `Register-LumaTherm.ps1 -PortableDirectory "{app}\payload" -NonInteractive -ConfirmCertificateImport`; that helper imports only the bundled public signer into `LocalMachine\TrustedPeople`, registers the sparse package with external location, verifies the contract, and rolls package/certificate changes back on failure.
+
+For systematic isolation, the exact installed helper was prepared for one elevated run with output captured only in an external temporary log. The user canceled that UAC before the elevated process started. `Start-Process` returned `The operation was canceled by the user`; no registration action ran and no temporary log remained. No automatic retry or alternate trust-store workaround was attempted.
+
+Final read-only cleanup/state evidence:
+
+```text
+Get-AppxPackage -Name LumaTherm: no package
+CE29DF766EF5D8070BB802C14A1D5A446BDD3823 in CurrentUser\TrustedPeople: 0
+CE29DF766EF5D8070BB802C14A1D5A446BDD3823 in LocalMachine\TrustedPeople: 0
+Protected 17DE7A023246766D898A26DA2BFC8D797B48B987 in CurrentUser\TrustedPeople: 1
+Protected 17DE7A023246766D898A26DA2BFC8D797B48B987 in LocalMachine\TrustedPeople: 1
+Temporary registration logs: absent
+LumaTherm process: absent
+```
+
+This is an installer acceptance failure despite exit code 0: the exact 1.1.0 Program Files payload/uninstaller is present, but the required package identity is absent and the Desktop shortcut targets that missing identity. Directly launching the Program Files executable was deliberately skipped because it would not validate the required package identity/extension contract.
+
+The exact next action-time checkpoint is a manually approved UAC run of the installed shipping `Register-LumaTherm.ps1` for `C:\Program Files\LumaTherm\payload`, followed by independent identity/version/external-location/shortcut verification. Root cause inside the registration transaction remains unresolved because the diagnostic helper never started. No hardware write, mode change, tag, push, release, upload, or publication occurred.
