@@ -1,0 +1,19 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - run: dotnet restore LumaTherm.sln -p:NuGetAudit=false
+      - run: dotnet build LumaTherm.sln -c Release --no-restore -p:NuGetAudit=false
+      - run: dotnet test LumaTherm.sln -c Release --no-build -p:NuGetAudit=false

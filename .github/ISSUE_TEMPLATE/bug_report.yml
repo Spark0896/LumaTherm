@@ -1,0 +1,46 @@
+name: Bug report
+description: Report a reproducible LumaTherm problem.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: "Do not include certificates, passwords, full device IDs, or other sensitive data. For security issues, follow SECURITY.md instead."
+  - type: input
+    id: version
+    attributes:
+      label: LumaTherm version
+      placeholder: "1.1.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: installation
+    attributes:
+      label: Installation type
+      options:
+        - Setup installer
+        - Portable
+        - Built from source
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Include the smallest safe sequence.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior and safe logs
+      description: Redact personal paths, device identifiers, and secrets.
+    validations:
+      required: true

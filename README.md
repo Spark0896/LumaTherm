@@ -1,31 +1,61 @@
 # LumaTherm
 
-LumaTherm changes Windows Dynamic Lighting fan colors from the GPU temperature: cold blue, warm yellow, and hot red. It uses NVIDIA NVML first and MSI Afterburner shared memory as an optional fallback.
+> English · [Русский](README.ru.md)
+
+LumaTherm changes compatible Windows Dynamic Lighting colors from GPU temperature: cold blue, warm yellow, and hot red. It uses NVIDIA NVML first and MSI Afterburner shared memory as an optional read-only fallback.
+
+## Features
+
+- Smooth, editable temperature/color profile with 60-second history and tray control.
+- Optional autostart, notifications, and English/Russian/system language selection.
+- Direct output through Windows `LampArray`; no vendor DLLs or raw HID writes.
+- GitHub stable-release check over HTTPS. It opens a release page/download; it does not download or install updates itself.
+- Free and open source under the [MIT License](LICENSE).
 
 ## Requirements
 
-Windows 11 with Dynamic Lighting enabled and a compatible LampArray device are required. The only lighting path is `Windows.Devices.Lights.LampArray`; LumaTherm does not use vendor DLLs or raw HID writes. NVIDIA hardware is supported through NVML; MSI Afterburner may provide a read-only fallback temperature when its shared memory is available.
+LumaTherm 1.1.0 requires x64 Windows 11 (22H2 or later), an NVIDIA driver, and a compatible Windows Dynamic Lighting / LampArray device. A clean Windows 11 installation needs no .NET Runtime, GCC, or MSI Afterburner because the app is self-contained. MSI Afterburner is only an optional read-only fallback sensor. A device must be exposed by Windows as an available LampArray; support for every RGB product or manufacturer application is not promised.
 
-## Installation and first run
+## Screenshots
 
-The controller-gated package will be installed with `dist/install.ps1`. On first launch, confirm that mode and autostart are off. The dashboard shows the current GPU temperature and a 60-second history. Enable mode only after Dynamic Lighting has discovered the device.
+Screenshots will be linked here after final manual hardware acceptance is recorded. This repository does not present unrecorded visual evidence as a completed result.
 
-## Daily use
+## Setup quick start
 
-Edit threshold/color profiles in Settings; temperatures must satisfy cold < warm < hot. Closing the window hides LumaTherm to the tray. The tray menu can open, toggle, or exit the app. Autostart is optional and should remain off until explicitly enabled.
+1. Download `LumaTherm-1.1.0-win-x64-setup.exe` and `SHA256SUMS.txt` only from [GitHub Releases](https://github.com/Spark0896/LumaTherm/releases).
+2. Verify the SHA-256 value as described in [installation](docs/installation.md#verify-sha-256).
+3. Run setup as Administrator and explicitly approve import of the bundled **public** certificate. It is needed to register the Windows lighting identity; no private key is imported.
+4. Start LumaTherm from the chosen shortcut, select a LampArray device, and enable thermal synchronization only after Windows reports it available.
 
-LumaTherm releases Dynamic Lighting when mode is disabled or the app exits. Keep GIGABYTE Control Center available for its normal use. If discovery is unavailable, enable Windows Dynamic Lighting, prioritize LumaTherm above conflicting background controllers, and if necessary close only the RGB Fusion page before rediscovering. LumaTherm does not edit, stop, or inspect GIGABYTE software.
+The installer has no post-install launch entry and does not automatically start the application.
 
-Logs are stored under `%LOCALAPPDATA%\LumaTherm\logs`. Use Apps & Features or the packaged uninstaller to remove the installed app. The current hardware acceptance, tray behavior, autostart, recovery, suspend/resume, soak, uninstall, and visual color checks remain controller-gated; see `docs/hardware-validation.md`.
+## Portable registration
 
-## Safe diagnostics
-
-The smoke CLI is read-only for `sensor` and `lights`:
+The portable zip contains a self-contained application plus a sparse package identity. Extract it to a permanent local folder, verify its hashes, and use an elevated PowerShell:
 
 ```powershell
-& "$PWD\.dotnet\dotnet.exe" run --project tools\LumaTherm.Smoke -c Release -- sensor --json
-& "$PWD\.dotnet\dotnet.exe" run --project tools\LumaTherm.Smoke -c Release -- sensor --skip-nvml --json
-& "$PWD\.dotnet\dotnet.exe" run --project tools\LumaTherm.Smoke -c Release -- lights --json
+.\install.ps1 -ConfirmCertificateImport
 ```
 
-`cycle` and `simulate` can write physical lighting only with `--confirm-light-write` and an interactive `YES`. They are intentionally not run until the controller obtains explicit user confirmation.
+Portable registration is explicit and certificate-gated. It verifies signatures, checksums, and its signed payload anchor before registering the identity against the exact external folder. Do not move or delete that folder while registered; see [portable deployment](docs/portable.md).
+
+## Dynamic Lighting priority
+
+Enable Dynamic Lighting in Windows and prioritize LumaTherm above competing background controllers. If discovery is unavailable, close only the RGB Fusion page in GIGABYTE Control Center if it holds the device, then retry. LumaTherm does not edit, stop, or inspect GIGABYTE software.
+
+## Privacy and troubleshooting
+
+Settings and logs stay under `%LOCALAPPDATA%\LumaTherm`. Update checks request only the [latest GitHub release endpoint](https://api.github.com/repos/Spark0896/LumaTherm/releases/latest). The response must be a published stable semantic-version release; no personal data is sent and no update is silently installed.
+
+Read [troubleshooting](docs/troubleshooting.md) for sensor, LampArray, setup, portable, settings, and update guidance. [Compatibility](docs/compatibility.md) and [hardware validation](docs/hardware-validation.md) explain the evidence boundary.
+
+## Build and contribute
+
+Source builds use the SDK pinned in `global.json` (8.0.423):
+
+```powershell
+dotnet restore LumaTherm.sln -p:NuGetAudit=false
+dotnet test LumaTherm.sln -c Release -p:NuGetAudit=false
+```
+
+See [development](docs/development.md), [contributing](CONTRIBUTING.md), [security](SECURITY.md), [changelog](CHANGELOG.md), and [license](LICENSE). Maintainers should use [releasing](docs/releasing.md); it covers external certificates, manual gates, checksums, and rollback.
