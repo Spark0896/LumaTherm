@@ -9,7 +9,7 @@ LumaTherm changes compatible Windows Dynamic Lighting colors from GPU temperatur
 - Smooth, editable temperature/color profile with 60-second history and tray control.
 - Optional autostart, notifications, and English/Russian/system language selection.
 - Direct output through Windows `LampArray`; no vendor DLLs or raw HID writes.
-- GitHub stable-release check over HTTPS. It opens a release page/download; it does not download or install updates itself.
+- GitHub stable-release checks run only when you manually initiate a check, with no startup or background polling. The app opens a release page/download; it does not download or install updates itself.
 - Free and open source under the [MIT License](LICENSE).
 
 ## Requirements
@@ -45,7 +45,7 @@ Enable Dynamic Lighting in Windows and prioritize LumaTherm above competing back
 
 ## Privacy and troubleshooting
 
-Settings and logs stay under `%LOCALAPPDATA%\LumaTherm`. Update checks request only the [latest GitHub release endpoint](https://api.github.com/repos/Spark0896/LumaTherm/releases/latest). The response must be a published stable semantic-version release; no personal data is sent and no update is silently installed.
+Settings and logs stay under `%LOCALAPPDATA%\LumaTherm`. A manually initiated update check requests only the [latest GitHub release endpoint](https://api.github.com/repos/Spark0896/LumaTherm/releases/latest). The response must be a published stable semantic-version release; no personal data is sent and no update is silently installed.
 
 Read [troubleshooting](docs/troubleshooting.md) for sensor, LampArray, setup, portable, settings, and update guidance. [Compatibility](docs/compatibility.md) and [hardware validation](docs/hardware-validation.md) explain the evidence boundary.
 

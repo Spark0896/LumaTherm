@@ -2,7 +2,9 @@
 
 ## Reporting a vulnerability
 
-Do not open a public issue for a suspected security vulnerability. Contact [Spark0896](https://github.com/Spark0896) privately through GitHub with a concise reproduction, affected version, impact, and any safe mitigation. Do not include credentials, certificates, user logs, or hardware identifiers unless essential and explicitly requested through a private channel.
+Do not open a public issue for a suspected security vulnerability. Use the repository's [private GitHub security advisory form](https://github.com/Spark0896/LumaTherm/security/advisories/new) with a concise reproduction, affected version, impact, and any safe mitigation. Do not include credentials, certificates, user logs, or hardware identifiers unless essential to the report.
+
+If GitHub private reporting is unavailable, do not disclose vulnerability details publicly. Open only a minimal public issue requesting that private reporting be enabled or a private contact route be provided; do not include a reproduction, affected version, impact, logs, credentials, certificates, or hardware identifiers in that issue.
 
 Reports are triaged on a best-effort basis. Please allow time for acknowledgement and coordinated remediation before disclosure.
 
