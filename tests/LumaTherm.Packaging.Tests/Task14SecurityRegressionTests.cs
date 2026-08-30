@@ -343,38 +343,6 @@ public sealed class Task14SecurityRegressionTests
         finally { if (Directory.Exists(root)) Directory.Delete(root, recursive: true); }
     }
 
-    [Fact]
-    public void ActualInnoScriptCompilesWhenOfficialCompilerIsProvided()
-    {
-        var iscc = Environment.GetEnvironmentVariable("LUMATHERM_TEST_ISCC");
-        if (string.IsNullOrWhiteSpace(iscc)) { return; }
-        Assert.True(File.Exists(iscc), $"Official ISCC path does not exist: {iscc}");
-        var root = Path.Combine(Path.GetTempPath(), "LumaTherm-inno-compile-tests", Guid.NewGuid().ToString("N"));
-        var payload = Path.Combine(root, "payload");
-        var output = Path.Combine(root, "output");
-        Directory.CreateDirectory(payload);
-        Directory.CreateDirectory(output);
-        File.WriteAllText(Path.Combine(payload, "compile-probe.txt"), "compile only; never execute installer");
-        try
-        {
-            var startInfo = new ProcessStartInfo(iscc)
-            {
-                WorkingDirectory = RepositoryLayout.Root,
-                UseShellExecute = false,
-                CreateNoWindow = true
-            };
-            startInfo.ArgumentList.Add("/Qp");
-            startInfo.ArgumentList.Add($"/O{output}");
-            startInfo.ArgumentList.Add($"/DPayloadRoot={payload}");
-            startInfo.ArgumentList.Add(Path.Combine(RepositoryLayout.Root, "packaging", "LumaTherm.iss"));
-            var result = BoundedProcessTestHost.Run(startInfo, TimeSpan.FromSeconds(60), TimeSpan.FromSeconds(5));
-
-            Assert.True(result.ExitCode == 0, result.StandardError + result.StandardOutput);
-            Assert.True(File.Exists(Path.Combine(output, "LumaTherm-1.1.0-win-x64-setup.exe")));
-        }
-        finally { if (Directory.Exists(root)) Directory.Delete(root, recursive: true); }
-    }
-
     private static bool TryCreateJunction(string junction, string target)
     {
         var result = BoundedProcessTestHost.Run(new ProcessStartInfo("cmd.exe")

@@ -341,3 +341,83 @@ Release build:
 Exit 0: 0 warnings, 0 errors.
 
 All six PowerShell scripts parse without errors and `git diff --check` reports no whitespace errors. No real LumaTherm signing, certificate import/store removal, package registration/removal, installer/uninstaller execution, or hardware write occurred. Remaining external Full-release blockers are unchanged: no persistent ISCC installation, no approved external PFX/password, and no repository LICENSE.
+
+## Fix Round 3 - enforced official Inno compile gate (2026-08-30)
+
+### Finding and durable boundary
+
+The prior `ActualInnoScriptCompilesWhenOfficialCompilerIsProvided` test returned success when `LUMATHERM_TEST_ISCC` was absent and accepted any existing executable path when present. It was removed. The checked-in `scripts/Test-LumaThermInnoCompile.ps1` is now the mandatory release-validation boundary; it has no optional compiler environment variable and its `OfficialInstallerPath` parameter is mandatory.
+
+The gate pins the immutable official Inno Setup 6.7.3 release URL and SHA-256 internally:
+
+- URL: `https://github.com/jrsoftware/issrc/releases/download/is-6_7_3/innosetup-6.7.3.exe`
+- SHA-256: `9c73c3bae7ed48d44112a0f48e66742c00090bdb5bef71d9d3c056c66e97b732`
+
+It rejects a missing or mismatched artifact before creating its validation root or starting a process. After verification it creates one contained GUID temp root, copies the artifact into that owned root, verifies the copy against the same pinned hash to close the check/use race, and executes only that owned copy with `/PORTABLE=1 /CURRENTUSER /VERYSILENT /SUPPRESSMSGBOXES /SP- /NORESTART`. It rejects reparse components, extracted reparse points, and an extracted uninstaller. The compiler is therefore provenance-anchored to the exact hash-verified official distribution, not to an arbitrary `ISCC.exe` path.
+
+The gate compiles the real `packaging/LumaTherm.iss` with a harmless isolated payload and output, requires exactly `LumaTherm-1.1.0-win-x64-setup.exe`, records that it was not executed, and deletes the setup together with the exact validation root in `finally`. Extraction and compilation are each bounded to 120 seconds and their exact launched processes are stopped on timeout before cleanup.
+
+The persistent Task 14/Task 16/CI enforcement command is:
+
+```powershell
+powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File .\scripts\Test-LumaThermInnoCompile.ps1 -OfficialInstallerPath <downloaded-unmodified-innosetup-6.7.3.exe>
+```
+
+Omitting `-OfficialInstallerPath`, supplying an arbitrary compiler, or supplying any artifact other than the pinned distribution fails the command. Ordinary clean-Windows tests do not download or install Inno and instead execute the safe failure paths.
+
+### RED -> GREEN evidence
+
+Covering files are `tests/LumaTherm.Packaging.Tests/InnoCompileGateTests.cs` and `scripts/Test-LumaThermInnoCompile.ps1`. `Task14SecurityRegressionTests.cs` no longer contains the conditional compiler test.
+
+RED, before the entrypoint existed:
+
+```powershell
+& .\.dotnet\dotnet.exe test .\tests\LumaTherm.Packaging.Tests -c Release --no-restore -p:NuGetAudit=false --filter "FullyQualifiedName~InnoCompileGate"
+```
+
+Exit 1: 0 passed, 2 failed. Both failures reported that the expected mandatory-parameter/hash-mismatch contracts were absent. This converts the previous unset-environment silent pass and arbitrary-path trust into executable failures.
+
+GREEN after the minimal boundary, including final provenance assertions: the identical command exited 0 with 2/2 passed. `InnoCompileGateFailsWhenOfficialInstallerInputIsOmitted` proves omission fails. `InnoCompileGateRejectsUnpinnedExecutableBeforeExecutionAndCleansTemp` supplies a fake `.exe`, requires the exact immutable URL and pinned SHA-256 in the mismatch result, proves the sentinel was not created, and proves the validation-root snapshot is unchanged.
+
+During implementation, the first GREEN attempt exposed that this Windows PowerShell host did not provide `Get-FileHash`; the gate now uses the repository's direct .NET SHA-256 pattern. Two controlled official attempts then hit the 120-second extraction bound before output. Each failed closed: the exact launched process was stopped, validation temp was removed, the wrapper removed only its GUID download root, and no LumaTherm setup existed. Read-only process evidence showed that the correct arguments reached the bootstrapper. Official setup source/command-line documentation identified separate startup-prompt and non-administrative-mode controls; `/SP-` and `/CURRENTUSER` made the portable extraction deterministic and explicitly non-admin. A subsequent run reached ISCC and exposed Windows PowerShell's empty `Start-Process` exit-code observation with redirected streams; the compiler boundary now uses a bounded direct .NET process with an exact numeric exit code. These were root-cause fixes, not relaxed assertions.
+
+### Official compiler success and cleanup
+
+The final approved temp-only acquisition again used the immutable URL above. The independently calculated download hash and the gate's internal hash both exactly matched the pinned value. The gate returned exit 0 with:
+
+- compiled script: `packaging/LumaTherm.iss`;
+- compiler provenance: `ISCC.exe extracted from the pinned hash-verified official distribution`;
+- extracted compiler SHA-256: `0a8757031b33777e4c9cbffee40f11a5062b36d25cbe144c1db73b6102b80ad7`;
+- expected setup artifact verified: true;
+- setup artifact executed: false;
+- validation temp root cleaned: true.
+
+The outer exact download root was also removed. A final process/temp scan found no `ISCC`, Inno Setup 6.7.3, LumaTherm setup process, or `LumaTherm-inno-*` root. Inno was not persisted, PATH was not changed, and the compiled LumaTherm installer was never run.
+
+### Fresh verification
+
+Complete Packaging:
+
+```powershell
+& .\.dotnet\dotnet.exe test .\tests\LumaTherm.Packaging.Tests -c Release -p:NuGetAudit=false
+```
+
+Exit 0: 67 passed, 0 failed, 0 skipped. The count changed from 66 to 67 because the one conditional compiler case was replaced by two mandatory-gate behavior cases.
+
+Direct mutation-free Plan exited 0 with the same stable AppId and exact artifacts, filesystem-only discovery, empty Plan/allowed write roots, 15 planned stages, SignTool and MakeAppx available, persistent ISCC unavailable, no PFX or LICENSE, no private-key output, and every forbidden side effect false.
+
+Full solution:
+
+```powershell
+& .\.dotnet\dotnet.exe test .\LumaTherm.sln -c Release -p:NuGetAudit=false
+```
+
+Exit 0: Packaging 67, Core 123, Infrastructure 111, App 265, Smoke 19; aggregate 585 passed, 0 failed, 0 skipped.
+
+Release build:
+
+```powershell
+& .\.dotnet\dotnet.exe build .\LumaTherm.sln -c Release -p:NuGetAudit=false
+```
+
+Exit 0: 0 warnings, 0 errors. PowerShell parsing and `git diff --check` also pass. No real LumaTherm signing, certificate-store mutation, package registration/removal, LumaTherm install/uninstall, compiled-setup execution, or hardware write occurred. The only external executable mutation was the explicitly approved official Inno `/PORTABLE=1 /CURRENTUSER` extraction inside owned temp, fully cleaned afterward. Full release remains blocked on a persistent/explicit ISCC input, approved external PFX/password, and repository LICENSE; the new validation gate makes the official compiler input omission a deliberate failure rather than a skipped test.
