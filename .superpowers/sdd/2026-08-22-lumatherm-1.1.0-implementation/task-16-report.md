@@ -2,7 +2,7 @@
 
 Date: 2026-08-30
 
-Status: broader Task 16 remains `NEEDS_CONTEXT`; the fusion-manifest recovery is complete locally. Publication steps 8–11 were not started. No tag, remote, push, repository, release, or upload was created.
+Status: broader Task 16 remains `NEEDS_CONTEXT`; the fusion-manifest recovery is complete locally, but the post-fix signed rebuild is blocked before `build-release.ps1 -Mode Full` by the no-trust signing-verification gate described below. Publication steps 8–11 were not started. No tag, remote, push, repository, release, or upload was created.
 
 ## Verified baseline
 
@@ -76,3 +76,62 @@ git diff --check
 - Read-only probes: NVML passed at 67°C on RTX 5070; Afterburner fallback had no reading; one-lamp `GIGABYTE Device` was discovered with `available:false` while GCC was running.
 
 Installer/portable lifecycle, final signed artifacts/checksums, lighting writes/background behavior, tray/autostart, recovery/soak, RU/EN screenshots, and documentation remain pending. Resume only when the user is ready to approve the exact UAC prompt.
+
+## Post-manifest-fix signed rebuild slice — stopped at the no-trust gate
+
+This slice started from clean HEAD `365a5f91e355261bf4565a375ed49ba99014175c`. It did not install, register, launch, stop, or remove LumaTherm; did not invoke UAC; did not write lighting hardware; did not mutate any certificate trust store; and did not tag, push, publish, upload, or otherwise change a remote.
+
+### Shipping-tool preflight
+
+Read-only discovery found the SDK `SignTool.exe` and `MakeAppx.exe`. The default installed Inno path was absent, but the previously verified extracted compiler remains available at `$env:LOCALAPPDATA\Temp\LumaTherm-task16-tools\compiler\ISCC.exe`; its fresh SHA-256 is `0A8757031B33777E4C9CBFFEE40F11A5062B36D25CBE144C1DB73B6102B80AD7`, matching the earlier verified value, so no Inno installation is required.
+
+The shipping script requires both `SignTool verify /pa /v` exit 0 and `Get-AuthenticodeSignature.Status -eq 'Valid'` immediately after signing the application. A no-store preflight tested that exact Windows trust behavior before allowing the Full build to replace `dist`:
+
+```powershell
+# Executed as one guarded in-memory/temp transaction; the generated password and
+# absolute PFX/private-key path were never printed or persisted in this report.
+$certificate = [Security.Cryptography.X509Certificates.CertificateRequest]::new(
+    'CN=LumaTherm Local', $rsa,
+    [Security.Cryptography.HashAlgorithmName]::SHA256,
+    [Security.Cryptography.RSASignaturePadding]::Pkcs1).CreateSelfSigned(...)
+[IO.File]::WriteAllBytes($externalPfx, $certificate.Export('Pkcs12', $generatedPassword))
+& $signTool sign /fd SHA256 /f $externalPfx /p $generatedPassword $unsignedProbe
+& $signTool verify /pa /v $unsignedProbe
+Get-AuthenticodeSignature -LiteralPath $unsignedProbe
+# finally: dispose certificate/key, clear password, validate the temp-root boundary,
+# and recursively remove the exact transaction directory.
+```
+
+Exact result on a copied, initially `NotSigned` LumaTherm PE:
+
+```text
+SignTool sign exit: 0
+SignTool verify /pa /v exit: 1
+Get-AuthenticodeSignature: UnknownError
+Status message: certificate chain terminated in a root that is not trusted by the trust provider
+Subject: CN=LumaTherm Local
+Generated/signed thumbprint: F272D0FE9A74667E546A3498A089C44149C4AFD3
+Signer matches generated certificate: true
+Generated certificate entries in CurrentUser\My, CurrentUser\Root, CurrentUser\TrustedPeople: 0
+Temporary private material present after finally cleanup: false
+```
+
+The pre-existing trust thumbprint `17DE7A023246766D898A26DA2BFC8D797B48B987` remained untouched: `CurrentUser\TrustedPeople=1`, `CurrentUser\My=0`, `CurrentUser\Root=0`. Neither the preflight signer `F272D0FE9A74667E546A3498A089C44149C4AFD3` nor the signer of the older artifacts described below exists in those three stores. A recursive repository scan found 0 files with `.pfx`, `.p12`, `.pvk`, or `.key` extensions.
+
+Because a newly generated self-signed certificate cannot satisfy the shipping script's mandatory Windows Authenticode verification without trust, the requested Full shipping build was deliberately not invoked. This follows the slice instruction to stop rather than import into a trust store. The exact resume checkpoint is: after generating a new external PFX/CER outside the repository, but before invoking `scripts\build-release.ps1 -Mode Full`, obtain explicit authorization to add only that new public certificate temporarily to `Cert:\CurrentUser\TrustedPeople` and remove only that exact thumbprint in `finally`, or provide an already-trusted `CN=LumaTherm Local` signing PFX. No `LocalMachine` store or UAC is required for that narrow CurrentUser transaction.
+
+### Pre-existing `dist` audit (not post-fix release output)
+
+The files already in `dist` predate the manifest-fix commit: their timestamps are approximately 20:36 +03:00, while commit `d89bb9f50a26b066f08cc8082c59cb881dd66c7c` was created at 22:35:13 +03:00. They were not replaced in this slice and must not be published.
+
+```text
+E8C550B6A20DE9F7C4186F6A227D5DBC96A5FDA19C037045E4F2888B10420957 *LumaTherm-1.1.0-portable-win-x64.zip
+84D89D522FFBFA4F7D7AC169C7C121F630F6AFD4C9E52D3C63B3142E74EE7F1D *LumaTherm-1.1.0-win-x64-setup.exe
+SHA256SUMS.txt SHA-256: F212E2D1ED65666C0F6D532DA1A039AF7761882574C16EBA447F69B061A3F1BC
+```
+
+Both release-file lines match the actual SHA-256 values exactly. The portable contains exactly `app/LumaTherm.exe`, `LICENSE`, `LumaTherm-1.1.0-sparse.msix`, `LumaTherm.cer`, `README.md`, `Register-LumaTherm.ps1`, `SHA256SUMS.txt`, and `Unregister-LumaTherm.ps1`; it contains no PFX/private/password/secret-named entry.
+
+The embedded app, sparse MSIX, and installer all carry signer `74A22D3D35B208D7E2F862F7D4A757C8EF5EEBC9`, subject `CN=LumaTherm Local`, but Windows reports `UnknownError` for all three because the self-signed chain is not trusted. The sparse package itself has the expected identity contract: `LumaTherm`, publisher `CN=LumaTherm Local`, version `1.1.0.0`, application ID `LumaTherm`, executable `LumaTherm.exe`, `uap10:RuntimeBehavior="win32App"`, `uap10:TrustLevel="mediumIL"`, no `EntryPoint`, and exactly one `rescap:Capability Name="runFullTrust"`.
+
+`CreateActCtxW` with embedded manifest resource ID 1 rejected the actual portable `LumaTherm.exe` with the Windows side-by-side configuration error, confirming that these are stale pre-fix artifacts. Temporary extraction used for this read-only audit was removed in `finally` (`ArtifactAuditTempPresentAfterCleanup=False`). Therefore there are no post-fix artifact hashes or post-fix signature-success claims for this slice.
