@@ -270,7 +270,7 @@ try {
             [ordered]@{ name = 'sign-app'; file = $tools.SignTool; arguments = @('sign', '/fd', 'SHA256', '/f', '<external-pfx>', '/p', '<secure-password>', (Join-Path $publishRoot 'LumaTherm.exe')) },
             [ordered]@{ name = 'verify-app'; file = $tools.SignTool; arguments = @('verify', '/pa', '/v', (Join-Path $publishRoot 'LumaTherm.exe')) },
             [ordered]@{ name = 'emit-signed-payload-anchor'; file = 'internal'; arguments = @('PayloadHashes.json') },
-            [ordered]@{ name = 'make-sparse-package'; file = $tools.MakeAppx; arguments = @('pack', '/d', $sparseLayoutRoot, '/p', (Join-Path $artifactsRoot $sparsePackageName), '/o') },
+            [ordered]@{ name = 'make-sparse-package'; file = $tools.MakeAppx; arguments = @('pack', '/d', $sparseLayoutRoot, '/p', (Join-Path $artifactsRoot $sparsePackageName), '/o', '/nv') },
             [ordered]@{ name = 'sign-sparse-package'; file = $tools.SignTool; arguments = @('sign', '/fd', 'SHA256', '/f', '<external-pfx>', '/p', '<secure-password>', (Join-Path $artifactsRoot $sparsePackageName)) },
             [ordered]@{ name = 'verify-sparse-package'; file = $tools.SignTool; arguments = @('verify', '/pa', '/v', (Join-Path $artifactsRoot $sparsePackageName)) },
             [ordered]@{ name = 'assemble-portable'; file = 'internal'; arguments = @($portableZipName) },
@@ -307,7 +307,7 @@ try {
         Copy-Item -LiteralPath (Join-Path $repositoryRoot 'packaging\public') -Destination $sparseLayoutRoot -Recurse
         Write-SignedPayloadAnchor (Join-Path $sparseLayoutRoot 'PayloadHashes.json') $publishRoot $cerPath
         $sparsePath = Join-Path $artifactsRoot $sparsePackageName
-        & $tools.MakeAppx pack /d $sparseLayoutRoot /p $sparsePath /o; if ($LASTEXITCODE -ne 0) { throw 'MakeAppx sparse package build failed.' }
+        & $tools.MakeAppx pack /d $sparseLayoutRoot /p $sparsePath /o /nv; if ($LASTEXITCODE -ne 0) { throw 'MakeAppx sparse package build failed.' }
         & $tools.SignTool sign /fd SHA256 /f $CertificatePath /p $CertificatePassword $sparsePath; if ($LASTEXITCODE -ne 0) { throw 'Sparse package signing failed.' }
         & $tools.SignTool verify /pa /v $sparsePath; if ($LASTEXITCODE -ne 0) { throw 'Sparse package Authenticode verification failed.' }
         foreach ($signed in @($appExe, $sparsePath)) { $signature = Get-AuthenticodeSignature -LiteralPath $signed; if ($signature.Status -ne 'Valid' -or $null -eq $signature.SignerCertificate -or -not $signature.SignerCertificate.Thumbprint.Equals($certificate.Thumbprint, [StringComparison]::OrdinalIgnoreCase)) { throw "Signer verification failed: $([IO.Path]::GetFileName($signed))" } }

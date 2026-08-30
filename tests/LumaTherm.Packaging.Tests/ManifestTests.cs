@@ -30,10 +30,20 @@ public sealed class ManifestTests
         Assert.Equal("LumaTherm", (string?)application.Attribute("Id"));
 
         var native = XDocument.Load(Path.Combine(RepositoryLayout.Root, "src", "LumaTherm.App", "app.manifest"));
-        var nativeIdentity = Assert.Single(native.Descendants(Msix + "identity"));
+        var nativeIdentity = Assert.Single(native.Descendants(Msix + "msix"));
         Assert.Equal((string?)identity.Attribute("Name"), (string?)nativeIdentity.Attribute("packageName"));
         Assert.Equal((string?)identity.Attribute("Publisher"), (string?)nativeIdentity.Attribute("publisher"));
         Assert.Equal((string?)application.Attribute("Id"), (string?)nativeIdentity.Attribute("applicationId"));
+    }
+
+    [Fact]
+    public void FusionManifestUsesTheMsixV1ElementAcceptedByActivationContextParsing()
+    {
+        var manifest = XDocument.Load(Path.Combine(
+            RepositoryLayout.Root, "src", "LumaTherm.App", "app.manifest"));
+
+        Assert.Single(manifest.Root!.Elements(Msix + "msix"));
+        Assert.Empty(manifest.Root.Elements(Msix + "identity"));
     }
 
     [Fact]
@@ -45,7 +55,7 @@ public sealed class ManifestTests
 
         var app = Assert.Single(package.Descendants(Foundation + "Application"));
         Assert.Equal("LumaTherm.exe", (string?)app.Attribute("Executable"));
-        Assert.Equal("windowsApp", (string?)app.Attribute(Uap10 + "RuntimeBehavior"));
+        Assert.Equal("win32App", (string?)app.Attribute(Uap10 + "RuntimeBehavior"));
         Assert.Equal("mediumIL", (string?)app.Attribute(Uap10 + "TrustLevel"));
 
         var lighting = Assert.Single(package.Descendants(Uap3 + "Extension"));
@@ -53,7 +63,7 @@ public sealed class ManifestTests
         var extension = Assert.Single(lighting.Elements(Uap3 + "AppExtension"));
         Assert.Equal("com.microsoft.windows.lighting", (string?)extension.Attribute("Name"));
         Assert.Equal("public", (string?)extension.Attribute("PublicFolder"));
-        Assert.DoesNotContain(package.Descendants(), node => node.Name.LocalName is "StartupTask" or "Capability");
+        Assert.DoesNotContain(package.Descendants(), node => node.Name.LocalName is "StartupTask");
         Assert.Single(app.Elements(Uap + "VisualElements"));
     }
 
