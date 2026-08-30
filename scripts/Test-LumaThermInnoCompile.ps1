@@ -64,10 +64,15 @@ function Assert-ContainedPath {
         [string] $Parent
     )
 
-    $parentFull = [System.IO.Path]::GetFullPath($Parent).TrimEnd([System.IO.Path]::DirectorySeparatorChar) +
-        [System.IO.Path]::DirectorySeparatorChar
+    $separators = [char[]]@(
+        [System.IO.Path]::DirectorySeparatorChar,
+        [System.IO.Path]::AltDirectorySeparatorChar)
+    $parentFull = [System.IO.Path]::GetFullPath($Parent).TrimEnd($separators)
+    $parentPrefix = [string]::Concat($parentFull, [System.IO.Path]::DirectorySeparatorChar)
     $childFull = [System.IO.Path]::GetFullPath($Child)
-    if (-not $childFull.StartsWith($parentFull, [System.StringComparison]::OrdinalIgnoreCase)) {
+    $childComparable = $childFull.TrimEnd($separators)
+    if ($childComparable.Equals($parentFull, [System.StringComparison]::OrdinalIgnoreCase) -or
+        -not $childComparable.StartsWith($parentPrefix, [System.StringComparison]::OrdinalIgnoreCase)) {
         throw "Compiler validation path escaped its owned temporary root: $childFull"
     }
 }

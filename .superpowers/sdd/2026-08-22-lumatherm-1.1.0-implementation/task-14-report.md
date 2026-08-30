@@ -421,3 +421,84 @@ Release build:
 ```
 
 Exit 0: 0 warnings, 0 errors. PowerShell parsing and `git diff --check` also pass. No real LumaTherm signing, certificate-store mutation, package registration/removal, LumaTherm install/uninstall, compiled-setup execution, or hardware write occurred. The only external executable mutation was the explicitly approved official Inno `/PORTABLE=1 /CURRENTUSER` extraction inside owned temp, fully cleaned afterward. Full release remains blocked on a persistent/explicit ISCC input, approved external PFX/password, and repository LICENSE; the new validation gate makes the official compiler input omission a deliberate failure rather than a skipped test.
+
+## Fix Round 4 - containment boundary and clean JSON stdout (2026-08-30)
+
+### Scope and root-cause evidence
+
+The open finding named `scripts/Test-LumaThermInnoCompile.ps1:65-66`: a separately emitted directory separator would leave only a trimmed parent prefix, accept a sibling such as `C:\Temp-sibling`, and place `\` on stdout before the gate's JSON result. The covering file is `tests/LumaTherm.Packaging.Tests/InnoCompileGateTests.cs`; it executes the real `Assert-ContainedPath` function body through the PowerShell AST rather than grepping its source.
+
+Three focused behavior cases now protect the contract:
+
+- `ContainmentRejectsSiblingThatSharesTheParentPrefix` requires the sibling-prefix path to fail with the gate's containment error.
+- `ContainmentRejectsTheExactParentBecauseGateCallersRequireDescendants` makes the existing caller semantics explicit: every gate call supplies a strict descendant, so the owned root itself is rejected.
+- `CaseInsensitiveContainedPathLeavesStdoutAsExactlyOneJsonDocument` proves a Windows case-variant descendant is accepted and stdout is exactly `{"contained":true}` plus the host newline, parseable as one JSON document with no preceding pipeline object.
+
+On this Windows PowerShell host, the checked-in trailing `+` expression was parsed as continuation, so the three tests initially passed against HEAD. No contrary evidence was hidden. To verify that the tests catch the exact reviewer-described regression before changing production code, the helper was temporarily mutated to the claimed behavior: assign only the trimmed parent, then evaluate `DirectorySeparatorChar` as its own statement.
+
+### Verified RED -> GREEN evidence
+
+The exact mutation run was:
+
+```powershell
+& .\.dotnet\dotnet.exe test .\tests\LumaTherm.Packaging.Tests -c Release --no-restore -p:NuGetAudit=false --filter 'FullyQualifiedName~Containment|FullyQualifiedName~CaseInsensitiveContainedPath'
+```
+
+RED: exit 1, 0 passed and 3 failed of 3. The sibling and exact-parent probes both returned exit `0` instead of rejection. The JSON assertion reported this exact decoded output after trimming the final host newline:
+
+```text
+Expected: {"contained":true}
+Actual:   \\r\n{"contained":true}
+```
+
+That is one literal backslash and CRLF before the JSON object, matching the open finding exactly. The temporary mutation was then replaced, not retained.
+
+The minimal production change constructs `parentPrefix` explicitly with `[string]::Concat`, normalizes both platform separator characters, compares with `OrdinalIgnoreCase`, and rejects equality before the boundary-prefixed descendant check. No containment call writes a value to the pipeline.
+
+GREEN: the identical focused command exited 0 with 3/3 passed. The complete focused class command:
+
+```powershell
+& .\.dotnet\dotnet.exe test .\tests\LumaTherm.Packaging.Tests -c Release --no-restore -p:NuGetAudit=false --filter 'FullyQualifiedName~InnoCompileGateTests'
+```
+
+Exited 0 with 5 passed, 0 failed, 0 skipped. This includes the two pre-existing mandatory official-input/hash-rejection gates plus all three containment/output cases.
+
+### Fresh final verification
+
+Complete packaging suite:
+
+```powershell
+& .\.dotnet\dotnet.exe test .\tests\LumaTherm.Packaging.Tests -c Release -p:NuGetAudit=false
+```
+
+Exit 0: 70 passed, 0 failed, 0 skipped. The suite increased from 67 to 70 only through the three focused regressions above.
+
+Direct mutation-free Plan:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build-release.ps1 -Mode Plan
+```
+
+Exit 0. Stdout was exactly one compact JSON document. It parsed successfully and retained version `1.1.0`, setup `LumaTherm-1.1.0-win-x64-setup.exe`, portable archive `LumaTherm-1.1.0-portable-win-x64.zip`, sparse package `LumaTherm-1.1.0-sparse.msix`, checksum file `SHA256SUMS.txt`, stable AppId `{9F6F5FEA-A89E-4D1C-9D0C-6C7C9FB5D310}`, 15 planned commands, filesystem-only discovery, empty Plan/allowed write roots, no private-key outputs, and every forbidden side effect false. SignTool and MakeAppx were available; persistent ISCC, PFX and LICENSE remained unavailable.
+
+Full solution:
+
+```powershell
+& .\.dotnet\dotnet.exe test .\LumaTherm.sln -c Release -p:NuGetAudit=false
+```
+
+Exit 0: Packaging 70, Core 123, Infrastructure 111, App 265, Smoke 19; aggregate 588 passed, 0 failed, 0 skipped.
+
+Release build:
+
+```powershell
+& .\.dotnet\dotnet.exe build .\LumaTherm.sln -c Release -p:NuGetAudit=false
+```
+
+Exit 0: 0 warnings and 0 errors. `scripts/Test-LumaThermInnoCompile.ps1` parsed without PowerShell errors. `git diff --check` exited 0; its only output was the existing LF-to-CRLF notices for the two modified code/test files.
+
+### Safety and remaining concern
+
+This round performed only test-host process execution, the mutation-free release Plan, .NET tests/build, and parser/diff inspection. It did not download or run the official Inno bootstrapper, run ISCC, execute a generated LumaTherm installer, sign artifacts, touch a certificate store, register/remove a package, install/uninstall LumaTherm, or access lighting hardware.
+
+The only material concern is recorded above: this host did not reproduce the ambiguous trailing-operator behavior until the exact claimed mutation was applied. The final code no longer depends on that parsing/layout nuance, and the mutation-sensitive behavior tests prove the security and stdout contracts directly. Full release blockers remain the missing persistent ISCC input, approved external PFX/password, and repository LICENSE.
