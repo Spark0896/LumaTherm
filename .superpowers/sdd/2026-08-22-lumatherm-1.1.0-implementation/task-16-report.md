@@ -2,7 +2,7 @@
 
 Date: 2026-08-30
 
-Status: broader Task 16 remains `NEEDS_CONTEXT`; the fusion-manifest recovery is complete locally, but the authorized post-fix signed rebuild stopped at the shipping script's application Authenticode verification because `CurrentUser\TrustedPeople` did not establish trust for the new self-signed signer on this host. Publication steps 8–11 were not started. No tag, remote, push, repository, release, or upload was created.
+Status: broader Task 16 remains `NEEDS_CONTEXT`; the fusion-manifest recovery is complete locally, but the authorized post-fix signed rebuild stopped at the shipping script's application Authenticode verification because `CurrentUser\TrustedPeople` did not establish trust for the new self-signed signer on this host. A requested `LocalMachine\TrustedPeople` continuation was then blocked before UAC and before command execution by the machine-wide trust security gate. Publication steps 8–11 were not started. No tag, remote, push, repository, release, or upload was created.
 
 ## Verified baseline
 
@@ -201,3 +201,23 @@ Protected 17DE7A023246766D898A26DA2BFC8D797B48B987 count after cleanup: 1
 ```
 
 This reproduces the same failure independently of certificate extension profile and identifies the environmental gate: on this host, `SignTool verify /pa` does not accept a self-signed end-entity certificate placed only in `CurrentUser\TrustedPeople` as a trust anchor. Continuing would require a different trust mechanism outside the authorized store (for example, an explicitly authorized CurrentUser root transaction) or a signing certificate that already chains to a trusted root. The slice therefore stopped before any broader trust mutation. A final repository scan found 0 `.pfx`, `.p12`, `.pvk`, or `.key` files, and the idle .NET build servers were shut down with `dotnet build-server shutdown`.
+
+## LocalMachine trust continuation — blocked before UAC
+
+A later continuation requested a temporary public-only import of a newly generated exact `CN=LumaTherm Local` certificate into `LocalMachine\TrustedPeople`, followed by a Full build and exact cleanup in the same guarded transaction. The attempted elevated transaction was rejected by the execution security gate before `CreateProcess`; Windows UAC was never displayed and no part of the transaction ran. The rejection required a new direct user authorization after explicit disclosure that `LocalMachine\TrustedPeople` is a machine-wide security-boundary change, even when the certificate is temporary and cleanup is guaranteed.
+
+Post-rejection read-only evidence:
+
+```text
+UAC displayed: false
+Temporary certificate/PFX/CER created: false
+lumatherm-machine-sign-* temp directories: 0
+Repository .pfx/.p12/.pvk/.key files: 0
+Matching helper/build/sign processes: 0
+CurrentUser\TrustedPeople protected 17DE7A023246766D898A26DA2BFC8D797B48B987 count: 1
+LocalMachine\TrustedPeople protected 17DE7A023246766D898A26DA2BFC8D797B48B987 count: 1
+New trust entries: 0
+Worktree before this report update: clean at 42b592edf7124937da0ebfc3c184c510deb62507
+```
+
+No workaround, indirect elevation, alternate store, UAC automation, or retry was attempted. The exact action-time checkpoint remains before generating private material and before starting the elevated helper: obtain a new direct user confirmation specifically authorizing the temporary machine-wide `LocalMachine\TrustedPeople` public-certificate import after the risk disclosure, while preserving both pre-existing `17DE7A023246766D898A26DA2BFC8D797B48B987` entries and removing only the newly generated exact thumbprint in `finally`.
