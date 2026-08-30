@@ -2,7 +2,7 @@
 
 Date: 2026-08-30
 
-Status: broader Task 16 remains `NEEDS_CONTEXT`; the fusion-manifest recovery is complete locally, but the post-fix signed rebuild is blocked before `build-release.ps1 -Mode Full` by the no-trust signing-verification gate described below. Publication steps 8–11 were not started. No tag, remote, push, repository, release, or upload was created.
+Status: broader Task 16 remains `NEEDS_CONTEXT`; the fusion-manifest recovery is complete locally, but the authorized post-fix signed rebuild stopped at the shipping script's application Authenticode verification because `CurrentUser\TrustedPeople` did not establish trust for the new self-signed signer on this host. Publication steps 8–11 were not started. No tag, remote, push, repository, release, or upload was created.
 
 ## Verified baseline
 
@@ -118,7 +118,7 @@ Temporary private material present after finally cleanup: false
 
 The pre-existing trust thumbprint `17DE7A023246766D898A26DA2BFC8D797B48B987` remained untouched: `CurrentUser\TrustedPeople=1`, `CurrentUser\My=0`, `CurrentUser\Root=0`. Neither the preflight signer `F272D0FE9A74667E546A3498A089C44149C4AFD3` nor the signer of the older artifacts described below exists in those three stores. A recursive repository scan found 0 files with `.pfx`, `.p12`, `.pvk`, or `.key` extensions.
 
-Because a newly generated self-signed certificate cannot satisfy the shipping script's mandatory Windows Authenticode verification without trust, the requested Full shipping build was deliberately not invoked. This follows the slice instruction to stop rather than import into a trust store. The exact resume checkpoint is: after generating a new external PFX/CER outside the repository, but before invoking `scripts\build-release.ps1 -Mode Full`, obtain explicit authorization to add only that new public certificate temporarily to `Cert:\CurrentUser\TrustedPeople` and remove only that exact thumbprint in `finally`, or provide an already-trusted `CN=LumaTherm Local` signing PFX. No `LocalMachine` store or UAC is required for that narrow CurrentUser transaction.
+Because a newly generated self-signed certificate could not satisfy the shipping script's mandatory Windows Authenticode verification without trust, the requested Full shipping build was initially not invoked. The narrow `CurrentUser\TrustedPeople` checkpoint was subsequently authorized and executed as recorded below; that exact store proved insufficient on this host.
 
 ### Pre-existing `dist` audit (not post-fix release output)
 
@@ -135,3 +135,69 @@ Both release-file lines match the actual SHA-256 values exactly. The portable co
 The embedded app, sparse MSIX, and installer all carry signer `74A22D3D35B208D7E2F862F7D4A757C8EF5EEBC9`, subject `CN=LumaTherm Local`, but Windows reports `UnknownError` for all three because the self-signed chain is not trusted. The sparse package itself has the expected identity contract: `LumaTherm`, publisher `CN=LumaTherm Local`, version `1.1.0.0`, application ID `LumaTherm`, executable `LumaTherm.exe`, `uap10:RuntimeBehavior="win32App"`, `uap10:TrustLevel="mediumIL"`, no `EntryPoint`, and exactly one `rescap:Capability Name="runFullTrust"`.
 
 `CreateActCtxW` with embedded manifest resource ID 1 rejected the actual portable `LumaTherm.exe` with the Windows side-by-side configuration error, confirming that these are stale pre-fix artifacts. Temporary extraction used for this read-only audit was removed in `finally` (`ArtifactAuditTempPresentAfterCleanup=False`). Therefore there are no post-fix artifact hashes or post-fix signature-success claims for this slice.
+
+## Authorized CurrentUser signed-build continuation — verification blocked
+
+The user authorized a narrower trust transaction: generate a new temporary self-signed `CN=LumaTherm Local` code-signing certificate, add only its public certificate to `Cert:\CurrentUser\TrustedPeople`, run the Full shipping build, then remove only the exact generated thumbprint and all private material in `finally`. `LocalMachine`, UAC, application installation/registration/launch, hardware writes, and public actions remained forbidden and were not used.
+
+The transaction started from clean commit `fa7ea7256d4c5ffcd34c636b9578ebf27ff38f22`. The generated password and absolute PFX path were process-local and were never printed or written to documentation. The cached official Inno compiler was supplied through the shipping script's controlled Full-mode override after a fresh SHA-256 match:
+
+```powershell
+$env:LUMATHERM_PACKAGING_TEST = '1'
+& .\scripts\build-release.ps1 `
+    -Mode Full `
+    -CertificatePath $externalTemporaryPfx `
+    -CertificatePassword $processLocalGeneratedPassword `
+    -Publisher 'CN=LumaTherm Local' `
+    -InnoSetupPath $verifiedExtractedIscc
+```
+
+Exact signing transaction evidence:
+
+```text
+Signer thumbprint: 90D96901132C8B488C5798626A52E9B8B3BA2927
+Temporary CurrentUser\TrustedPeople entry count during build: 1
+Temporary trusted certificate HasPrivateKey: false
+ISCC SHA-256: 0A8757031B33777E4C9CBFFEE40F11A5062B36D25CBE144C1DB73B6102B80AD7
+Restore: exit 0
+Tests: Core 123, Infrastructure 111, App 265, Smoke 19, Packaging 80
+Aggregate tests: 598 passed, 0 failed, 0 skipped
+Self-contained publish: exit 0
+Application signing: exit 0
+Application SignTool verify /pa /v: exit 1
+Failure: certificate chain terminated in a root certificate not trusted by the trust provider
+Shipping script failure: Application Authenticode verification failed (build-release.ps1 line 303)
+Temporary private material present after finally cleanup: false
+Temporary signer count in CurrentUser\TrustedPeople after cleanup: 0
+Protected 17DE7A023246766D898A26DA2BFC8D797B48B987 count after cleanup: 1
+```
+
+The script stopped before exporting the portable public CER, building/signing the sparse MSIX, compiling/signing the installer, writing checksums, or promoting public artifacts. The only new partial build output is `artifacts\release\publish\LumaTherm.exe`:
+
+```text
+SHA-256: 0F5EF25420C42BE08C4CCD1AF5E081C4385B5B2F562DC28F492C02BC1B45A083
+Signer: 90D96901132C8B488C5798626A52E9B8B3BA2927, CN=LumaTherm Local
+Authenticode after required trust cleanup: UnknownError (untrusted self-signed root)
+CreateActCtxW embedded manifest resource #1: VALID
+```
+
+This partial executable is not a release artifact. No post-fix sparse MSIX, installer, portable ZIP, or `SHA256SUMS.txt` was produced. Transactional promotion preserved the stale pre-fix `dist`; its hashes remain `E8C550B6A20DE9F7C4186F6A227D5DBC96A5FDA19C037045E4F2888B10420957` for the portable ZIP, `84D89D522FFBFA4F7D7AC169C7C121F630F6AFD4C9E52D3C63B3142E74EE7F1D` for the installer, and `F212E2D1ED65666C0F6D532DA1A039AF7761882574C16EBA447F69B061A3F1BC` for the checksum file. Those stale files remain non-publishable.
+
+### Systematic trust diagnosis
+
+The protected public certificate `17DE7A023246766D898A26DA2BFC8D797B48B987` has the standard code-signing profile: critical Digital Signature key usage, non-critical Code Signing EKU, and Subject Key Identifier. To rule out the first generated certificate's different extension profile, a second minimal probe created an in-memory certificate with exactly those three extension OIDs (`2.5.29.15`, `2.5.29.37`, `2.5.29.14`), added only its public half to `CurrentUser\TrustedPeople`, and signed a copied initially-unsigned LumaTherm PE:
+
+```text
+Probe signer: 329DC2FE1C92029BBBBB46D6D9E76860305F660F
+SignTool sign exit: 0
+SignTool verify /pa /v exit: 1
+Get-AuthenticodeSignature: UnknownError
+Signer match: true
+Public-only trust entry present during verification: true
+Failure: certificate chain terminated in a root certificate not trusted by the trust provider
+Probe trust count after cleanup: 0
+Probe private material present after cleanup: false
+Protected 17DE7A023246766D898A26DA2BFC8D797B48B987 count after cleanup: 1
+```
+
+This reproduces the same failure independently of certificate extension profile and identifies the environmental gate: on this host, `SignTool verify /pa` does not accept a self-signed end-entity certificate placed only in `CurrentUser\TrustedPeople` as a trust anchor. Continuing would require a different trust mechanism outside the authorized store (for example, an explicitly authorized CurrentUser root transaction) or a signing certificate that already chains to a trusted root. The slice therefore stopped before any broader trust mutation. A final repository scan found 0 `.pfx`, `.p12`, `.pvk`, or `.key` files, and the idle .NET build servers were shut down with `dotnet build-server shutdown`.
