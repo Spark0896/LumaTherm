@@ -2,7 +2,7 @@
 
 Date: 2026-08-30
 
-Status: broader Task 16 remains `NEEDS_CONTEXT`; the fusion-manifest recovery is complete locally, but the authorized post-fix signed rebuild stopped at the shipping script's application Authenticode verification because `CurrentUser\TrustedPeople` did not establish trust for the new self-signed signer on this host. A requested `LocalMachine\TrustedPeople` continuation was then blocked before UAC and before command execution by the machine-wide trust security gate. Publication steps 8–11 were not started. No tag, remote, push, repository, release, or upload was created.
+Status: broader Task 16 remains `NEEDS_CONTEXT`; the post-fix signed release artifacts have now been rebuilt and cryptographically audited locally through a freshly authorized temporary `LocalMachine\TrustedPeople` transaction. Installer/portable lifecycle, GUI/hardware acceptance, screenshots, and publication remain pending. Publication steps 8–11 were not started. No tag, remote, push, repository, release, or upload was created.
 
 ## Verified baseline
 
@@ -221,3 +221,96 @@ Worktree before this report update: clean at 42b592edf7124937da0ebfc3c184c510deb
 ```
 
 No workaround, indirect elevation, alternate store, UAC automation, or retry was attempted. The exact action-time checkpoint remains before generating private material and before starting the elevated helper: obtain a new direct user confirmation specifically authorizing the temporary machine-wide `LocalMachine\TrustedPeople` public-certificate import after the risk disclosure, while preserving both pre-existing `17DE7A023246766D898A26DA2BFC8D797B48B987` entries and removing only the newly generated exact thumbprint in `finally`.
+
+## Fresh LocalMachine-authorized signed release build — complete
+
+The user subsequently provided fresh action-time authorization for the temporary machine-wide public-certificate transaction. Two manually confirmed UAC transactions were used; UAC was never automated. Both generated passwords and absolute private PFX paths remained process-local, outside the repository and `dist`, and were never printed or persisted in documentation.
+
+### First LocalMachine attempt and systematic retry evidence
+
+The first new signer was `CF6960D0DF770664359C0B167CAC705A293A9429`. Its public certificate was the only new entry added to `LocalMachine\TrustedPeople`; it had no private key. The preflight succeeded (`SignTool sign=0`, `SignTool verify /pa=0`, `Get-AuthenticodeSignature=Valid`), proving that the authorized machine store satisfied the shipping verification policy.
+
+The Full script then stopped during its solution test gate: Core 123, Infrastructure 111, App 265, and Smoke 19 passed; Packaging reported 79 passed and 1 failed. `BoundedProcessTestHostTests.TimeoutKillsChildTreeAndReleasesItsFileLockWithinTheBound` reached its three-second timeout before the child PowerShell process created `child.lock`, so the final `File.Open` observed `FileNotFoundException`. The transaction did not reach publish/sign/package/promotion. Its `finally` evidence was `removed=1; remaining=0`; private material was removed and both protected `17DE7A023246766D898A26DA2BFC8D797B48B987` entries remained unchanged.
+
+No test or production file was edited. Three sequential focused reruns of the exact failing test each passed (`1 passed, 0 failed`, approximately three seconds each), supporting transient concurrent process-start contention rather than a product regression. A second fresh Full shipping transaction was then run without code changes.
+
+### Successful Full shipping build
+
+The successful signer is `CE29DF766EF5D8070BB802C14A1D5A446BDD3823`, subject `CN=LumaTherm Local`. Its exact public-only certificate was temporarily added to `LocalMachine\TrustedPeople`; preflight again returned `SignTool sign=0`, `SignTool verify /pa=0`, and `Get-AuthenticodeSignature=Valid`. The verified extracted Inno compiler SHA-256 was `0A8757031B33777E4C9CBFFEE40F11A5062B36D25CBE144C1DB73B6102B80AD7`.
+
+The shipping command was:
+
+```powershell
+$env:LUMATHERM_PACKAGING_TEST = '1'
+& .\scripts\build-release.ps1 `
+    -Mode Full `
+    -CertificatePath $externalTemporaryPfx `
+    -CertificatePassword $processLocalGeneratedPassword `
+    -Publisher 'CN=LumaTherm Local' `
+    -InnoSetupPath $verifiedExtractedIscc
+```
+
+Exact build result:
+
+```text
+Restore: exit 0
+Core: 123 passed, 0 failed, 0 skipped
+Infrastructure: 111 passed, 0 failed, 0 skipped
+App: 265 passed, 0 failed, 0 skipped
+Smoke: 19 passed, 0 failed, 0 skipped
+Packaging: 80 passed, 0 failed, 0 skipped
+Aggregate: 598 passed, 0 failed, 0 skipped
+Self-contained publish: exit 0
+Application sign/verify: exit 0 / exit 0
+MakeAppx sparse package build: exit 0
+Sparse package sign/verify: exit 0 / exit 0
+Inno installer compile: exit 0
+Installer sign/verify: exit 0 / exit 0
+Public artifact promotion: complete
+Independent signed-artifact audit: PASS
+```
+
+### Release hashes and contents
+
+Public `dist\SHA256SUMS.txt` matches both files exactly:
+
+```text
+2806F326BAEB1E8DE73F92D6585C98E54C3B4189BC9ED4AD4A89884E89BB73C5 *LumaTherm-1.1.0-portable-win-x64.zip
+FD4099FBBBCB011C6E3269CE60A8A390FE07D7841D14AF9249E40FB4AAAC5759 *LumaTherm-1.1.0-win-x64-setup.exe
+```
+
+`SHA256SUMS.txt` itself has SHA-256 `D43A317D1B00DB97356709DC34FA2AA933451D0C97DED83F30D5655248913D0E`.
+
+The portable archive contains exactly eight files and its seven payload checksum lines all match:
+
+```text
+04A3ADA69FD386F7C08AF6FD046ACCB65B3359CFE692A1B2D07E033272306E66 *app/LumaTherm.exe
+C87870CE7D3DCD02AACF7F861A679C27BE90AFA74A53301FD3922EFF44FD9048 *LICENSE
+4381A50C968CFBC416A10A0BB3CF98A6EFC273115FFBE6CC1000F6253BE133FF *LumaTherm-1.1.0-sparse.msix
+FB2EEF83E82A11A153F13321BA111329EC99687FCC27BAE167E5DD9F0D31C00C *LumaTherm.cer
+892A0F98BF036D4E93DF3310B4670BCDF4FFA79A8373A68D0186C09BCC778235 *README.md
+C493193EB7788E6B72A646100152D88CDFD719970FA6414558BCFA69F4C5B857 *Register-LumaTherm.ps1
+CD88B8DD364A4C79C608855960711CD5A7E0C3F6536ADF52D5105C723B6A7C09 *Unregister-LumaTherm.ps1
+```
+
+The portable contains no PFX/private/password/secret-named entry. The sparse `PayloadHashes.json` contains six anchored payloads and every hash matches the corresponding portable file. The public `LumaTherm.cer` has no private key and matches signer `CE29DF766EF5D8070BB802C14A1D5A446BDD3823`.
+
+### Signatures and manifest contracts
+
+While the exact temporary machine trust was present, `Get-AuthenticodeSignature` returned `Valid` and fresh `SignTool verify /pa /v` returned exit 0 for all three signed payloads:
+
+```text
+LumaTherm.exe                              Valid  CE29DF766EF5D8070BB802C14A1D5A446BDD3823
+LumaTherm-1.1.0-sparse.msix                Valid  CE29DF766EF5D8070BB802C14A1D5A446BDD3823
+LumaTherm-1.1.0-win-x64-setup.exe          Valid  CE29DF766EF5D8070BB802C14A1D5A446BDD3823
+```
+
+The signatures are not timestamped. After required trust cleanup, all three still report the same embedded signer but have expected status `UnknownError` because the temporary self-signed trust anchor is gone; importing the bundled public certificate is therefore required before Windows can report `Valid` on another machine.
+
+`CreateActCtxW` with embedded manifest resource ID 1 returned `VALID` for the actual portable application and the exact installer payload input. The actual signed sparse MSIX contains `AppxManifest.xml`, `PayloadHashes.json`, and `AppxSignature.p7x` and has the required contract: identity `LumaTherm`, publisher `CN=LumaTherm Local`, version `1.1.0.0`, architecture `x64`, application ID `LumaTherm`, executable `LumaTherm.exe`, `uap10:RuntimeBehavior="win32App"`, `uap10:TrustLevel="mediumIL"`, no `EntryPoint`, and exactly one `rescap:Capability Name="runFullTrust"`.
+
+### Final cleanup and scope
+
+The successful elevated helper exited 0 with `removed=1; remaining=0`. The failed-at-test signer `CF6960D0DF770664359C0B167CAC705A293A9429` and successful signer `CE29DF766EF5D8070BB802C14A1D5A446BDD3823` are absent from both `CurrentUser\TrustedPeople` and `LocalMachine\TrustedPeople`. The protected `17DE7A023246766D898A26DA2BFC8D797B48B987` remains exactly once in each store. There are 0 `lumatherm-machine-sign-*` temp directories and 0 repository files with `.pfx`, `.p12`, `.pvk`, or `.key` extensions. Temporary audit extraction was removed, and idle .NET build servers were shut down.
+
+No installer or application was launched. No installation, sparse-package registration, old-version removal, hardware write, GUI action, tag, remote, push, release, upload, or publication occurred. Those remain separate action-time checkpoints.
