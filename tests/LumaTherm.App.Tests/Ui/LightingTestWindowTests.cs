@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Data;
 using System.Windows.Media;
 using System.Windows.Threading;
@@ -32,11 +33,42 @@ public sealed class LightingTestWindowTests(ThermalCoreStaFixture sta)
             Assert.Equal(0, slider.Minimum);
             Assert.Equal(120, slider.Maximum);
             Assert.True(slider.IsMoveToPointEnabled);
+            Assert.True(slider.ActualHeight >= 40);
+            slider.ApplyTemplate();
+            var track = Assert.IsType<Track>(slider.Template.FindName("PART_Track", slider));
+            Assert.True(track.Thumb.ActualWidth >= 24);
+            Assert.True(track.Thumb.ActualHeight >= 28);
             AssertBinding(slider, Slider.ValueProperty, nameof(LightingTestViewModel.TestTemperature));
             AssertBinding(value, TextBlock.TextProperty, nameof(LightingTestViewModel.TestTemperature));
             AssertBinding(preview, Border.BackgroundProperty, nameof(LightingTestViewModel.PreviewColor));
             Assert.Same(vm.Editor, editor.DataContext);
             Assert.Equal(Application.Current.Resources["TestWindow.Title"], window.Title);
+        }
+        finally
+        {
+            window.CloseAfterCleanup();
+        }
+    });
+
+    [Fact]
+    public void Window_SelectedPointEditorExposesMouseReachableTemperatureAndColorControls() => sta.Run(() =>
+    {
+        var vm = new LightingTestViewModel(new FakeRuntime(), ThermalProfile.Default, (_, _) => Task.CompletedTask);
+        var window = new LightingTestWindow(vm);
+        try
+        {
+            Arrange(Assert.IsAssignableFrom<FrameworkElement>(window.Content), 760, 650);
+            var temperature = Assert.IsType<TextBox>(window.FindName("SelectedPointTemperatureEditor"));
+            var color = Assert.IsType<Button>(window.FindName("SelectedPointColorButton"));
+
+            AssertBinding(temperature, TextBox.TextProperty, nameof(LightingTestViewModel.SelectedPointTemperature));
+            Assert.Same(vm.PickSelectedColorCommand, color.Command);
+            Assert.True(temperature.IsHitTestVisible);
+            Assert.True(color.IsHitTestVisible);
+            Assert.True(temperature.Focusable);
+            Assert.True(color.Focusable);
+            Assert.False(string.IsNullOrWhiteSpace(AutomationProperties.GetName(temperature)));
+            Assert.False(string.IsNullOrWhiteSpace(AutomationProperties.GetName(color)));
         }
         finally
         {
@@ -206,6 +238,7 @@ public sealed class LightingTestWindowTests(ThermalCoreStaFixture sta)
         public bool Disposed { get; private set; }
         public int DisposeCalls { get; private set; }
         public Task SetTemperatureAsync(double celsius, CancellationToken cancellationToken) => Task.CompletedTask;
+        public Task SetProfileAsync(ThermalProfile profile, CancellationToken cancellationToken) => Task.CompletedTask;
 
         public async ValueTask DisposeAsync()
         {

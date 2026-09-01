@@ -55,6 +55,69 @@
             <Setter Property="BorderBrush" Value="{StaticResource ColdColorBrush}" />
             <Setter Property="FontWeight" Value="SemiBold" />
         </Style>
+        <Style x:Key="TemperatureEditorStyle" TargetType="TextBox">
+            <Setter Property="Width" Value="72" />
+            <Setter Property="Height" Value="34" />
+            <Setter Property="Padding" Value="8,5" />
+            <Setter Property="HorizontalContentAlignment" Value="Right" />
+            <Setter Property="Foreground" Value="{StaticResource PrimaryTextBrush}" />
+            <Setter Property="Background" Value="#FF171B20" />
+            <Setter Property="BorderBrush" Value="#779AA8B3" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TextBox">
+                        <Border x:Name="EditorChrome" CornerRadius="6" Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}">
+                            <ScrollViewer x:Name="PART_ContentHost" Margin="{TemplateBinding Padding}" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="EditorChrome" Property="BorderBrush" Value="{StaticResource SecondaryTextBrush}" /></Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="EditorChrome" Property="BorderBrush" Value="{StaticResource ColdColorBrush}" /><Setter TargetName="EditorChrome" Property="BorderThickness" Value="2" /></Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="TemperatureSliderStyle" TargetType="Slider">
+            <Setter Property="Height" Value="42" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Slider">
+                        <Grid Background="{TemplateBinding Background}">
+                            <Border Height="8" Margin="12,0" VerticalAlignment="Center" CornerRadius="4"
+                                    Background="#FF3B444C" BorderBrush="#779AA8B3" BorderThickness="1" />
+                            <Track x:Name="PART_Track" Margin="12,0" VerticalAlignment="Center">
+                                <Track.DecreaseRepeatButton>
+                                    <RepeatButton Command="{x:Static Slider.DecreaseLarge}" Focusable="False">
+                                        <RepeatButton.Template><ControlTemplate TargetType="RepeatButton"><Border Background="Transparent" /></ControlTemplate></RepeatButton.Template>
+                                    </RepeatButton>
+                                </Track.DecreaseRepeatButton>
+                                <Track.IncreaseRepeatButton>
+                                    <RepeatButton Command="{x:Static Slider.IncreaseLarge}" Focusable="False">
+                                        <RepeatButton.Template><ControlTemplate TargetType="RepeatButton"><Border Background="Transparent" /></ControlTemplate></RepeatButton.Template>
+                                    </RepeatButton>
+                                </Track.IncreaseRepeatButton>
+                                <Track.Thumb>
+                                    <Thumb Width="24" Height="28" Cursor="Hand" Focusable="False">
+                                        <Thumb.Template>
+                                            <ControlTemplate TargetType="Thumb">
+                                                <Grid Background="Transparent">
+                                                    <Ellipse Width="20" Height="20" Fill="{StaticResource ColdColorBrush}"
+                                                             Stroke="#FFF7FAFC" StrokeThickness="2" />
+                                                </Grid>
+                                            </ControlTemplate>
+                                        </Thumb.Template>
+                                    </Thumb>
+                                </Track.Thumb>
+                            </Track>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
     </Window.Resources>
 
     <Border BorderBrush="#1AFFFFFF" BorderThickness="1" Background="{StaticResource WindowBackgroundBrush}">
@@ -88,7 +151,8 @@
                                 <TextBlock x:Name="TestTemperatureValue" Margin="0,7,0,14" FontSize="30" FontWeight="SemiBold"
                                            Foreground="{StaticResource ColdColorBrush}"
                                            Text="{Binding TestTemperature, StringFormat={}{0:F0} °C}" />
-                                <Slider x:Name="TestTemperatureSlider" Minimum="0" Maximum="120" TickFrequency="1"
+                                <Slider x:Name="TestTemperatureSlider" Style="{StaticResource TemperatureSliderStyle}"
+                                        Minimum="0" Maximum="120" TickFrequency="1"
                                         IsSnapToTickEnabled="False" IsMoveToPointEnabled="True"
                                         Value="{Binding TestTemperature, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                                         automation:AutomationProperties.Name="{DynamicResource TestWindow.Temperature}" />
@@ -106,7 +170,23 @@
                             <TextBlock Text="{DynamicResource TestWindow.Profile}" FontSize="15" FontWeight="SemiBold" />
                             <TextBlock Text="{DynamicResource TestWindow.ProfileHint}" Margin="0,4,0,16" FontSize="11"
                                        Foreground="{StaticResource MutedTextBrush}" TextWrapping="Wrap" />
-                            <controls:ThermalProfileEditor x:Name="ProfileEditorControl" Height="210" DataContext="{Binding Editor}" />
+                            <controls:ThermalProfileEditor x:Name="ProfileEditorControl" Height="130" DataContext="{Binding Editor}" />
+                            <Border Margin="0,10,0,0" Padding="12" CornerRadius="8" Background="{StaticResource PanelSecondaryBrush}">
+                                <Grid>
+                                    <Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                    <StackPanel>
+                                        <TextBlock Text="{DynamicResource TestWindow.SelectedPoint}" FontWeight="SemiBold" />
+                                        <TextBlock Text="{Binding SelectedPointColorHex}" Margin="0,4,0,0" FontSize="11" Foreground="{StaticResource MutedTextBrush}" />
+                                    </StackPanel>
+                                    <TextBox x:Name="SelectedPointTemperatureEditor" Grid.Column="1" Style="{StaticResource TemperatureEditorStyle}"
+                                             Text="{Binding SelectedPointTemperature, UpdateSourceTrigger=LostFocus, ValidatesOnExceptions=True, StringFormat={}{0:0.#}}"
+                                             automation:AutomationProperties.Name="{DynamicResource TestWindow.PointTemperature}" />
+                                    <Button x:Name="SelectedPointColorButton" Grid.Column="2" Width="58" Height="34" Margin="10,0,0,0"
+                                            Background="{Binding SelectedPoint.Color, Converter={StaticResource RgbColorBrushConverter}}"
+                                            Command="{Binding PickSelectedColorCommand}"
+                                            automation:AutomationProperties.Name="{DynamicResource TestWindow.PointColor}" />
+                                </Grid>
+                            </Border>
                         </StackPanel>
                     </Border>
 

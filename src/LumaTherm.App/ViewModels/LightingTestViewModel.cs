@@ -1,6 +1,7 @@
 using System.Collections.Specialized;
 using System.ComponentModel;
 using LumaTherm.App.Localization;
+using LumaTherm.App.Services;
 using LumaTherm.Core.Colors;
 using LumaTherm.Core.Runtime;
 
@@ -14,6 +15,7 @@ public sealed class LightingTestViewModel : ObservableObject, IAsyncDisposable
     private readonly IThermalRuntime _runtime;
     private readonly Func<ThermalProfile, CancellationToken, Task> _saveProfileAsync;
     private readonly ILocalizationService _localization;
+    private readonly IColorPickerService _colorPickerService;
     private readonly SemaphoreSlim _openGate = new(1, 1);
     private readonly object _stateLock = new();
     private readonly SynchronizationContext? _synchronizationContext;
@@ -25,27 +27,57 @@ public sealed class LightingTestViewModel : ObservableObject, IAsyncDisposable
     private string _errorMessage = string.Empty;
     private string? _errorKey;
     private bool _editorDetached;
+    private ThermalPointEditorViewModel? _selectedPoint;
 
     public LightingTestViewModel(
         IThermalRuntime runtime,
         ThermalProfile profile,
         Func<ThermalProfile, CancellationToken, Task> saveProfileAsync,
-        ILocalizationService? localization = null)
+        ILocalizationService? localization = null,
+        IColorPickerService? colorPickerService = null)
     {
         _runtime = runtime ?? throw new ArgumentNullException(nameof(runtime));
         _saveProfileAsync = saveProfileAsync ?? throw new ArgumentNullException(nameof(saveProfileAsync));
         _localization = localization ?? LocalizationService.CreateFallback();
+        _colorPickerService = colorPickerService ?? NullColorPickerService.Instance;
         _synchronizationContext = SynchronizationContext.Current;
         var validatedProfile = (profile ?? throw new ArgumentNullException(nameof(profile))).Validate();
         Editor = new ThermalProfileEditorViewModel(validatedProfile);
+        Editor.Select(Editor.Points[0].Id);
         SmoothingSeconds = validatedProfile.SmoothingSeconds;
         AttachEditor();
+        RefreshSelectedPoint();
         _localization.LanguageChanged += OnLanguageChanged;
         _previewColor = MapPreviewColor();
+        PickSelectedColorCommand = new AsyncRelayCommand(
+            PickSelectedColorAsync,
+            () => SelectedPoint is not null,
+            _ => SetErrorKey("Validation.ColorPickFailed"));
     }
 
     public ThermalProfileEditorViewModel Editor { get; }
     public double SmoothingSeconds { get; }
+    public AsyncRelayCommand PickSelectedColorCommand { get; }
+    public ThermalPointEditorViewModel? SelectedPoint
+    {
+        get => _selectedPoint;
+        private set => SetProperty(ref _selectedPoint, value);
+    }
+    public double SelectedPointTemperature
+    {
+        get => SelectedPoint?.Temperature ?? 0;
+        set
+        {
+            if (SelectedPoint is not { } point)
+            {
+                return;
+            }
+
+            Editor.Move(point.Id, value);
+            OnPropertyChanged();
+        }
+    }
+    public string SelectedPointColorHex => SelectedPoint?.Color.ToHex() ?? string.Empty;
 
     public double TestTemperature
     {
@@ -317,13 +349,23 @@ public sealed class LightingTestViewModel : ObservableObject, IAsyncDisposable
         }
 
         RefreshPreview();
+        RefreshSelectedPoint();
     }
 
     private void OnPointChanged(object? sender, PropertyChangedEventArgs args)
     {
-        if (args.PropertyName is nameof(ThermalPointEditorViewModel.Temperature)
+        if (args.PropertyName == nameof(ThermalPointEditorViewModel.IsSelected))
+        {
+            RefreshSelectedPoint();
+        }
+        else if (args.PropertyName is nameof(ThermalPointEditorViewModel.Temperature)
             or nameof(ThermalPointEditorViewModel.Color))
         {
+            if (ReferenceEquals(sender, SelectedPoint))
+            {
+                OnPropertyChanged(nameof(SelectedPointTemperature));
+                OnPropertyChanged(nameof(SelectedPointColorHex));
+            }
             RefreshPreview();
         }
     }
@@ -332,7 +374,9 @@ public sealed class LightingTestViewModel : ObservableObject, IAsyncDisposable
     {
         try
         {
-            PreviewColor = MapPreviewColor();
+            var profile = Editor.BuildProfile(SmoothingSeconds);
+            PreviewColor = new ColorEngine(profile, TestTemperature).Map(TestTemperature);
+            QueueProfileUpdate(profile);
             if (_errorKey is "Validation.TemperatureRange" or "Validation.TemperatureOrder" or "Validation.SmoothingRange" or "Validation.Profile")
             {
                 SetErrorKey(null);
@@ -348,6 +392,57 @@ public sealed class LightingTestViewModel : ObservableObject, IAsyncDisposable
     {
         var profile = Editor.BuildProfile(SmoothingSeconds);
         return new ColorEngine(profile, TestTemperature).Map(TestTemperature);
+    }
+
+    private Task PickSelectedColorAsync()
+    {
+        if (SelectedPoint is { } point && _colorPickerService.Pick(point.Color) is { } selected)
+        {
+            point.Color = selected;
+        }
+
+        return Task.CompletedTask;
+    }
+
+    private void RefreshSelectedPoint()
+    {
+        SelectedPoint = Editor.Points.FirstOrDefault(point => point.IsSelected);
+        OnPropertyChanged(nameof(SelectedPointTemperature));
+        OnPropertyChanged(nameof(SelectedPointColorHex));
+    }
+
+    private void QueueProfileUpdate(ThermalProfile profile)
+    {
+        lock (_stateLock)
+        {
+            if (_session is not { } session || _completion is not null)
+            {
+                return;
+            }
+
+            _temperatureUpdate = _temperatureUpdate.IsCompleted
+                ? SendProfileAsync(session, profile)
+                : SendProfileAfterAsync(_temperatureUpdate, session, profile);
+        }
+    }
+
+    private async Task SendProfileAfterAsync(Task previous, ILightingTestSession session, ThermalProfile profile)
+    {
+        await previous;
+        await SendProfileAsync(session, profile);
+    }
+
+    private async Task SendProfileAsync(ILightingTestSession session, ThermalProfile profile)
+    {
+        try
+        {
+            await session.SetProfileAsync(profile, CancellationToken.None);
+            if (_errorKey == "TestWindow.LightingFailed") SetErrorKey(null);
+        }
+        catch (Exception)
+        {
+            SetErrorKey("TestWindow.LightingFailed");
+        }
     }
 
     private void SetErrorKey(string? key)

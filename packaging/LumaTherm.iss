@@ -43,21 +43,8 @@ Filename: "powershell.exe"; Parameters: "-NoProfile -NonInteractive -ExecutionPo
 [Code]
 #include "LumaTherm.Consent.iss"
 
-function PrepareToInstall(var NeedsRestart: Boolean): String;
 var
-  ResultCode: Integer;
-  Helper: String;
-begin
-  Result := '';
-  Helper := ExpandConstant('{app}\payload\Unregister-LumaTherm.ps1');
-  if FileExists(Helper) then
-  begin
-    if not Exec('powershell.exe', '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "' + Helper + '" -Force', '', SW_HIDE, ewWaitUntilTerminated, ResultCode) then
-      Result := 'Unable to start previous LumaTherm identity removal.'
-    else if ResultCode <> 0 then
-      Result := 'Unable to unregister the previous LumaTherm identity. Upgrade stopped before files were replaced.';
-  end;
-end;
+  RegistrationSucceeded: Boolean;
 
 procedure CurStepChanged(CurStep: TSetupStep);
 var
@@ -75,7 +62,16 @@ begin
       RaiseException('Registration failed: unable to start the LumaTherm identity helper.');
     if ResultCode <> 0 then
       RaiseException(Format('Registration failed with exit code %d. The installer did not complete successfully.', [ResultCode]));
+    RegistrationSucceeded := True;
   end;
+end;
+
+function GetCustomSetupExitCode: Integer;
+begin
+  if RegistrationSucceeded then
+    Result := 0
+  else
+    Result := 1;
 end;
 
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);

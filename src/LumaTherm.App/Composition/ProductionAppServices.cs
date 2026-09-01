@@ -200,7 +200,12 @@ public static class ProductionAppServices
                 return;
             }
 
-            var viewModel = new LightingTestViewModel(_runtime, profile, SaveLightingTestProfileAsync, _localization);
+            var viewModel = new LightingTestViewModel(
+                _runtime,
+                profile,
+                SaveLightingTestProfileAsync,
+                _localization,
+                new ColorPickerService());
             var window = new LightingTestWindow(viewModel) { Owner = Window };
             _lightingTestViewModel = viewModel;
             _lightingTestWindow = window;

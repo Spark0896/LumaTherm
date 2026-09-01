@@ -845,7 +845,41 @@ public sealed class ThermalRuntime : IThermalRuntime
             try
             {
                 _testTemperature = celsius;
-                _colorEngine = new ColorEngine(_settings.Profile, celsius);
+                _colorEngine = new ColorEngine(session.Profile, celsius);
+                _lightingGate.Reset();
+            }
+            finally
+            {
+                _processGate.Release();
+            }
+        }
+        finally
+        {
+            _lifecycleGate.Release();
+        }
+    }
+
+    private async Task SetLightingTestProfileAsync(
+        LightingTestSession session,
+        ThermalProfile profile,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(profile);
+        var validated = profile.Validate();
+        await _lifecycleGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            ThrowIfStopped();
+            if (!ReferenceEquals(_activeTestSession, session))
+            {
+                throw new ObjectDisposedException(nameof(LightingTestSession));
+            }
+
+            await _processGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                session.Profile = validated;
+                _colorEngine.UpdateProfile(validated);
                 _lightingGate.Reset();
             }
             finally
@@ -876,6 +910,16 @@ public sealed class ThermalRuntime : IThermalRuntime
             {
                 _testTemperature = null;
                 return;
+            }
+
+            await _processGate.WaitAsync(CancellationToken.None).ConfigureAwait(false);
+            try
+            {
+                _colorEngine.UpdateProfile(_settings.Profile);
+            }
+            finally
+            {
+                _processGate.Release();
             }
 
             if (_suspended)
@@ -933,11 +977,19 @@ public sealed class ThermalRuntime : IThermalRuntime
     private sealed class LightingTestSession(ThermalRuntime owner) : ILightingTestSession
     {
         private int _disposed;
+        internal ThermalProfile Profile { get; set; } = owner.CurrentSettings.Profile;
 
         public Task SetTemperatureAsync(double celsius, CancellationToken cancellationToken)
         {
             return Volatile.Read(ref _disposed) == 0
                 ? owner.SetLightingTestTemperatureAsync(this, celsius, cancellationToken)
+                : Task.FromException(new ObjectDisposedException(nameof(LightingTestSession)));
+        }
+
+        public Task SetProfileAsync(ThermalProfile profile, CancellationToken cancellationToken)
+        {
+            return Volatile.Read(ref _disposed) == 0
+                ? owner.SetLightingTestProfileAsync(this, profile, cancellationToken)
                 : Task.FromException(new ObjectDisposedException(nameof(LightingTestSession)));
         }
 

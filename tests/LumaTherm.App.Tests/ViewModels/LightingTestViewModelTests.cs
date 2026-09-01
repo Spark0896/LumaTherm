@@ -2,6 +2,7 @@
 
 using System.IO;
 using LumaTherm.App.Localization;
+using LumaTherm.App.Services;
 using LumaTherm.App.ViewModels;
 using LumaTherm.Core.Colors;
 using LumaTherm.Core.Runtime;
@@ -53,6 +54,45 @@ public sealed class LightingTestViewModelTests
         await vm.TemperatureUpdate;
 
         Assert.Equal(0, saveCalls);
+        Assert.Equal(0, runtime.PreferenceUpdates);
+        await vm.CloseAsync();
+    }
+
+    [Fact]
+    public async Task SelectedPointTemperatureEditWritesDraftProfileThroughScopedSession()
+    {
+        var runtime = new FakeRuntime();
+        var vm = CreateViewModel(runtime);
+        await vm.OpenAsync();
+        var point = vm.Editor.Points[1];
+        vm.Editor.Select(point.Id);
+
+        vm.SelectedPointTemperature = 70;
+        await vm.TemperatureUpdate;
+
+        Assert.Same(point, vm.SelectedPoint);
+        Assert.Equal(70, point.Temperature);
+        Assert.Equal(70, runtime.Session.LastProfile!.Points[1].Temperature);
+        Assert.Equal(0, runtime.PreferenceUpdates);
+        await vm.CloseAsync();
+    }
+
+    [Fact]
+    public async Task PickSelectedPointColorUsesExistingPickerAndWritesDraftProfileThroughScopedSession()
+    {
+        var runtime = new FakeRuntime();
+        var picker = new FakeColorPicker(new RgbColor(1, 2, 3));
+        var vm = CreateViewModel(runtime, colorPickerService: picker);
+        await vm.OpenAsync();
+        var point = vm.Editor.Points[1];
+        vm.Editor.Select(point.Id);
+
+        await vm.PickSelectedColorCommand.ExecuteAsync();
+        await vm.TemperatureUpdate;
+
+        Assert.Equal(new RgbColor(1, 2, 3), point.Color);
+        Assert.Equal(new RgbColor(1, 2, 3), runtime.Session.LastProfile!.Points[1].Color);
+        Assert.Equal(ThermalProfile.Default.Points[1].Color, picker.CurrentColor);
         Assert.Equal(0, runtime.PreferenceUpdates);
         await vm.CloseAsync();
     }
@@ -324,8 +364,9 @@ public sealed class LightingTestViewModelTests
     private static LightingTestViewModel CreateViewModel(
         FakeRuntime runtime,
         Func<ThermalProfile, CancellationToken, Task>? save = null,
-        ILocalizationService? localization = null) =>
-        new(runtime, ThermalProfile.Default, save ?? ((_, _) => Task.CompletedTask), localization);
+        ILocalizationService? localization = null,
+        IColorPickerService? colorPickerService = null) =>
+        new(runtime, ThermalProfile.Default, save ?? ((_, _) => Task.CompletedTask), localization, colorPickerService);
 
     private sealed class KeyedLocalization(AppLanguage language) : ILocalizationService
     {
@@ -404,6 +445,7 @@ public sealed class LightingTestViewModelTests
     {
         private TaskCompletionSource? _temperatureUpdate;
         public double? LastTemperature { get; private set; }
+        public ThermalProfile? LastProfile { get; private set; }
         public Exception? SetFailure { get; set; }
         public bool BlockTemperatureUpdates { get; set; }
         public int DisposeCalls { get; private set; }
@@ -420,11 +462,27 @@ public sealed class LightingTestViewModelTests
 
         public void CompleteTemperatureUpdate() => _temperatureUpdate?.TrySetResult();
 
+        public Task SetProfileAsync(ThermalProfile profile, CancellationToken cancellationToken)
+        {
+            LastProfile = profile;
+            return Task.CompletedTask;
+        }
+
         public ValueTask DisposeAsync()
         {
             DisposeCalls++;
             events.Add("dispose");
             return ValueTask.CompletedTask;
+        }
+    }
+
+    private sealed class FakeColorPicker(RgbColor? result) : IColorPickerService
+    {
+        public RgbColor? CurrentColor { get; private set; }
+        public RgbColor? Pick(RgbColor current)
+        {
+            CurrentColor = current;
+            return result;
         }
     }
 

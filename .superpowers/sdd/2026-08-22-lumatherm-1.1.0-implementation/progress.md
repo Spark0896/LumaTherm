@@ -169,3 +169,5 @@ Ruling (Task 16 publication order): complete local automated, installer, portabl
 Task 16: recovery slice complete (commit d89bb9f; Fusion `<msix>` activation manifest corrected, sparse `runFullTrust`/`win32App`/`mediumIL` contract preserved, 598/598 full suite, task review clean).
 
 Task 16: installed-state checkpoint before retry — existing package `LumaTherm_1.0.1.0_x64__jzd30fs6ag6cm` remains Status Ok, no LumaTherm process is running, desktop shortcut exists, Start Menu shortcut is absent, settings SHA-256 remains `4DDC31323D58625CBC875F6110558C7D15E806CFE0A096E7A9BA088D46574B3F`.
+
+Task 16b: Ruling: use exact defaults (35, #006BFF), (65, #D000FF), (85, #FF1800) with smoothing 0.8; migrate only exact legacy default points (35, #008CFF), (65, #FFD800), (85, #FF1800), preserving custom smoothing and every custom profile including yellow — cost if wrong: existing exact-default users receive this palette, custom profiles are untouched.

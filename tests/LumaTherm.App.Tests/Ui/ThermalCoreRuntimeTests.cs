@@ -41,7 +41,8 @@ public sealed class ThermalCoreRuntimeTests
             ["PanelBackground"] = "#FF20252B",
             ["PanelSecondary"] = "#FF1B2025",
             ["PrimaryText"] = "#FFEEF4F8",
-            ["MutedText"] = "#FF7E8994",
+            ["SecondaryText"] = "#FFC5D0D8",
+            ["MutedText"] = "#FFAAB6C0",
             ["ColdColor"] = "#FF50C8FF",
             ["WarmColor"] = "#FFFFC64A",
             ["HotColor"] = "#FFFF565D",
@@ -427,8 +428,8 @@ public sealed class ThermalCoreRuntimeTests
         using var vm = new MainViewModel(new FakeRuntime());
         var view = Arrange(new DashboardView { DataContext = vm }, 1104, 652);
 
-        Assert.Equal("#008CFF", Assert.IsType<TextBlock>(view.FindName("ColdColorText")).Text);
-        Assert.Equal("#FFD800", Assert.IsType<TextBlock>(view.FindName("WarmColorText")).Text);
+        Assert.Equal("#006BFF", Assert.IsType<TextBlock>(view.FindName("ColdColorText")).Text);
+        Assert.Equal("#D000FF", Assert.IsType<TextBlock>(view.FindName("WarmColorText")).Text);
         Assert.Equal("#FF1800", Assert.IsType<TextBlock>(view.FindName("HotColorText")).Text);
     });
 
@@ -442,7 +443,7 @@ public sealed class ThermalCoreRuntimeTests
         {
             Arrange(Assert.IsType<Border>(shell.Content), 1180, 720);
             var dot = Assert.IsType<System.Windows.Shapes.Ellipse>(shell.FindName("DeviceStatusDot"));
-            Assert.Equal(Color.FromRgb(0x66, 0x72, 0x7C), Assert.IsType<SolidColorBrush>(dot.Fill).Color);
+            Assert.Equal(Color.FromRgb(0x9A, 0xA8, 0xB3), Assert.IsType<SolidColorBrush>(dot.Fill).Color);
 
             runtime.Publish(Snapshot(RuntimeStatus.Active, 68, new RgbColor(0xFF, 0xC6, 0x4A)));
             Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.DataBind);

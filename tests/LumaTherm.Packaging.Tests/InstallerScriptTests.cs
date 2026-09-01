@@ -187,6 +187,19 @@ public sealed class InstallerScriptTests
         Assert.DoesNotContain(lines, line => line.Contains("DelTree", StringComparison.Ordinal));
     }
 
+    [Fact]
+    public void InnoDefinitionReturnsFailureUnlessPostInstallRegistrationCompletes()
+    {
+        var script = File.ReadAllText(Path.Combine(RepositoryLayout.Root, "packaging", "LumaTherm.iss"));
+
+        Assert.DoesNotContain("PrepareToInstall", script, StringComparison.Ordinal);
+        Assert.Contains("RegistrationSucceeded := True", script, StringComparison.Ordinal);
+        Assert.Contains("function GetCustomSetupExitCode: Integer", script, StringComparison.Ordinal);
+        Assert.Contains("if RegistrationSucceeded then", script, StringComparison.Ordinal);
+        Assert.Contains("Result := 0", script, StringComparison.Ordinal);
+        Assert.Contains("Result := 1", script, StringComparison.Ordinal);
+    }
+
     private static Dictionary<string, string> ParseKeyValues(string[] lines) => lines
         .Where(line => !line.StartsWith(';') && line.Contains('='))
         .Select(line => line.Split('=', 2))

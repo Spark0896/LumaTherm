@@ -15,8 +15,8 @@
             <Color x:Key="PanelBackground">#20252B</Color>
             <Color x:Key="PanelSecondary">#1B2025</Color>
             <Color x:Key="PrimaryText">#EEF4F8</Color>
-            <Color x:Key="SecondaryText">#A9B5BD</Color>
-            <Color x:Key="MutedText">#7E8994</Color>
+            <Color x:Key="SecondaryText">#C5D0D8</Color>
+            <Color x:Key="MutedText">#AAB6C0</Color>
             <Color x:Key="ColdColor">#50C8FF</Color>
             <Color x:Key="WarmColor">#FFC64A</Color>
             <Color x:Key="HotColor">#FF565D</Color>
@@ -34,7 +34,7 @@
             <SolidColorBrush x:Key="HotColorBrush" Color="{StaticResource HotColor}" po:Freeze="True" />
             <SolidColorBrush x:Key="SuccessColorBrush" Color="{StaticResource SuccessColor}" po:Freeze="True" />
             <SolidColorBrush x:Key="SubtleLineBrush" Color="#13FFFFFF" po:Freeze="True" />
-            <SolidColorBrush x:Key="IconIdleBrush" Color="#66727C" po:Freeze="True" />
+            <SolidColorBrush x:Key="IconIdleBrush" Color="#9AA8B3" po:Freeze="True" />
 
             <Style TargetType="TextBlock">
                 <Setter Property="FontFamily" Value="Segoe UI Variable, Segoe UI" />

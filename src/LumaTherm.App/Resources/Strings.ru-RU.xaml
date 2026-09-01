@@ -137,6 +137,9 @@
     <sys:String x:Key="TestWindow.Preview">Цвет подсветки</sys:String>
     <sys:String x:Key="TestWindow.Profile">Черновик температурного профиля</sys:String>
     <sys:String x:Key="TestWindow.ProfileHint">Добавляйте любое число температурных точек. Изменения сохранятся только после применения.</sys:String>
+    <sys:String x:Key="TestWindow.SelectedPoint">Выбранная точка</sys:String>
+    <sys:String x:Key="TestWindow.PointTemperature">Температура выбранной точки</sys:String>
+    <sys:String x:Key="TestWindow.PointColor">Выбрать цвет выбранной точки</sys:String>
     <sys:String x:Key="TestWindow.Apply">Применить</sys:String>
     <sys:String x:Key="TestWindow.Cancel">Отмена</sys:String>
     <sys:String x:Key="TestWindow.OpenFailed">Не удалось запустить проверку подсветки.</sys:String>

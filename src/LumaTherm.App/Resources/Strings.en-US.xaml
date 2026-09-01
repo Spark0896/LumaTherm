@@ -137,6 +137,9 @@
     <sys:String x:Key="TestWindow.Preview">Live color</sys:String>
     <sys:String x:Key="TestWindow.Profile">Draft thermal profile</sys:String>
     <sys:String x:Key="TestWindow.ProfileHint">Edit any number of temperature points. Changes are saved only when you apply them.</sys:String>
+    <sys:String x:Key="TestWindow.SelectedPoint">Selected point</sys:String>
+    <sys:String x:Key="TestWindow.PointTemperature">Selected point temperature</sys:String>
+    <sys:String x:Key="TestWindow.PointColor">Choose selected point color</sys:String>
     <sys:String x:Key="TestWindow.Apply">Apply</sys:String>
     <sys:String x:Key="TestWindow.Cancel">Cancel</sys:String>
     <sys:String x:Key="TestWindow.OpenFailed">Unable to start the lighting test.</sys:String>

@@ -6,6 +6,13 @@ namespace LumaTherm.Infrastructure.Settings;
 
 internal static class SettingsMigrator
 {
+    private static readonly ThermalPoint[] LegacyDefaultPoints =
+    [
+        new(35, new RgbColor(0x00, 0x8C, 0xFF)),
+        new(65, new RgbColor(0xFF, 0xD8, 0x00)),
+        new(85, new RgbColor(0xFF, 0x18, 0x00)),
+    ];
+
     public static AppSettings Migrate(string json, JsonSerializerOptions serializerOptions)
     {
         using var document = JsonDocument.Parse(json);
@@ -77,7 +84,16 @@ internal static class SettingsMigrator
 
         try
         {
-            return settings.Validate();
+            var validated = settings.Validate();
+            if (!validated.Profile.Points.SequenceEqual(LegacyDefaultPoints))
+            {
+                return validated;
+            }
+
+            return validated with
+            {
+                Profile = ThermalProfile.Create(ThermalProfile.Default.Points, validated.Profile.SmoothingSeconds),
+            };
         }
         catch (ArgumentException exception)
         {

@@ -740,6 +740,36 @@ public sealed class ThermalRuntimeTests
     }
 
     [Fact]
+    public async Task LightingTest_DraftProfileRendersImmediatelyAndDisposalRestoresCommittedProfile()
+    {
+        await using var fixture = RuntimeFixture.Create(modeEnabled: true, temperatures: [65, 65]);
+        await fixture.Runtime.ProcessOnceAsync(CancellationToken.None);
+        var committedProfile = fixture.Runtime.CurrentSettings.Profile;
+        var draftProfile = ThermalProfile.Create(
+        [
+            new(35, new RgbColor(0x00, 0x6B, 0xFF)),
+            new(65, new RgbColor(0x00, 0xFF, 0x40)),
+            new(85, new RgbColor(0xFF, 0x18, 0x00)),
+        ], 0.8);
+
+        var session = await fixture.Runtime.BeginLightingTestAsync(CancellationToken.None);
+        await session.SetTemperatureAsync(65, CancellationToken.None);
+        await session.SetProfileAsync(draftProfile, CancellationToken.None);
+        await fixture.Runtime.ProcessOnceAsync(CancellationToken.None);
+
+        Assert.Equal(new RgbColor(0x00, 0xFF, 0x40), fixture.Lighting.Colors[^1]);
+        Assert.Equal(committedProfile, fixture.Runtime.CurrentSettings.Profile);
+
+        await session.DisposeAsync();
+        fixture.Advance(TimeSpan.FromMilliseconds(100));
+        await fixture.Runtime.ProcessOnceAsync(CancellationToken.None);
+
+        Assert.Equal(new ColorEngine(committedProfile, 65).Map(65), fixture.Lighting.Colors[^1]);
+        Assert.Equal(committedProfile, fixture.Runtime.CurrentSettings.Profile);
+        Assert.True(fixture.Runtime.CurrentSettings.IsModeEnabled);
+    }
+
+    [Fact]
     public async Task LightingTest_SyntheticRenderingDoesNotStopRealSensorPolling()
     {
         await using var fixture = RuntimeFixture.Create(modeEnabled: false, temperatures: [45, 55]);

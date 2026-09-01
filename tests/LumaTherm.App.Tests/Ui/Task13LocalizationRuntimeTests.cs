@@ -218,7 +218,7 @@ public sealed class Task13LocalizationRuntimeTests(ThermalCoreStaFixture sta)
                 Assert.DoesNotMatch("[А-Яа-яЁё]", visibleText);
                 Assert.DoesNotMatch("[А-Яа-яЁё]", accessibleText);
                 var dot = Assert.IsType<System.Windows.Shapes.Ellipse>(shell.FindName("DeviceStatusDot"));
-                Assert.Equal(Color.FromRgb(0x66, 0x72, 0x7C), Assert.IsType<SolidColorBrush>(dot.Fill).Color);
+                Assert.Equal(Color.FromRgb(0x9A, 0xA8, 0xB3), Assert.IsType<SolidColorBrush>(dot.Fill).Color);
             }
             finally
             {
@@ -385,6 +385,7 @@ public sealed class Task13LocalizationRuntimeTests(ThermalCoreStaFixture sta)
     private sealed class FakeLightingSession : ILightingTestSession
     {
         public Task SetTemperatureAsync(double celsius, CancellationToken cancellationToken) => Task.CompletedTask;
+        public Task SetProfileAsync(ThermalProfile profile, CancellationToken cancellationToken) => Task.CompletedTask;
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
 
