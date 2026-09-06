@@ -200,6 +200,16 @@ public sealed class InstallerScriptTests
         Assert.Contains("Result := 1", script, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void InnoDefinitionUsesExplicitSystemWindowsPowerShellForRegistrationAndUnregistration()
+    {
+        var script = File.ReadAllText(Path.Combine(RepositoryLayout.Root, "packaging", "LumaTherm.iss"));
+        const string systemPowerShell = "ExpandConstant('{sys}\\WindowsPowerShell\\v1.0\\powershell.exe')";
+
+        Assert.Equal(2, script.Split(systemPowerShell, StringSplitOptions.None).Length - 1);
+        Assert.DoesNotContain("Exec('powershell.exe'", script, StringComparison.Ordinal);
+    }
+
     private static Dictionary<string, string> ParseKeyValues(string[] lines) => lines
         .Where(line => !line.StartsWith(';') && line.Contains('='))
         .Select(line => line.Split('=', 2))
