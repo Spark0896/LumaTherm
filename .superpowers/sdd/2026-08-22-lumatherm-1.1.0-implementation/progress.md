@@ -173,3 +173,5 @@ Task 16: installed-state checkpoint before retry — existing package `LumaTherm
 Task 16b: Ruling: use exact defaults (35, #006BFF), (65, #D000FF), (85, #FF1800) with smoothing 0.8; migrate only exact legacy default points (35, #008CFF), (65, #FFD800), (85, #FF1800), preserving custom smoothing and every custom profile including yellow — cost if wrong: existing exact-default users receive this palette, custom profiles are untouched.
 
 Task 16b: complete (commits f7b2355..eab24e1, review clean)
+
+Task 16b: fix round 1/5 (1 addressed, 0 open — machine `0x80073CFB` same-version/different-content AppX block resolved by removing only one exact Name/Publisher/incoming-Version package by exact PackageFullName immediately before replacement registration; settings/files remain untouched and identity-loss risk on replacement failure is reported without rollback claim)

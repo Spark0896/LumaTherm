@@ -286,7 +286,7 @@ public sealed class InstallerScriptTests
             using (var writer = new StreamWriter(payload.Open(), new UTF8Encoding(false))) writer.Write(anchor);
             var manifest = archive.CreateEntry("AppxManifest.xml");
             using var manifestWriter = new StreamWriter(manifest.Open(), new UTF8Encoding(false));
-            manifestWriter.Write("<Package />");
+            manifestWriter.Write("<Package xmlns=\"http://schemas.microsoft.com/appx/manifest/foundation/windows10\"><Identity Name=\"LumaTherm\" Publisher=\"CN=LumaTherm Local\" Version=\"1.1.0.0\" /></Package>");
         }
 
         private static void WriteChecksums(string root)

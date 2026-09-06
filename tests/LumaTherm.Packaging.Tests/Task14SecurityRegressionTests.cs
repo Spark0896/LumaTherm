@@ -91,6 +91,69 @@ public sealed class Task14SecurityRegressionTests
         Assert.Contains("postRegistrationVerified", json.RootElement.GetProperty("events").EnumerateArray().Select(value => value.GetString()));
     }
 
+    [Fact]
+    public void ExactSingleSameVersionIdentityIsRemovedImmediatelyBeforeRegistration()
+    {
+        using var fixture = SecurePortableFixture.Create();
+        const string fullName = "LumaTherm_1.1.0.0_x64__exact";
+        var inventory = JsonSerializer.Serialize(new[]
+        {
+            new { Name = "LumaTherm", Publisher = "CN=LumaTherm Local", Version = "1.1.0.0", PackageFullName = fullName },
+        });
+        var arguments = fixture.ExactPostRegistrationArguments().Concat(new[] { "-PreRegistrationPackagesJsonForTest", inventory }).ToArray();
+
+        var result = fixture.Register(arguments);
+
+        Assert.True(result.ExitCode == 0, result.StandardError + result.StandardOutput);
+        using var json = JsonDocument.Parse(result.StandardOutput);
+        var events = json.RootElement.GetProperty("events").EnumerateArray().Select(value => value.GetString()).ToArray();
+        Assert.True(Array.IndexOf(events, "sameVersionPackageRemoved") < Array.IndexOf(events, "registrationExecutedForTest"));
+        Assert.Equal(new[] { "Remove-AppxPackage", "-Package", fullName },
+            json.RootElement.GetProperty("sameVersionRemovalCommand").EnumerateArray().Select(value => value.GetString()).ToArray());
+    }
+
+    [Theory]
+    [InlineData("[]")]
+    [InlineData("[{\"Name\":\"LumaTherm\",\"Publisher\":\"CN=LumaTherm Local\",\"Version\":\"1.0.1.0\",\"PackageFullName\":\"older\"}]")]
+    [InlineData("[{\"Name\":\"LumaTherm\",\"Publisher\":\"CN=Other\",\"Version\":\"1.1.0.0\",\"PackageFullName\":\"otherPublisher\"}]")]
+    [InlineData("[{\"Name\":\"LumaTherm.Helper\",\"Publisher\":\"CN=LumaTherm Local\",\"Version\":\"1.1.0.0\",\"PackageFullName\":\"lookalike\"}]")]
+    [InlineData("[{\"Name\":\"LumaTherm\",\"Publisher\":\"CN=LumaTherm Local\",\"Version\":\"1.1.0.0\",\"PackageFullName\":\"one\"},{\"Name\":\"LumaTherm\",\"Publisher\":\"CN=LumaTherm Local\",\"Version\":\"1.1.0.0\",\"PackageFullName\":\"two\"}]")]
+    public void FreshUpgradeUnknownAndAmbiguousInventoriesRemoveNothing(string inventory)
+    {
+        using var fixture = SecurePortableFixture.Create();
+        var arguments = fixture.ExactPostRegistrationArguments().Concat(new[] { "-PreRegistrationPackagesJsonForTest", inventory }).ToArray();
+
+        var result = fixture.Register(arguments);
+
+        Assert.True(result.ExitCode == 0, result.StandardError + result.StandardOutput);
+        Assert.DoesNotContain("sameVersionPackageRemoved", result.StandardOutput, StringComparison.Ordinal);
+        Assert.DoesNotContain("Remove-AppxPackage", result.StandardOutput, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void FailedSameVersionReplacementReportsUnrecoverableIdentityLossWithoutRollbackClaim()
+    {
+        using var fixture = SecurePortableFixture.Create();
+        var inventory = JsonSerializer.Serialize(new[]
+        {
+            new { Name = "LumaTherm", Publisher = "CN=LumaTherm Local", Version = "1.1.0.0", PackageFullName = "LumaTherm_1.1.0.0_x64__exact" },
+        });
+        var arguments = fixture.ExactPostRegistrationArguments().Concat(new[]
+        {
+            "-PreRegistrationPackagesJsonForTest", inventory,
+            "-RegistrationFailureForTest", "Add",
+        }).ToArray();
+
+        var result = fixture.Register(arguments);
+
+        Assert.NotEqual(0, result.ExitCode);
+        var diagnostic = result.StandardError + result.StandardOutput;
+        Assert.Contains("sameVersionPackageRemoved", diagnostic, StringComparison.Ordinal);
+        Assert.Contains("sameVersionReplacementFailed", diagnostic, StringComparison.Ordinal);
+        Assert.Contains("previous identity is no longer installed and cannot be rolled back safely", diagnostic, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("packageRollback", diagnostic, StringComparison.Ordinal);
+    }
+
     [Theory]
     [InlineData("-InstalledPackageNameForTest", "LumaTherm.Lookalike")]
     [InlineData("-InstalledPublisherForTest", "CN=Other")]
@@ -431,7 +494,7 @@ public sealed class Task14SecurityRegressionTests
             using (var writer = new StreamWriter(payload.Open(), new UTF8Encoding(false))) writer.Write(anchor);
             var manifest = archive.CreateEntry("AppxManifest.xml");
             using var manifestWriter = new StreamWriter(manifest.Open(), new UTF8Encoding(false));
-            manifestWriter.Write("<Package />");
+            manifestWriter.Write("<Package xmlns=\"http://schemas.microsoft.com/appx/manifest/foundation/windows10\"><Identity Name=\"LumaTherm\" Publisher=\"CN=LumaTherm Local\" Version=\"1.1.0.0\" /></Package>");
         }
 
         private static void RewriteChecksums(string root)

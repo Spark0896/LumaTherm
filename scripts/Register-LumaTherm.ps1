@@ -20,6 +20,7 @@ param(
     [switch]$TrustedCertificatePresentForTest,
     [switch]$SimulateRegistrationForTest,
     [ValidateSet('None', 'Add', 'PostVerify')][string]$RegistrationFailureForTest = 'None',
+    [string]$PreRegistrationPackagesJsonForTest,
     [string]$InstalledPackageNameForTest,
     [string]$InstalledPublisherForTest,
     [string]$InstalledVersionForTest,
@@ -33,7 +34,7 @@ Set-StrictMode -Version Latest
 $isTest = $env:LUMATHERM_PACKAGING_TEST -eq '1'
 $testValues = @($SignatureStatusForTest, $SignatureThumbprintForTest, $ApplicationSignatureStatusForTest,
     $ApplicationSignatureThumbprintForTest, $SignatureTrustIssueForTest, $AdministratorStatusForTest,
-    $CertificateDecisionForTest, $InstalledPackageNameForTest, $InstalledPublisherForTest, $InstalledVersionForTest,
+    $CertificateDecisionForTest, $PreRegistrationPackagesJsonForTest, $InstalledPackageNameForTest, $InstalledPublisherForTest, $InstalledVersionForTest,
     $InstalledExternalLocationForTest, $InstalledApplicationIdForTest, $InstalledExtensionForTest)
 $hasTestOverride = @($testValues | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }).Count -gt 0 -or
     $TrustedCertificatePresentForTest -or $SimulateRegistrationForTest -or $RegistrationFailureForTest -ne 'None'
@@ -101,6 +102,34 @@ function Get-SignedPayloadAnchor([string]$PackagePath) {
     } finally { $archive.Dispose() }
 }
 
+function Get-IncomingPackageIdentity([string]$PackagePath) {
+    Add-Type -AssemblyName System.IO.Compression
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    $archive = [IO.Compression.ZipFile]::OpenRead($PackagePath)
+    try {
+        $entries = @($archive.Entries | Where-Object { $_.FullName -ceq 'AppxManifest.xml' })
+        if ($entries.Count -ne 1) { throw 'Sparse identity package must contain exactly one AppxManifest.xml.' }
+        $reader = [IO.StreamReader]::new($entries[0].Open(), [Text.Encoding]::UTF8, $true)
+        try { $manifestText = $reader.ReadToEnd() } finally { $reader.Dispose() }
+    } finally { $archive.Dispose() }
+
+    $manifest = [Xml.XmlDocument]::new()
+    $manifest.XmlResolver = $null
+    $manifest.LoadXml($manifestText)
+    $identities = @($manifest.SelectNodes("/*[local-name()='Package']/*[local-name()='Identity']"))
+    if ($identities.Count -ne 1) { throw 'Sparse identity manifest must contain exactly one package identity.' }
+    $name = $identities[0].GetAttribute('Name')
+    $publisher = $identities[0].GetAttribute('Publisher')
+    $versionText = $identities[0].GetAttribute('Version')
+    if ($name -cne 'LumaTherm' -or $publisher -cne 'CN=LumaTherm Local') { throw 'Sparse identity manifest name or publisher is not the exact LumaTherm identity.' }
+    try { $version = [Version]::Parse($versionText) } catch { throw "Sparse identity manifest version is invalid: $versionText" }
+    $versionParts = @($version.Major, $version.Minor, $version.Build, $version.Revision)
+    if ($version.ToString(4) -cne $versionText -or @($versionParts | Where-Object { $_ -lt 0 -or $_ -gt [UInt16]::MaxValue }).Count -ne 0) {
+        throw "Sparse identity manifest version is invalid: $versionText"
+    }
+    return [pscustomobject]@{ Name = $name; Publisher = $publisher; Version = $versionText }
+}
+
 function Assert-ExactHashes([object[]]$Entries, [string[]]$ActualRelativePaths, [string]$Root, [string]$Label) {
     $map = @{}
     foreach ($entry in @($Entries)) {
@@ -151,6 +180,8 @@ $certificate = [Security.Cryptography.X509Certificates.X509Certificate2]::new($c
 $ownedTrust = $false
 $registrationAdded = $false
 $registeredFullName = $null
+$sameVersionPackageRemoved = $false
+$sameVersionRemovalCommand = $null
 try {
     if ($isTest -and $AuditOnly) {
         $packageStatus = $SignatureStatusForTest; $packageThumbprint = $SignatureThumbprintForTest
@@ -199,6 +230,7 @@ try {
         $events.Add('signaturesReverified')
     } else { $events.Add('signaturesVerified') }
 
+    $incomingIdentity = Get-IncomingPackageIdentity $identityPackage
     $command = @('Add-AppxPackage', '-Path', $identityPackage, '-ExternalLocation', $applicationDirectory)
     $installed = @()
     if ($AuditOnly -and -not $SimulateRegistrationForTest) {
@@ -207,10 +239,29 @@ try {
         exit 0
     }
     elseif ($AuditOnly) {
+        $preRegistrationPackages = if ([string]::IsNullOrWhiteSpace($PreRegistrationPackagesJsonForTest)) { @() } else { @($PreRegistrationPackagesJsonForTest | ConvertFrom-Json) }
+        $exactPreRegistrationPackages = @($preRegistrationPackages | Where-Object { $_.Name -ceq $incomingIdentity.Name -and $_.Publisher -ceq $incomingIdentity.Publisher })
+        if ($exactPreRegistrationPackages.Count -eq 1 -and [string]$exactPreRegistrationPackages[0].Version -ceq $incomingIdentity.Version) {
+            $sameVersionFullName = [string]$exactPreRegistrationPackages[0].PackageFullName
+            if ([string]::IsNullOrWhiteSpace($sameVersionFullName)) { throw 'Exact same-version LumaTherm identity has no PackageFullName; refusing removal.' }
+            $sameVersionRemovalCommand = @('Remove-AppxPackage', '-Package', $sameVersionFullName)
+            $sameVersionPackageRemoved = $true
+            $events.Add('sameVersionPackageRemoved')
+        }
         if ($RegistrationFailureForTest -eq 'Add') { throw 'Injected Add-AppxPackage failure for test.' }
         $registrationAdded = $true; $registeredFullName = 'LumaTherm_1.1.0.0_x64__test'; $events.Add('registrationExecutedForTest')
         $installed = @([pscustomobject]@{ Name = $InstalledPackageNameForTest; Publisher = $InstalledPublisherForTest; Version = $InstalledVersionForTest; PackageExternalLocation = $InstalledExternalLocationForTest; PackageFullName = $registeredFullName; ApplicationId = $InstalledApplicationIdForTest; Extension = $InstalledExtensionForTest })
     } else {
+        $preRegistrationPackages = @(Get-AppxPackage -Name 'LumaTherm')
+        $exactPreRegistrationPackages = @($preRegistrationPackages | Where-Object { $_.Name -ceq $incomingIdentity.Name -and $_.Publisher -ceq $incomingIdentity.Publisher })
+        if ($exactPreRegistrationPackages.Count -eq 1 -and [string]$exactPreRegistrationPackages[0].Version -ceq $incomingIdentity.Version) {
+            $sameVersionFullName = [string]$exactPreRegistrationPackages[0].PackageFullName
+            if ([string]::IsNullOrWhiteSpace($sameVersionFullName)) { throw 'Exact same-version LumaTherm identity has no PackageFullName; refusing removal.' }
+            $sameVersionRemovalCommand = @('Remove-AppxPackage', '-Package', $sameVersionFullName)
+            Remove-AppxPackage -Package $sameVersionFullName
+            $sameVersionPackageRemoved = $true
+            $events.Add('sameVersionPackageRemoved')
+        }
         Add-AppxPackage -Path $identityPackage -ExternalLocation $applicationDirectory
         $registrationAdded = $true
         $installed = @(Get-AppxPackage -Name 'LumaTherm' | Where-Object { $_.Name -ceq 'LumaTherm' -and $_.Publisher -ceq 'CN=LumaTherm Local' })
@@ -230,20 +281,30 @@ try {
     if ($installed.Count -ne 1) { throw 'Post-registration verification did not find exactly one LumaTherm identity.' }
     $package = $installed[0]
     $externalMatches = -not [string]::IsNullOrWhiteSpace([string]$package.PackageExternalLocation) -and ([IO.Path]::GetFullPath([string]$package.PackageExternalLocation).TrimEnd('\')).Equals($applicationDirectory, [StringComparison]::OrdinalIgnoreCase)
-    if ($RegistrationFailureForTest -eq 'PostVerify' -or $package.Name -cne 'LumaTherm' -or $package.Publisher -cne 'CN=LumaTherm Local' -or [string]$package.Version -cne '1.1.0.0' -or -not $externalMatches -or $package.ApplicationId -cne 'LumaTherm' -or $package.Extension -cne 'com.microsoft.windows.lighting') {
+    if ($RegistrationFailureForTest -eq 'PostVerify' -or $package.Name -cne $incomingIdentity.Name -or $package.Publisher -cne $incomingIdentity.Publisher -or [string]$package.Version -cne $incomingIdentity.Version -or -not $externalMatches -or $package.ApplicationId -cne 'LumaTherm' -or $package.Extension -cne 'com.microsoft.windows.lighting') {
         throw 'Post-registration identity, version, external location, application, or lighting extension verification failed.'
     }
     $events.Add('postRegistrationVerified')
-    [pscustomobject]@{ events = $events.ToArray(); identityPackage = $identityPackage; applicationDirectory = $applicationDirectory; applicationExecutable = $applicationExecutable; certificateThumbprint = $certificate.Thumbprint; registrationCommand = $command } | ConvertTo-Json -Depth 3 -Compress | Write-Output
+    [pscustomobject]@{ events = $events.ToArray(); identityPackage = $identityPackage; applicationDirectory = $applicationDirectory; applicationExecutable = $applicationExecutable; certificateThumbprint = $certificate.Thumbprint; registrationCommand = $command; sameVersionRemovalCommand = $sameVersionRemovalCommand } | ConvertTo-Json -Depth 3 -Compress | Write-Output
 } catch {
+    $errorMessage = $_.Exception.Message
     if ($registrationAdded) {
-        if ($AuditOnly) { $events.Add('packageRollbackPlanned') }
-        elseif (-not [string]::IsNullOrWhiteSpace($registeredFullName)) { Remove-AppxPackage -Package $registeredFullName -ErrorAction SilentlyContinue; $events.Add('packageRolledBack') }
+        if ($AuditOnly) {
+            $events.Add($(if ($sameVersionPackageRemoved) { 'failedReplacementPackageRemovalPlanned' } else { 'packageRollbackPlanned' }))
+        }
+        elseif (-not [string]::IsNullOrWhiteSpace($registeredFullName)) {
+            Remove-AppxPackage -Package $registeredFullName -ErrorAction SilentlyContinue
+            $events.Add($(if ($sameVersionPackageRemoved) { 'failedReplacementPackageRemoved' } else { 'packageRolledBack' }))
+        }
     }
     if ($ownedTrust) {
         if ($AuditOnly) { $events.Add('certificateRollbackPlanned') }
         elseif (Test-Path -LiteralPath $trustedPath) { Remove-Item -LiteralPath $trustedPath -Force; $events.Add('certificateRolledBack') }
     }
-    [Console]::Error.WriteLine(([pscustomobject]@{ events = $events.ToArray(); error = $_.Exception.Message } | ConvertTo-Json -Compress))
-    throw
+    if ($sameVersionPackageRemoved) {
+        $events.Add('sameVersionReplacementFailed')
+        $errorMessage = "Same-version replacement registration failed after removing the previous exact LumaTherm identity; the previous identity is no longer installed and cannot be rolled back safely. $errorMessage"
+    }
+    [Console]::Error.WriteLine(([pscustomobject]@{ events = $events.ToArray(); error = $errorMessage; sameVersionRemovalCommand = $sameVersionRemovalCommand } | ConvertTo-Json -Compress))
+    throw $errorMessage
 } finally { $certificate.Dispose() }

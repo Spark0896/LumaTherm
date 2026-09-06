@@ -14,7 +14,7 @@ The same ruling is appended to `progress.md` so it survives compaction.
 
 ### Installer acceptance and background registration
 
-Machine evidence established that the unchanged installed `Register-LumaTherm.ps1` succeeds and emits `pathsVerified`, `checksumsVerified`, `signedAnchorVerified`, `applicationSignatureVerified`, `signatureMatchedUntrusted`, `administratorPreflightPassed`, `certificateImportConfirmed`, `certificateImported`, `signaturesReverified`, and `postRegistrationVerified`; Windows then reports `LumaTherm_1.1.0.0_x64__jzd30fs6ag6cm` as `Ok`. The defect was therefore installer orchestration/acceptance, not the helper.
+Initial machine evidence established that the then-installed `Register-LumaTherm.ps1` could succeed and emit `pathsVerified`, `checksumsVerified`, `signedAnchorVerified`, `applicationSignatureVerified`, `signatureMatchedUntrusted`, `administratorPreflightPassed`, `certificateImportConfirmed`, `certificateImported`, `signaturesReverified`, and `postRegistrationVerified`; Windows then reported `LumaTherm_1.1.0.0_x64__jzd30fs6ag6cm` as `Ok`. That evidence identified the first defect as installer orchestration/acceptance. A later differently signed payload at the same four-part version exposed the platform replacement constraint documented in fix round 1 below.
 
 Inno Setup invokes `CurStepChanged(ssPostInstall)` through exception handling, so raising from that callback alone was not a sufficient process exit-code contract. `packaging/LumaTherm.iss` now records success only after the registration helper starts and exits zero, and `GetCustomSetupExitCode` returns 1 unless that success was reached. The pre-install unregister callback was removed, preserving the prior identity until replacement registration occurs. The working registration helper was not changed; its exact identity/version/publisher/external-location/application/extension verification remains authoritative. No code changes Windows Dynamic Lighting policy.
 
@@ -41,7 +41,7 @@ Selecting a profile point exposes a mouse/keyboard reachable temperature field a
 - Diagnostics: `tools/LumaTherm.Smoke/SmokeCommand.cs` and smoke regressions.
 - Durable records: `progress.md` and this report.
 
-`packaging/Register-LumaTherm.ps1` is unchanged.
+Fix round 1 additionally changes `scripts/Register-LumaTherm.ps1` and the two executable portable registration fixtures in `Task14SecurityRegressionTests.cs` and `InstallerScriptTests.cs`.
 
 ## Focused TDD evidence
 
@@ -174,7 +174,7 @@ Result: recorded after the final report edit and before commit; no whitespace er
 ## Self-review
 
 - Scope is limited to the three approved blocker areas plus direct tests/records.
-- The known-good registration helper and Windows Dynamic Lighting policy are untouched.
+- Existing path, checksum, signed-anchor, signature, certificate-consent, post-registration, and Windows Dynamic Lighting policy guards remain intact; fix round 1 changes only the precisely gated same-version replacement branch.
 - Installer failure is enforced at process exit, while the prior identity is not proactively removed.
 - Migration equality covers the complete ordered legacy point set only and retains custom smoothing/settings.
 - The point editor uses the established picker abstraction and valid drafts write only through the owned test session.
@@ -185,10 +185,61 @@ Result: recorded after the final report edit and before commit; no whitespace er
 ## Remaining machine acceptance (controller-authorized phase only)
 
 1. Rebuild the signed 1.1.0 payload and installer with the pinned release toolchain; verify package/installer signatures and hashes.
-2. Force a controlled registration failure and prove the installer returns nonzero and does not report success; verify the prior working identity/settings remain usable wherever the platform permits rollback.
+2. Force a controlled registration failure and prove the installer returns nonzero and does not report success. For a same-version replacement after exact removal, verify the diagnostic explicitly reports that the prior identity is no longer installed and cannot be rolled back safely; verify settings and installed files remain untouched.
 3. Run a successful installer and capture helper success events plus package status `Ok`; verify identity `LumaTherm`, version `1.1.0.0`, publisher `CN=LumaTherm Local`, external location equal to the installed app directory, application ID `LumaTherm`, and extension `com.microsoft.windows.lighting`.
 4. Verify settings preservation and exact-only legacy palette migration on a copied real schema-2 settings file; separately verify a custom profile containing yellow is unchanged.
 5. Verify desktop and Start Menu shortcuts, then authorized launch/tray/minimize/deactivation behavior: the runtime remains active, the tray process remains alive, and background LampArray provider ownership works under the existing `ControlledByForegroundApp=1` policy without changing that registry value.
 6. With explicit hardware-write authorization, exercise slider thumb drag, click-to-position, profile-point mouse drag, selected-point temperature/color editing, real-time lighting preview, Apply persistence, Cancel restore, and prior live-mode-state preservation on the actual LampArray device.
 
-No machine acceptance item above was executed by this implementation agent.
+No machine mutation was executed by this implementation agent; machine evidence in this report was supplied by the controller.
+
+## Machine-acceptance fix round 1/5
+
+### Machine finding and root cause
+
+The signed 1.1.0 installer copied the new payload and correctly exited 1. Direct elevated registration then failed in `Add-AppxPackage` with HRESULT `0x80073CFB`: `LumaTherm_1.1.0.0_x64__jzd30fs6ag6cm` was already installed at the same version with different content, and Windows required either a higher version or removal of the existing package. Events before failure were `pathsVerified`, `checksumsVerified`, `signedAnchorVerified`, `applicationSignatureVerified`, `signatureMatchedUntrusted`, `administratorPreflightPassed`, `certificateImportConfirmed`, `certificateImported`, `signaturesReverified`, and `certificateRolledBack`. The exact old identity remained `Status Ok`; settings SHA-256 remained `CDE73B85EA1B56E1A80BE6B700387D4EEB7DAC556CA098C053D72599E9E61E1E`.
+
+The incoming signed `AppxManifest.xml` identity is now read and validated as exact Name `LumaTherm`, Publisher `CN=LumaTherm Local`, and a valid four-part package Version. Immediately before the single `Add-AppxPackage` call, the helper queries installed packages and removes by exact `PackageFullName` only when exactly one exact Name/Publisher match exists and its version equals that validated incoming version. Fresh installs, version upgrades, other publishers, lookalikes, other versions, and ambiguous multiple exact matches do not enter the removal path. The event `sameVersionPackageRemoved` records the exact path.
+
+If registration or post-verification fails after that removal, the helper remains nonzero and emits `sameVersionReplacementFailed` with the explicit statement that the previous identity is no longer installed and cannot be rolled back safely. Cleanup may remove a failed newly added replacement, but it does not describe that as restoration of the old equal-version package. User settings/data and Windows Dynamic Lighting policy are not touched. The Inno installer success gate remains unchanged and still requires helper exit zero.
+
+### Focused RED/GREEN
+
+RED, captured before production changes:
+
+```powershell
+.\.dotnet\dotnet.exe test tests\LumaTherm.Packaging.Tests\LumaTherm.Packaging.Tests.csproj -c Release --filter "FullyQualifiedName~ExactSingleSameVersionIdentityIsRemovedImmediatelyBeforeRegistration|FullyQualifiedName~FreshUpgradeUnknownAndAmbiguousInventoriesRemoveNothing|FullyQualifiedName~FailedSameVersionReplacementReportsUnrecoverableIdentityLossWithoutRollbackClaim" --no-restore
+```
+
+Result: exit 1; 0 passed, 7 failed. The executable PowerShell harness rejected the absent `PreRegistrationPackagesJsonForTest` parameter (`NamedParameterNotFound`), proving the guarded inventory/removal behavior did not exist.
+
+GREEN, identical command after the minimal helper implementation: exit 0; 7 passed, 0 failed. It proves exact removal command targeting and ordering, no removal for fresh/upgrade/unknown/ambiguous inventories, and honest nonzero identity-loss reporting without a rollback claim.
+
+Complete packaging project:
+
+```powershell
+.\.dotnet\dotnet.exe test tests\LumaTherm.Packaging.Tests\LumaTherm.Packaging.Tests.csproj -c Release --no-restore
+```
+
+Result: exit 0; 88/88 passed.
+
+### Fix-round final verification
+
+```powershell
+.\.dotnet\dotnet.exe build .\LumaTherm.sln -c Release --no-restore
+.\.dotnet\dotnet.exe test .\LumaTherm.sln -c Release --no-build --no-restore
+git diff --check
+```
+
+Result: Release build exit 0 with 0 warnings and 0 errors. Fresh full-suite rerun exit 0: Core 124/124, Infrastructure 113/113, App 269/269, Smoke 19/19, Packaging 88/88; total 613/613. `git diff --check` reported no whitespace errors.
+
+The first concurrent full-suite attempt passed 612 tests and hit one pre-existing timing race in `BoundedProcessTestHostTests.TimeoutKillsChildTreeAndReleasesItsFileLockWithinTheBound` because its child lock was briefly still held. The exact test immediately passed 1/1 in isolation, and the full fresh rerun passed 613/613; no unrelated process-host code was changed.
+
+### Fix-round self-review and remaining acceptance
+
+- The removal condition is fail-closed: one exact Name/Publisher match, exact incoming manifest Version, and nonempty exact PackageFullName are all required.
+- Only `Remove-AppxPackage -Package <exact full name>` is used; no wildcard, `-AllUsers`, broad pre-unregister, settings deletion, or policy mutation was added.
+- The removal is immediately adjacent to the single registration call and occurs only after all path/hash/signature/trust validation.
+- Normal fresh and higher-version upgrade behavior remains the existing direct `Add-AppxPackage` path.
+- Failure after same-version removal is deliberately nonzero and names irreversible identity loss; it does not claim the prior package was restored.
+- Machine acceptance must rebuild/re-sign the payload, rerun the installer, confirm `sameVersionPackageRemoved` precedes `postRegistrationVerified`, recheck exact package identity/status/external location/extension, and confirm the settings hash remains unchanged.
