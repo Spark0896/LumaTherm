@@ -175,3 +175,5 @@ Task 16b: Ruling: use exact defaults (35, #006BFF), (65, #D000FF), (85, #FF1800)
 Task 16b: complete (commits f7b2355..eab24e1, review clean)
 
 Task 16b: fix round 1/5 (1 addressed, 0 open — machine `0x80073CFB` same-version/different-content AppX block resolved by removing only one exact Name/Publisher/incoming-Version package by exact PackageFullName immediately before replacement registration; settings/files remain untouched and identity-loss risk on replacement failure is reported without rollback claim)
+
+Task 16b: complete after fix round 1 (commits 61ede68..c72a9de, review clean)
