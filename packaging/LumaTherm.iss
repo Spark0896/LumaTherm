@@ -59,7 +59,7 @@ begin
     Parameters := BuildRegistrationParameters;
     if Parameters = '' then
       RaiseException('Registration consent policy refused to authorize certificate import.');
-    PowerShell := ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe');
+    PowerShell := ExpandConstant('{sysnative}\WindowsPowerShell\v1.0\powershell.exe');
     if not Exec(PowerShell, Parameters, '', SW_HIDE, ewWaitUntilTerminated, ResultCode) then
       RaiseException('Registration failed: unable to start the LumaTherm identity helper.');
     if ResultCode <> 0 then
@@ -93,7 +93,7 @@ begin
       if not FileExists(Helper) then
         RaiseException('User-data cleanup failed: the guarded LumaTherm helper is missing.');
       Parameters := ExpandConstant('-NoProfile -NonInteractive -ExecutionPolicy Bypass -File ""{app}\payload\Unregister-LumaTherm.ps1"" -Force -RemoveUserData');
-      PowerShell := ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe');
+      PowerShell := ExpandConstant('{sysnative}\WindowsPowerShell\v1.0\powershell.exe');
       if not Exec(PowerShell, Parameters, '', SW_HIDE, ewWaitUntilTerminated, ResultCode) then
         RaiseException('User-data cleanup failed: unable to start the guarded LumaTherm helper.');
       if ResultCode <> 0 then
