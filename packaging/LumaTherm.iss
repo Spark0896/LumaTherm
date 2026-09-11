@@ -46,12 +46,19 @@ Filename: "powershell.exe"; Parameters: "-NoProfile -NonInteractive -ExecutionPo
 var
   RegistrationSucceeded: Boolean;
 
+function BuildNativePowerShellCommandParameters(const PowerShellParameters: String): String;
+var
+  PowerShell: String;
+begin
+  PowerShell := ExpandConstant('{sysnative}\WindowsPowerShell\v1.0\powershell.exe');
+  Result := '/d /s /c ""' + PowerShell + '" ' + PowerShellParameters + '""';
+end;
+
 procedure CurStepChanged(CurStep: TSetupStep);
 var
   ResultCode: Integer;
   Helper: String;
   Parameters: String;
-  PowerShell: String;
 begin
   if CurStep = ssPostInstall then
   begin
@@ -59,8 +66,8 @@ begin
     Parameters := BuildRegistrationParameters;
     if Parameters = '' then
       RaiseException('Registration consent policy refused to authorize certificate import.');
-    PowerShell := ExpandConstant('{sysnative}\WindowsPowerShell\v1.0\powershell.exe');
-    if not Exec(PowerShell, Parameters, '', SW_HIDE, ewWaitUntilTerminated, ResultCode) then
+    Parameters := BuildNativePowerShellCommandParameters(Parameters);
+    if not Exec(ExpandConstant('{cmd}'), Parameters, '', SW_HIDE, ewWaitUntilTerminated, ResultCode) then
       RaiseException('Registration failed: unable to start the LumaTherm identity helper.');
     if ResultCode <> 0 then
       RaiseException(Format('Registration failed with exit code %d. The installer did not complete successfully.', [ResultCode]));
@@ -82,7 +89,6 @@ var
   Helper: String;
   Parameters: String;
   ResultCode: Integer;
-  PowerShell: String;
 begin
   if CurUninstallStep = usUninstall then
   begin
@@ -93,8 +99,8 @@ begin
       if not FileExists(Helper) then
         RaiseException('User-data cleanup failed: the guarded LumaTherm helper is missing.');
       Parameters := ExpandConstant('-NoProfile -NonInteractive -ExecutionPolicy Bypass -File ""{app}\payload\Unregister-LumaTherm.ps1"" -Force -RemoveUserData');
-      PowerShell := ExpandConstant('{sysnative}\WindowsPowerShell\v1.0\powershell.exe');
-      if not Exec(PowerShell, Parameters, '', SW_HIDE, ewWaitUntilTerminated, ResultCode) then
+      Parameters := BuildNativePowerShellCommandParameters(Parameters);
+      if not Exec(ExpandConstant('{cmd}'), Parameters, '', SW_HIDE, ewWaitUntilTerminated, ResultCode) then
         RaiseException('User-data cleanup failed: unable to start the guarded LumaTherm helper.');
       if ResultCode <> 0 then
         RaiseException(Format('User-data cleanup failed with exit code %d. No unsafe recursive deletion was attempted.', [ResultCode]));

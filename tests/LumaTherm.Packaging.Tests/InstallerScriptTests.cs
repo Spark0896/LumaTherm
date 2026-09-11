@@ -201,12 +201,14 @@ public sealed class InstallerScriptTests
     }
 
     [Fact]
-    public void InnoDefinitionUsesExplicitNativeSystemWindowsPowerShellForRegistrationAndUnregistration()
+    public void InnoDefinitionUsesCommandProcessorToRunNativeSystemPowerShellHelpers()
     {
         var script = File.ReadAllText(Path.Combine(RepositoryLayout.Root, "packaging", "LumaTherm.iss"));
         const string nativeSystemPowerShell = "ExpandConstant('{sysnative}\\WindowsPowerShell\\v1.0\\powershell.exe')";
 
-        Assert.Equal(2, script.Split(nativeSystemPowerShell, StringSplitOptions.None).Length - 1);
+        Assert.Equal(1, script.Split(nativeSystemPowerShell, StringSplitOptions.None).Length - 1);
+        Assert.Equal(2, script.Split("Exec(ExpandConstant('{cmd}'), Parameters", StringSplitOptions.None).Length - 1);
+        Assert.Contains("'/d /s /c \"\"' +", script, StringComparison.Ordinal);
         Assert.DoesNotContain(
             "ExpandConstant('{sys}\\WindowsPowerShell\\v1.0\\powershell.exe')",
             script,
