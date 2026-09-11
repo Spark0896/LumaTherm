@@ -26,6 +26,6 @@ The final same-version installation validation completed on the local Windows ho
 
 The validated public artifacts were `LumaTherm-1.1.0-win-x64-setup.exe` (`FFD546E27F583588C925B4AE782108690B364023CDFCD03E9A2AB9DA82CEDB6D`) and `LumaTherm-1.1.0-portable-win-x64.zip` (`68B1498CF60BC06D47D8AFDEF99A98F2DBA2EF074D91D27DBC505B45E7552215`). The temporary signing PFX, private key, and temporary machine trust entry were removed after signing.
 
-This verifies packaging, registration, and first process launch. It is not physical RGB acceptance: the persisted user setting had thermal mode disabled at first launch, and the final visual/background-minimize check remains pending user activation of the mode in the app.
+This verifies packaging, registration, and first process launch. It is not physical RGB acceptance: the first start detected an unfinished earlier session and used its safety path to begin the runtime disabled, so the final visual/background-minimize check remains pending explicit user activation of the mode in the app.
 
 Before a physical write, explain that LumaTherm will temporarily take Windows Dynamic Lighting control and will release it afterward, then obtain explicit user confirmation. If no LampArray is found, enable Dynamic Lighting, prioritize LumaTherm, and close only the RGB Fusion page if necessary before retrying. Do not add unsupported GIGABYTE HID writes.
