@@ -54,19 +54,22 @@ begin
   Result := '/d /s /c ""' + PowerShell + '" ' + PowerShellParameters + '""';
 end;
 
+function BuildRegistrationCommandParameters: String;
+begin
+  Result := ExpandConstant('/d /s /c ""{app}\payload\Register-LumaTherm.cmd""');
+end;
+
 procedure CurStepChanged(CurStep: TSetupStep);
 var
   ResultCode: Integer;
-  Helper: String;
   Parameters: String;
 begin
   if CurStep = ssPostInstall then
   begin
-    Helper := ExpandConstant('{app}\payload\Register-LumaTherm.ps1');
     Parameters := BuildRegistrationParameters;
     if Parameters = '' then
       RaiseException('Registration consent policy refused to authorize certificate import.');
-    Parameters := BuildNativePowerShellCommandParameters(Parameters);
+    Parameters := BuildRegistrationCommandParameters;
     if not Exec(ExpandConstant('{cmd}'), Parameters, '', SW_HIDE, ewWaitUntilTerminated, ResultCode) then
       RaiseException('Registration failed: unable to start the LumaTherm identity helper.');
     if ResultCode <> 0 then

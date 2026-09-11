@@ -173,7 +173,7 @@ public sealed class InstallerScriptTests
         Assert.Contains(lines, line => line.Contains("Name: \"desktopicon\"") && line.Contains("Flags: unchecked"));
         Assert.Contains(lines, line => line.Contains("Name: \"startmenuicon\"") && line.Contains("Flags: checkedonce"));
         Assert.Contains(lines, line => line.Contains("CloseApplicationsFilter=LumaTherm.exe", StringComparison.Ordinal));
-        Assert.Contains(lines, line => line.Contains("Register-LumaTherm.ps1", StringComparison.Ordinal));
+        Assert.Contains(lines, line => line.Contains("Register-LumaTherm.cmd", StringComparison.Ordinal));
         Assert.Contains(lines, line => line.Contains("Unregister-LumaTherm.ps1", StringComparison.Ordinal));
         Assert.DoesNotContain(lines, line => line.Contains("settings.json", StringComparison.OrdinalIgnoreCase) && line.Contains("[UninstallDelete]", StringComparison.Ordinal));
         Assert.Contains(lines, line => line.Contains("DestDir: \"{app}\\payload\"", StringComparison.Ordinal));
@@ -209,6 +209,7 @@ public sealed class InstallerScriptTests
         Assert.Equal(1, script.Split(nativeSystemPowerShell, StringSplitOptions.None).Length - 1);
         Assert.Equal(2, script.Split("Exec(ExpandConstant('{cmd}'), Parameters", StringSplitOptions.None).Length - 1);
         Assert.Contains("'/d /s /c \"\"' +", script, StringComparison.Ordinal);
+        Assert.Contains("Register-LumaTherm.cmd", script, StringComparison.Ordinal);
         Assert.DoesNotContain(
             "ExpandConstant('{sys}\\WindowsPowerShell\\v1.0\\powershell.exe')",
             script,
@@ -251,6 +252,7 @@ public sealed class InstallerScriptTests
             var root = Path.Combine(RepositoryLayout.Root, "artifacts", "packaging-tests", Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(Path.Combine(root, "app"));
             File.WriteAllText(Path.Combine(root, "app", "LumaTherm.exe"), "self-contained app");
+            File.Copy(Path.Combine(RepositoryLayout.Root, "scripts", "Register-LumaTherm.cmd"), Path.Combine(root, "Register-LumaTherm.cmd"));
             File.Copy(Path.Combine(RepositoryLayout.Root, "scripts", "Register-LumaTherm.ps1"), Path.Combine(root, "Register-LumaTherm.ps1"));
             File.Copy(Path.Combine(RepositoryLayout.Root, "scripts", "Unregister-LumaTherm.ps1"), Path.Combine(root, "Unregister-LumaTherm.ps1"));
             File.WriteAllText(Path.Combine(root, "README.md"), "readme");
@@ -291,7 +293,7 @@ public sealed class InstallerScriptTests
 
         private static void WriteAnchorPackage(string root)
         {
-            var names = new[] { "app/LumaTherm.exe", "LICENSE", "LumaTherm.cer", "README.md", "Register-LumaTherm.ps1", "Unregister-LumaTherm.ps1" };
+            var names = new[] { "app/LumaTherm.exe", "LICENSE", "LumaTherm.cer", "README.md", "Register-LumaTherm.cmd", "Register-LumaTherm.ps1", "Unregister-LumaTherm.ps1" };
             var anchor = JsonSerializer.Serialize(new
             {
                 version = 1,
@@ -307,7 +309,7 @@ public sealed class InstallerScriptTests
 
         private static void WriteChecksums(string root)
         {
-            var names = new[] { "app/LumaTherm.exe", "LICENSE", "LumaTherm-1.1.0-sparse.msix", "LumaTherm.cer", "README.md", "Register-LumaTherm.ps1", "Unregister-LumaTherm.ps1" };
+            var names = new[] { "app/LumaTherm.exe", "LICENSE", "LumaTherm-1.1.0-sparse.msix", "LumaTherm.cer", "README.md", "Register-LumaTherm.cmd", "Register-LumaTherm.ps1", "Unregister-LumaTherm.ps1" };
             var lines = names.Select(name => $"{Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(Path.Combine(root, name.Replace('/', Path.DirectorySeparatorChar)))))} *{name}");
             File.WriteAllLines(Path.Combine(root, "SHA256SUMS.txt"), lines, new UTF8Encoding(false));
         }

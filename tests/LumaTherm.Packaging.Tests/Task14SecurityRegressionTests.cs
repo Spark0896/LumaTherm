@@ -433,6 +433,7 @@ public sealed class Task14SecurityRegressionTests
             File.WriteAllText(Path.Combine(root, "app", "LumaTherm.exe"), "signed app");
             File.WriteAllText(Path.Combine(root, "README.md"), "readme");
             File.WriteAllText(Path.Combine(root, "LICENSE"), "license");
+            File.Copy(Path.Combine(RepositoryLayout.Root, "scripts", "Register-LumaTherm.cmd"), Path.Combine(root, "Register-LumaTherm.cmd"));
             File.Copy(Path.Combine(RepositoryLayout.Root, "scripts", "Register-LumaTherm.ps1"), Path.Combine(root, "Register-LumaTherm.ps1"));
             File.Copy(Path.Combine(RepositoryLayout.Root, "scripts", "Unregister-LumaTherm.ps1"), Path.Combine(root, "Unregister-LumaTherm.ps1"));
             using var rsa = RSA.Create(2048);
@@ -483,7 +484,7 @@ public sealed class Task14SecurityRegressionTests
 
         private static void WriteAnchorPackage(string root)
         {
-            var names = new[] { "app/LumaTherm.exe", "LICENSE", "LumaTherm.cer", "README.md", "Register-LumaTherm.ps1", "Unregister-LumaTherm.ps1" };
+            var names = new[] { "app/LumaTherm.exe", "LICENSE", "LumaTherm.cer", "README.md", "Register-LumaTherm.cmd", "Register-LumaTherm.ps1", "Unregister-LumaTherm.ps1" };
             var anchor = JsonSerializer.Serialize(new
             {
                 version = 1,
@@ -530,6 +531,7 @@ public sealed class Task14SecurityRegressionTests
             Directory.CreateDirectory(Path.Combine(repository, "packaging", "Assets"));
             Directory.CreateDirectory(Path.Combine(repository, "packaging", "public"));
             File.Copy(Path.Combine(RepositoryLayout.Root, "scripts", "build-release.ps1"), Path.Combine(repository, "scripts", "build-release.ps1"));
+            File.Copy(Path.Combine(RepositoryLayout.Root, "scripts", "Register-LumaTherm.cmd"), Path.Combine(repository, "scripts", "Register-LumaTherm.cmd"));
             File.Copy(Path.Combine(RepositoryLayout.Root, "scripts", "Register-LumaTherm.ps1"), Path.Combine(repository, "scripts", "Register-LumaTherm.ps1"));
             File.Copy(Path.Combine(RepositoryLayout.Root, "scripts", "Unregister-LumaTherm.ps1"), Path.Combine(repository, "scripts", "Unregister-LumaTherm.ps1"));
             File.Copy(Path.Combine(RepositoryLayout.Root, "packaging", "LumaTherm.iss"), Path.Combine(repository, "packaging", "LumaTherm.iss"));
