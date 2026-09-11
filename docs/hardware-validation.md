@@ -28,4 +28,8 @@ The validated public artifacts were `LumaTherm-1.1.0-win-x64-setup.exe` (`FFD546
 
 This verifies packaging, registration, and first process launch. It is not physical RGB acceptance: the first start detected an unfinished earlier session and used its safety path to begin the runtime disabled, so the final visual/background-minimize check remains pending explicit user activation of the mode in the app.
 
+### Completed physical acceptance
+
+After LumaTherm was placed above the background Dynamic Lighting controller in Windows settings, the user confirmed that the GIGABYTE device responded to LumaTherm. The thermal mode was enabled, NVML supplied the GPU reading, and the application was minimized to the tray. A 30-second background observation found the LumaTherm process responsive with no visible main window and no new LampArray disconnect event. The user then confirmed that the physical lighting did not reset after minimization. This validates the foreground/tray handoff on this host; the required Windows priority configuration is retained as part of the troubleshooting guidance.
+
 Before a physical write, explain that LumaTherm will temporarily take Windows Dynamic Lighting control and will release it afterward, then obtain explicit user confirmation. If no LampArray is found, enable Dynamic Lighting, prioritize LumaTherm, and close only the RGB Fusion page if necessary before retrying. Do not add unsupported GIGABYTE HID writes.
