@@ -80,3 +80,17 @@ LumaTherm установщик удаляет этот точный сертиф
 Windows Dynamic Lighting и поставьте LumaTherm выше него в списке фоновых
 контроллеров Windows. LumaTherm не изменяет GIGABYTE Control Center и другое
 ПО производителей.
+
+## Screenshots / Скриншоты
+
+### Dashboard / Главный экран
+
+![LumaTherm dashboard](https://raw.githubusercontent.com/Spark0896/LumaTherm/main/docs/screenshots/dashboard.png)
+
+### Settings / Настройки
+
+![LumaTherm settings](https://raw.githubusercontent.com/Spark0896/LumaTherm/main/docs/screenshots/settings.png)
+
+### Interactive lighting test / Интерактивный тест подсветки
+
+![LumaTherm lighting test](https://raw.githubusercontent.com/Spark0896/LumaTherm/main/docs/screenshots/lighting-test.png)
