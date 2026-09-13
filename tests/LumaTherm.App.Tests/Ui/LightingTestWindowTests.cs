@@ -4,6 +4,7 @@ using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Data;
 using System.Windows.Media;
+using System.Windows.Shapes;
 using System.Windows.Threading;
 using LumaTherm.App.Controls;
 using LumaTherm.App.ViewModels;
@@ -87,7 +88,6 @@ public sealed class LightingTestWindowTests(ThermalCoreStaFixture sta)
             {
                 ("ApplyButton", "TestWindow.Apply"),
                 ("CancelButton", "TestWindow.Cancel"),
-                ("CloseButton", "Accessibility.CloseWindow"),
             })
             {
                 var button = Assert.IsType<Button>(window.FindName(name));
@@ -95,6 +95,16 @@ public sealed class LightingTestWindowTests(ThermalCoreStaFixture sta)
                 Assert.False(string.IsNullOrWhiteSpace(AutomationProperties.GetName(button)));
                 Assert.True(button.Focusable);
             }
+
+            var apply = Assert.IsType<Button>(window.FindName("ApplyButton"));
+            var cancel = Assert.IsType<Button>(window.FindName("CancelButton"));
+            var close = Assert.IsType<Button>(window.FindName("CloseButton"));
+            Assert.Same(Application.Current.Resources["PrimaryActionButtonStyle"], apply.Style);
+            Assert.Same(Application.Current.Resources["ActionButtonStyle"], cancel.Style);
+            Assert.Same(Application.Current.Resources["WindowButtonStyle"], close.Style);
+            Assert.NotNull(Assert.IsType<Path>(close.Content).Data);
+            Assert.False(string.IsNullOrWhiteSpace(AutomationProperties.GetName(close)));
+            Assert.True(close.Focusable);
         }
         finally
         {

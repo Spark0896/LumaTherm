@@ -40,7 +40,7 @@ public sealed class ColorEngine
         var lower = points[index - 1];
         var upper = points[index];
         var amount = (clamped - lower.Temperature) / (upper.Temperature - lower.Temperature);
-        return Interpolate(lower.Color, upper.Color, amount);
+        return Interpolate(lower.Color, upper.Color, SmootherStep(amount));
     }
 
     private static int FindUpperPoint(IReadOnlyList<ThermalPoint> points, double temperature)
@@ -69,6 +69,12 @@ public sealed class ColorEngine
             (first.Hue + (amount * hueDelta) + 360) % 360,
             first.Saturation + ((second.Saturation - first.Saturation) * amount),
             first.Value + ((second.Value - first.Value) * amount)));
+    }
+
+    private static double SmootherStep(double amount)
+    {
+        var clamped = Math.Clamp(amount, 0, 1);
+        return clamped * clamped * clamped * ((clamped * ((clamped * 6) - 15)) + 10);
     }
 
     private static Hsv RgbToHsv(RgbColor color)

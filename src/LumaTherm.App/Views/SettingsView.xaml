@@ -23,38 +23,62 @@
             <Setter Property="Foreground" Value="{StaticResource MutedTextBrush}" />
             <Setter Property="Margin" Value="0,4,0,14" />
         </Style>
-        <Style x:Key="SecondaryButtonStyle" TargetType="Button">
-            <Setter Property="MinWidth" Value="112" />
-            <Setter Property="Height" Value="36" />
-            <Setter Property="Padding" Value="16,0" />
+        <Style x:Key="LanguageComboBoxStyle" TargetType="ComboBox">
+            <Setter Property="MinHeight" Value="32" />
+            <Setter Property="Padding" Value="9,4" />
             <Setter Property="Foreground" Value="{StaticResource PrimaryTextBrush}" />
             <Setter Property="Background" Value="{StaticResource PanelSecondaryBrush}" />
-            <Setter Property="BorderBrush" Value="#22FFFFFF" />
+            <Setter Property="BorderBrush" Value="{StaticResource MutedTextBrush}" />
             <Setter Property="BorderThickness" Value="1" />
             <Setter Property="FocusVisualStyle" Value="{x:Null}" />
             <Setter Property="Template">
                 <Setter.Value>
-                    <ControlTemplate TargetType="Button">
-                        <Border x:Name="ActionChrome" CornerRadius="8" Background="{TemplateBinding Background}"
-                                BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}"
-                                Padding="{TemplateBinding Padding}">
-                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
-                        </Border>
+                    <ControlTemplate TargetType="ComboBox">
+                        <Grid>
+                            <ToggleButton Focusable="False" ClickMode="Press" Background="Transparent" BorderThickness="0"
+                                          IsChecked="{Binding IsDropDownOpen, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}">
+                                <Grid>
+                                    <Border x:Name="ComboChrome" CornerRadius="6"
+                                            Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                                            BorderThickness="{TemplateBinding BorderThickness}" />
+                                    <Grid Margin="10,0,10,0">
+                                        <Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="18" /></Grid.ColumnDefinitions>
+                                        <ContentPresenter VerticalAlignment="Center" IsHitTestVisible="False"
+                                                          Content="{TemplateBinding SelectionBoxItem}"
+                                                          ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}" />
+                                        <Path x:Name="DropDownArrow" Grid.Column="1" Width="8" Height="5" Stretch="Fill"
+                                              HorizontalAlignment="Right" VerticalAlignment="Center"
+                                              Fill="{TemplateBinding Foreground}" Data="M 0,0 L 8,0 L 4,5 Z" />
+                                    </Grid>
+                                </Grid>
+                            </ToggleButton>
+                            <Popup x:Name="PART_Popup" Placement="Bottom" AllowsTransparency="True" Focusable="False"
+                                   IsOpen="{TemplateBinding IsDropDownOpen}" PopupAnimation="Fade">
+                                <Border MinWidth="{Binding ActualWidth, RelativeSource={RelativeSource TemplatedParent}}"
+                                        Margin="0,3,0,0" Padding="4" CornerRadius="6"
+                                        Background="{StaticResource PanelSecondaryBrush}"
+                                        BorderBrush="{StaticResource MutedTextBrush}" BorderThickness="1">
+                                    <ScrollViewer MaxHeight="240" VerticalScrollBarVisibility="Auto">
+                                        <ItemsPresenter />
+                                    </ScrollViewer>
+                                </Border>
+                            </Popup>
+                        </Grid>
                         <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="ActionChrome" Property="Opacity" Value="0.88" /></Trigger>
-                            <Trigger Property="IsPressed" Value="True"><Setter TargetName="ActionChrome" Property="Opacity" Value="0.68" /></Trigger>
-                            <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="ActionChrome" Property="BorderBrush" Value="{StaticResource ColdColorBrush}" /><Setter TargetName="ActionChrome" Property="BorderThickness" Value="2" /></Trigger>
-                            <Trigger Property="IsEnabled" Value="False"><Setter TargetName="ActionChrome" Property="Opacity" Value="0.35" /></Trigger>
+                            <Trigger Property="IsKeyboardFocusWithin" Value="True">
+                                <Setter TargetName="ComboChrome" Property="BorderBrush" Value="{StaticResource ColdColorBrush}" />
+                                <Setter TargetName="ComboChrome" Property="BorderThickness" Value="2" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.45" /></Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
                 </Setter.Value>
             </Setter>
         </Style>
-        <Style x:Key="PrimaryButtonStyle" TargetType="Button" BasedOn="{StaticResource SecondaryButtonStyle}">
-            <Setter Property="Foreground" Value="#FF111419" />
-            <Setter Property="Background" Value="{StaticResource ColdColorBrush}" />
-            <Setter Property="BorderBrush" Value="{StaticResource ColdColorBrush}" />
-            <Setter Property="FontWeight" Value="SemiBold" />
+        <Style TargetType="ComboBoxItem">
+            <Setter Property="Foreground" Value="{StaticResource PrimaryTextBrush}" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Padding" Value="10,7" />
         </Style>
         <Style x:Key="TemperatureEditorStyle" TargetType="TextBox">
             <Setter Property="Width" Value="64" />
@@ -139,7 +163,7 @@
                        automation:AutomationProperties.LiveSetting="Assertive" />
 
             <StackPanel x:Name="LeftSettingsStack" Grid.Row="2" Grid.Column="0">
-                <Border Style="{StaticResource SettingsPanelStyle}">
+                <Border x:Name="ColorScalePanel" Style="{StaticResource SettingsPanelStyle}">
                     <StackPanel>
                         <TextBlock x:Name="ColorScaleHeading" Style="{StaticResource SectionHeadingStyle}" Text="{DynamicResource Settings.ColorScale}" />
                         <TextBlock Style="{StaticResource SubheadingStyle}" Text="{DynamicResource Settings.ColorScaleHint}" />
@@ -156,10 +180,14 @@
                                          automation:AutomationProperties.Name="{DynamicResource Settings.PointTemperature}" />
                                 <Button x:Name="SelectedPointColorButton" Grid.Column="2" Width="54" Height="32" Margin="10,0,0,0"
                                         Background="{Binding SelectedPoint.Color, Converter={StaticResource RgbColorBrushConverter}}"
+                                        BorderBrush="{StaticResource MutedTextBrush}" BorderThickness="2"
                                         Command="{Binding PickSelectedColorCommand}"
                                         automation:AutomationProperties.Name="{DynamicResource Settings.PointColor}" />
                             </Grid>
                         </Border>
+                        <Button x:Name="OpenLightingTestButton" Margin="0,14,0,0" Style="{StaticResource ActionButtonStyle}" HorizontalAlignment="Left"
+                                Content="{DynamicResource Settings.OpenLightingTest}" Command="{Binding OpenLightingTestCommand}"
+                                automation:AutomationProperties.Name="{DynamicResource Settings.OpenLightingTest}" />
                     </StackPanel>
                 </Border>
 
@@ -178,10 +206,10 @@
                 </Border>
 
                 <StackPanel x:Name="EditorActions" Orientation="Horizontal" HorizontalAlignment="Right">
-                    <Button x:Name="ResetButton" Style="{StaticResource SecondaryButtonStyle}" Margin="0,0,9,0"
+                    <Button x:Name="ResetButton" Style="{StaticResource ActionButtonStyle}" Margin="0,0,9,0"
                             Content="{DynamicResource Settings.Reset}" Command="{Binding ResetDefaultsCommand}"
                             automation:AutomationProperties.Name="{DynamicResource Settings.Reset}" />
-                    <Button x:Name="SaveButton" Style="{StaticResource PrimaryButtonStyle}"
+                    <Button x:Name="SaveButton" Style="{StaticResource PrimaryActionButtonStyle}"
                             Content="{DynamicResource Settings.Save}" Command="{Binding SaveCommand}"
                             automation:AutomationProperties.Name="{DynamicResource Accessibility.SaveSettings}" />
                 </StackPanel>
@@ -191,7 +219,7 @@
                 <Border Style="{StaticResource SettingsPanelStyle}">
                     <StackPanel>
                         <TextBlock Style="{StaticResource SectionHeadingStyle}" Text="{DynamicResource Settings.Application}" Margin="0,0,0,8" />
-                        <Grid Margin="0,8"><Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="{DynamicResource Settings.Language}" FontWeight="SemiBold" VerticalAlignment="Center" /><ComboBox x:Name="LanguageSelector" Grid.Column="1" MinWidth="132" SelectedValuePath="Tag" SelectedValue="{Binding SelectedLanguage}" automation:AutomationProperties.Name="{DynamicResource Settings.Language}"><ComboBoxItem Tag="{x:Static settings:AppLanguage.System}" Content="{DynamicResource Settings.LanguageSystem}" /><ComboBoxItem Tag="{x:Static settings:AppLanguage.Russian}" Content="{DynamicResource Settings.LanguageRussian}" /><ComboBoxItem Tag="{x:Static settings:AppLanguage.English}" Content="{DynamicResource Settings.LanguageEnglish}" /></ComboBox></Grid>
+                        <Grid Margin="0,8"><Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="{DynamicResource Settings.Language}" FontWeight="SemiBold" VerticalAlignment="Center" /><ComboBox x:Name="LanguageSelector" Grid.Column="1" MinWidth="132" Style="{StaticResource LanguageComboBoxStyle}" SelectedValuePath="Tag" SelectedValue="{Binding SelectedLanguage}" automation:AutomationProperties.Name="{DynamicResource Settings.Language}"><ComboBoxItem Tag="{x:Static settings:AppLanguage.System}" Content="{DynamicResource Settings.LanguageSystem}" /><ComboBoxItem Tag="{x:Static settings:AppLanguage.Russian}" Content="{DynamicResource Settings.LanguageRussian}" /><ComboBoxItem Tag="{x:Static settings:AppLanguage.English}" Content="{DynamicResource Settings.LanguageEnglish}" /></ComboBox></Grid>
                         <Grid Margin="0,8"><Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="{DynamicResource Settings.LaunchWithWindows}" FontWeight="SemiBold" /><CheckBox x:Name="AutostartToggle" Grid.Column="1" Style="{StaticResource ApplicationToggleStyle}" IsChecked="{Binding IsAutostartEnabled}" automation:AutomationProperties.Name="{DynamicResource Settings.LaunchWithWindows}" /></Grid>
                         <Grid Margin="0,8"><Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="{DynamicResource Settings.MinimizeOnClose}" FontWeight="SemiBold" /><CheckBox x:Name="MinimizeToTrayToggle" Grid.Column="1" Style="{StaticResource ApplicationToggleStyle}" IsChecked="{Binding MinimizeToTray}" automation:AutomationProperties.Name="{DynamicResource Settings.MinimizeOnClose}" /></Grid>
                         <Grid Margin="0,8"><Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="{DynamicResource Settings.Notifications}" FontWeight="SemiBold" /><CheckBox x:Name="NotificationsToggle" Grid.Column="1" Style="{StaticResource ApplicationToggleStyle}" IsChecked="{Binding NotificationsEnabled}" automation:AutomationProperties.Name="{DynamicResource Settings.Notifications}" /></Grid>
@@ -207,8 +235,8 @@
                         <Border Margin="0,10,0,0" Padding="12" CornerRadius="8" Background="{StaticResource RailBackgroundBrush}">
                             <StackPanel>
                                 <Grid x:Name="TrayTemperaturePreviewEntry"><Grid.Style><Style TargetType="Grid"><Setter Property="Visibility" Value="Visible" /><Style.Triggers><DataTrigger Binding="{Binding ShowTrayTemperature}" Value="False"><Setter Property="Visibility" Value="Collapsed" /></DataTrigger></Style.Triggers></Style></Grid.Style><Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="GPU" FontWeight="SemiBold" /><TextBlock x:Name="TrayTemperaturePreviewText" Grid.Column="1" Text="{Binding TrayTemperaturePreview}" Foreground="{StaticResource ColdColorBrush}" FontWeight="SemiBold" /></Grid>
-                                <TextBlock x:Name="TrayOpenPreviewEntry" Text="{DynamicResource Tray.Open}" Margin="0,8,0,0"><TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Visibility" Value="Visible" /><Style.Triggers><DataTrigger Binding="{Binding ShowTrayOpen}" Value="False"><Setter Property="Visibility" Value="Collapsed" /></DataTrigger></Style.Triggers></Style></TextBlock.Style></TextBlock>
-                                <TextBlock x:Name="TrayModePreviewEntry" Text="{DynamicResource Tray.DisableMode}" Margin="0,6,0,0"><TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Visibility" Value="Visible" /><Style.Triggers><DataTrigger Binding="{Binding ShowTrayModeToggle}" Value="False"><Setter Property="Visibility" Value="Collapsed" /></DataTrigger></Style.Triggers></Style></TextBlock.Style></TextBlock>
+                                <TextBlock x:Name="TrayOpenPreviewEntry" Text="{DynamicResource Tray.Open}" Margin="0,8,0,0" Foreground="{StaticResource PrimaryTextBrush}"><TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Visibility" Value="Visible" /><Style.Triggers><DataTrigger Binding="{Binding ShowTrayOpen}" Value="False"><Setter Property="Visibility" Value="Collapsed" /></DataTrigger></Style.Triggers></Style></TextBlock.Style></TextBlock>
+                                <TextBlock x:Name="TrayModePreviewEntry" Text="{DynamicResource Tray.DisableMode}" Margin="0,6,0,0" Foreground="{StaticResource PrimaryTextBrush}"><TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Visibility" Value="Visible" /><Style.Triggers><DataTrigger Binding="{Binding ShowTrayModeToggle}" Value="False"><Setter Property="Visibility" Value="Collapsed" /></DataTrigger></Style.Triggers></Style></TextBlock.Style></TextBlock>
                                 <TextBlock x:Name="TrayExitPreviewEntry" Text="{DynamicResource Tray.Exit}" Margin="0,6,0,0" FontWeight="SemiBold" />
                                 <TextBlock Text="{DynamicResource Settings.TrayExitAlwaysVisible}" Margin="0,6,0,0" FontSize="10" Foreground="{StaticResource MutedTextBrush}" TextWrapping="Wrap" />
                             </StackPanel>
@@ -216,14 +244,11 @@
                     </StackPanel>
                 </Border>
 
-                <Border Style="{StaticResource SettingsPanelStyle}">
+                <Border x:Name="HardwarePanel" Style="{StaticResource SettingsPanelStyle}">
                     <StackPanel>
                         <TextBlock Style="{StaticResource SectionHeadingStyle}" Text="{DynamicResource Settings.Hardware}" Margin="0,0,0,10" />
                         <Grid Margin="0,5"><Grid.ColumnDefinitions><ColumnDefinition Width="30" /><ColumnDefinition /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="&#xE7F8;" FontFamily="Segoe Fluent Icons" Foreground="{StaticResource ColdColorBrush}" /><StackPanel Grid.Column="1"><TextBlock Text="{Binding LightingDeviceName}" FontWeight="SemiBold" /><TextBlock Text="{Binding LightingHardwareStatus}" TextWrapping="Wrap" FontSize="10" Foreground="{StaticResource MutedTextBrush}" /></StackPanel><TextBlock Grid.Column="2" Text="LampArray" Foreground="{StaticResource SuccessColorBrush}" /></Grid>
                         <ComboBox x:Name="LightingDeviceSelector" Margin="30,10,0,8" MinHeight="32" ItemsSource="{Binding LightingDevices}" DisplayMemberPath="Name" SelectedValuePath="Id" SelectedValue="{Binding SelectedLightingDeviceId}" automation:AutomationProperties.Name="{DynamicResource Settings.PreferredLightingDevice}"><ComboBox.Style><Style TargetType="ComboBox"><Setter Property="Visibility" Value="Collapsed" /><Style.Triggers><DataTrigger Binding="{Binding IsLightingDeviceSelectorVisible}" Value="True"><Setter Property="Visibility" Value="Visible" /></DataTrigger></Style.Triggers></Style></ComboBox.Style></ComboBox>
-                        <Button x:Name="OpenLightingTestButton" Margin="0,14,0,0" Style="{StaticResource SecondaryButtonStyle}" HorizontalAlignment="Left"
-                                Content="{DynamicResource Settings.OpenLightingTest}" Command="{Binding OpenLightingTestCommand}"
-                                automation:AutomationProperties.Name="{DynamicResource Settings.OpenLightingTest}" />
                     </StackPanel>
                 </Border>
             </StackPanel>

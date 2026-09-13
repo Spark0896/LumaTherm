@@ -21,7 +21,7 @@ Get-Content .\SHA256SUMS.txt
 .\install.ps1 -ConfirmCertificateImport
 ```
 
-The helper verifies all internal checksums, package and executable signatures, the signed payload anchor, exact identity metadata, and the external location. If the certificate is not already trusted, it imports the bundled public certificate to `LocalMachine\TrustedPeople` only after explicit confirmation. Administrative elevation is required for that import.
+The helper verifies all internal checksums, package and executable signatures, the signed payload anchor, exact identity metadata, and the external location. If the certificate is not already trusted, it imports the bundled public certificate to `LocalMachine\Root` (Trusted Root Certification Authorities) only after explicit confirmation. No private key is imported. Administrative elevation is required for that import.
 
 ## Run, move, and remove
 
@@ -30,9 +30,9 @@ Start `app\LumaTherm.exe` only after successful registration. The registered ide
 To remove the identity, use an elevated PowerShell in the same portable folder:
 
 ```powershell
-.\uninstall.ps1
+.\uninstall.ps1 -RemoveCertificate
 ```
 
-The command asks for confirmation unless `-Force` is supplied. `-RemoveUserData` additionally removes the guarded `%LOCALAPPDATA%\LumaTherm` directory. Removing the folder without unregistering can leave an unusable identity, so do not do it.
+The command asks for confirmation unless `-Force` is supplied. `-RemoveCertificate` removes only the exact bundled certificate from the machine trusted-root store, and `-RemoveUserData` additionally removes the guarded `%LOCALAPPDATA%\LumaTherm` directory. Removing the folder without unregistering can leave an unusable identity, so do not do it.
 
 `-AuditOnly` plans verification/registration for test use and does not register a package or import a certificate.

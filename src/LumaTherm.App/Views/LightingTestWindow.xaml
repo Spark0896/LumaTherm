@@ -22,39 +22,6 @@
         <Style x:Key="TestPanelStyle" TargetType="Border" BasedOn="{StaticResource PanelStyle}">
             <Setter Property="Padding" Value="20" />
         </Style>
-        <Style x:Key="SecondaryButtonStyle" TargetType="Button">
-            <Setter Property="MinWidth" Value="112" />
-            <Setter Property="Height" Value="36" />
-            <Setter Property="Padding" Value="16,0" />
-            <Setter Property="Foreground" Value="{StaticResource PrimaryTextBrush}" />
-            <Setter Property="Background" Value="{StaticResource PanelSecondaryBrush}" />
-            <Setter Property="BorderBrush" Value="#22FFFFFF" />
-            <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="Button">
-                        <Border x:Name="ActionChrome" CornerRadius="8" Background="{TemplateBinding Background}"
-                                BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}"
-                                Padding="{TemplateBinding Padding}">
-                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="ActionChrome" Property="Opacity" Value="0.88" /></Trigger>
-                            <Trigger Property="IsPressed" Value="True"><Setter TargetName="ActionChrome" Property="Opacity" Value="0.68" /></Trigger>
-                            <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="ActionChrome" Property="BorderBrush" Value="{StaticResource ColdColorBrush}" /><Setter TargetName="ActionChrome" Property="BorderThickness" Value="2" /></Trigger>
-                            <Trigger Property="IsEnabled" Value="False"><Setter TargetName="ActionChrome" Property="Opacity" Value="0.35" /></Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
-        <Style x:Key="PrimaryButtonStyle" TargetType="Button" BasedOn="{StaticResource SecondaryButtonStyle}">
-            <Setter Property="Foreground" Value="#FF111419" />
-            <Setter Property="Background" Value="{StaticResource ColdColorBrush}" />
-            <Setter Property="BorderBrush" Value="{StaticResource ColdColorBrush}" />
-            <Setter Property="FontWeight" Value="SemiBold" />
-        </Style>
         <Style x:Key="TemperatureEditorStyle" TargetType="TextBox">
             <Setter Property="Width" Value="72" />
             <Setter Property="Height" Value="34" />
@@ -133,11 +100,15 @@
                 <Grid Margin="20,0,8,0">
                     <Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
                     <TextBlock Text="{DynamicResource TestWindow.Title}" FontSize="15" FontWeight="SemiBold" VerticalAlignment="Center" />
-                    <Button x:Name="CloseButton" Grid.Column="1" Style="{StaticResource SecondaryButtonStyle}"
-                            MinWidth="116" Height="34" Padding="12,0" Click="CloseButton_Click"
-                            Content="{DynamicResource Accessibility.CloseWindow}"
+                    <Button x:Name="CloseButton" Grid.Column="1" Style="{StaticResource WindowButtonStyle}"
+                            Width="46" Height="46" Click="CloseButton_Click"
                             automation:AutomationProperties.Name="{DynamicResource Accessibility.CloseWindow}"
-                            shell:WindowChrome.IsHitTestVisibleInChrome="True" />
+                            shell:WindowChrome.IsHitTestVisibleInChrome="True">
+                        <Path Width="11" Height="11" Stretch="Fill" Fill="Transparent"
+                              Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                              StrokeThickness="1.6" StrokeStartLineCap="Round" StrokeEndLineCap="Round"
+                              Data="M 1,1 L 10,10 M 10,1 L 1,10" />
+                    </Button>
                 </Grid>
             </Border>
 
@@ -199,10 +170,10 @@
 
             <Border Grid.Row="2" Background="#DB161A1F" BorderBrush="{StaticResource SubtleLineBrush}" BorderThickness="0,1,0,0">
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="24,0">
-                    <Button x:Name="CancelButton" Style="{StaticResource SecondaryButtonStyle}" Margin="0,0,10,0"
+                    <Button x:Name="CancelButton" Style="{StaticResource ActionButtonStyle}" Margin="0,0,10,0"
                             Content="{DynamicResource TestWindow.Cancel}" Click="CancelButton_Click"
                             automation:AutomationProperties.Name="{DynamicResource TestWindow.Cancel}" />
-                    <Button x:Name="ApplyButton" Style="{StaticResource PrimaryButtonStyle}"
+                    <Button x:Name="ApplyButton" Style="{StaticResource PrimaryActionButtonStyle}"
                             Content="{DynamicResource TestWindow.Apply}" Click="ApplyButton_Click"
                             automation:AutomationProperties.Name="{DynamicResource TestWindow.Apply}" />
                 </StackPanel>

@@ -19,7 +19,7 @@ public sealed record ThermalProfile : IEquatable<ThermalProfile>
         SmoothingSeconds = smoothingSeconds;
     }
 
-    public static ThermalProfile Default { get; } = new(35, new RgbColor(0x00, 0x6B, 0xFF), 65, new RgbColor(0xD0, 0x00, 0xFF), 85, new RgbColor(0xFF, 0x18, 0x00), 0.8);
+    public static ThermalProfile Default { get; } = new(35, new RgbColor(0x00, 0x6B, 0xFF), 65, new RgbColor(0xD0, 0x00, 0xFF), 85, new RgbColor(0xFF, 0x00, 0x00), 0.8);
     public IReadOnlyList<ThermalPoint> Points => Array.AsReadOnly(_points);
     public double SmoothingSeconds { get; init; }
     public ThermalPoint ColdPoint => _points[0];

@@ -10,6 +10,7 @@ public sealed class ManifestTests
     private static readonly XNamespace Uap = "http://schemas.microsoft.com/appx/manifest/uap/windows10";
     private static readonly XNamespace Uap3 = "http://schemas.microsoft.com/appx/manifest/uap/windows10/3";
     private static readonly XNamespace Uap10 = "http://schemas.microsoft.com/appx/manifest/uap/windows10/10";
+    private static readonly XNamespace Desktop = "http://schemas.microsoft.com/appx/manifest/desktop/windows10";
     private static readonly XNamespace Msix = "urn:schemas-microsoft-com:msix.v1";
 
     [Fact]
@@ -47,7 +48,7 @@ public sealed class ManifestTests
     }
 
     [Fact]
-    public void SparseManifestUsesExternalLocationAndOnlyTheLightingExtension()
+    public void SparseManifestUsesExternalLocationAndDeclaresLightingAndOptInStartup()
     {
         var document = XDocument.Load(Path.Combine(RepositoryLayout.Root, "packaging", "sparse", "AppxManifest.xml"));
         var package = document.Root!;
@@ -63,7 +64,17 @@ public sealed class ManifestTests
         var extension = Assert.Single(lighting.Elements(Uap3 + "AppExtension"));
         Assert.Equal("com.microsoft.windows.lighting", (string?)extension.Attribute("Name"));
         Assert.Equal("public", (string?)extension.Attribute("PublicFolder"));
-        Assert.DoesNotContain(package.Descendants(), node => node.Name.LocalName is "StartupTask");
+
+        var startupExtension = Assert.Single(app.Descendants(Desktop + "Extension"));
+        Assert.Equal("windows.startupTask", (string?)startupExtension.Attribute("Category"));
+        Assert.Equal("LumaTherm.exe", (string?)startupExtension.Attribute("Executable"));
+        Assert.Equal("Windows.FullTrustApplication", (string?)startupExtension.Attribute("EntryPoint"));
+        var startupTask = Assert.Single(startupExtension.Elements(Desktop + "StartupTask"));
+        Assert.Equal("LumaThermStartup", (string?)startupTask.Attribute("TaskId"));
+        Assert.Equal("false", (string?)startupTask.Attribute("Enabled"));
+        Assert.Equal("LumaTherm", (string?)startupTask.Attribute("DisplayName"));
+
+        Assert.Null(app.Attribute("EntryPoint"));
         Assert.Single(app.Elements(Uap + "VisualElements"));
     }
 

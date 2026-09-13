@@ -20,7 +20,7 @@ begin
     Result := HasExactCommandLineParameter('/ALLOWCERTIMPORT')
   else
     Result := SuppressibleMsgBox(
-      'LumaTherm must import the bundled public signing certificate into LocalMachine\TrustedPeople to register Windows lighting identity. No private key is imported. Allow this certificate import?',
+      'LumaTherm must import the bundled public signing certificate into LocalMachine\Root (Trusted Root Certification Authorities) to register Windows lighting identity. No private key is imported. The exact certificate is removed when LumaTherm is uninstalled. Allow this certificate import?',
       mbConfirmation, MB_YESNO, IDNO) = IDYES;
 end;
 

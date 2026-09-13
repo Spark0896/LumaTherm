@@ -27,15 +27,15 @@
                         <TextBlock Text=": " />
                         <TextBlock Text="{Binding RepositoryUrl, Mode=OneWay}" Foreground="{DynamicResource ColdColorBrush}" />
                     </StackPanel>
-                    <Button x:Name="RepositoryButton" Command="{Binding OpenRepositoryCommand}" Margin="0,14,0,0" Padding="14,8" HorizontalAlignment="Left"
+                    <Button x:Name="RepositoryButton" Style="{StaticResource ActionButtonStyle}" Command="{Binding OpenRepositoryCommand}" Margin="0,14,0,0" HorizontalAlignment="Left"
                             Content="{DynamicResource About.OpenGitHub}" automation:AutomationProperties.Name="{DynamicResource About.OpenGitHub}" />
                     <Separator Margin="0,22,0,18" Background="{DynamicResource SubtleLineBrush}" />
                     <TextBlock Text="{Binding StatusText, Mode=OneWay}" automation:AutomationProperties.LiveSetting="Polite" />
                     <TextBlock Text="{Binding AvailableVersion, Mode=OneWay}" Margin="0,4,0,0" FontWeight="SemiBold" Foreground="{DynamicResource ColdColorBrush}" />
                     <StackPanel Orientation="Horizontal" Margin="0,14,0,0">
-                        <Button x:Name="CheckForUpdatesButton" Command="{Binding CheckForUpdatesCommand}" Padding="14,8"
+                        <Button x:Name="CheckForUpdatesButton" Style="{StaticResource PrimaryActionButtonStyle}" Command="{Binding CheckForUpdatesCommand}"
                                 Content="{DynamicResource Update.CheckAction}" automation:AutomationProperties.Name="{DynamicResource Update.CheckAction}" />
-                        <Button x:Name="OpenReleaseButton" Command="{Binding OpenReleaseCommand}" Padding="14,8" Margin="10,0,0,0"
+                        <Button x:Name="OpenReleaseButton" Style="{StaticResource ActionButtonStyle}" Command="{Binding OpenReleaseCommand}" Margin="10,0,0,0"
                                 Content="{DynamicResource Update.OpenRelease}" automation:AutomationProperties.Name="{DynamicResource Update.OpenRelease}" />
                     </StackPanel>
                 </StackPanel>

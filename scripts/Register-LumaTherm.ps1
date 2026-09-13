@@ -210,7 +210,7 @@ try {
         if (-not $onlyUntrustedRoot) { throw 'Sparse identity Authenticode signature has an unsupported UnknownError.' }
         $packageStatus = 'NotTrusted'
     }
-    $trustedPath = 'Cert:\LocalMachine\TrustedPeople\' + $certificate.Thumbprint
+    $trustedPath = 'Cert:\LocalMachine\Root\' + $certificate.Thumbprint
     if ($packageStatus -eq 'NotTrusted') {
         $events.Add('signatureMatchedUntrusted')
         if (-not (Test-IsAdministrator)) { throw 'An elevated Administrator PowerShell is required before certificate import.' }
@@ -218,12 +218,12 @@ try {
         if ($NonInteractive -and -not $ConfirmCertificateImport) { $accepted = $false }
         elseif ($isTest -and $AuditOnly -and -not [string]::IsNullOrWhiteSpace($CertificateDecisionForTest)) { $accepted = $CertificateDecisionForTest -eq 'Accept' }
         elseif ($ConfirmCertificateImport) { $accepted = $true }
-        else { $accepted = (Read-Host "Import public certificate $($certificate.Thumbprint) into LocalMachine\TrustedPeople? Type YES") -ceq 'YES' }
+        else { $accepted = (Read-Host "Import public certificate $($certificate.Thumbprint) into LocalMachine\Root? Type YES") -ceq 'YES' }
         if (-not $accepted) { $events.Add('certificateImportDeclined'); [pscustomobject]@{ events = $events.ToArray() } | ConvertTo-Json -Compress | Write-Output; exit 3 }
         $events.Add('certificateImportConfirmed')
         if (($isTest -and $AuditOnly -and $TrustedCertificatePresentForTest) -or (-not $AuditOnly -and (Test-Path -LiteralPath $trustedPath))) { $events.Add('certificateAlreadyPresent') }
         elseif ($AuditOnly) { $ownedTrust = $true; $events.Add('certificateImportPlanned') }
-        else { Import-Certificate -FilePath $certificatePath -CertStoreLocation 'Cert:\LocalMachine\TrustedPeople' | Out-Null; $ownedTrust = $true; $events.Add('certificateImported') }
+        else { Import-Certificate -FilePath $certificatePath -CertStoreLocation 'Cert:\LocalMachine\Root' | Out-Null; $ownedTrust = $true; $events.Add('certificateImported') }
         if ($AuditOnly) { $packageReverified = $ReverifiedSignatureStatusForTest; $appReverified = $ReverifiedApplicationSignatureStatusForTest }
         else { $packageReverified = [string](Get-AuthenticodeSignature -LiteralPath $identityPackage).Status; $appReverified = [string](Get-AuthenticodeSignature -LiteralPath $applicationExecutable).Status }
         if ($packageReverified -ne 'Valid' -or $appReverified -ne 'Valid') { throw 'Package and executable signatures must both verify after certificate import.' }

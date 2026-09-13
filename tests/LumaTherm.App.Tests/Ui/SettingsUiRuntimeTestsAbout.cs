@@ -43,6 +43,12 @@ public sealed class SettingsUiRuntimeTestsAbout(ThermalCoreStaFixture sta)
                 Assert.Contains("управляет подсветкой", FlattenText(aboutContent), StringComparison.OrdinalIgnoreCase);
                 Assert.Contains("https://github.com/Spark0896/LumaTherm", FlattenText(aboutContent), StringComparison.Ordinal);
 
+                var actionStyle = Assert.IsType<Style>(Application.Current.Resources["ActionButtonStyle"]);
+                Assert.Same(actionStyle, Assert.IsType<Button>(aboutContent.FindName("RepositoryButton")).Style);
+                Assert.Same(actionStyle, Assert.IsType<Button>(aboutContent.FindName("OpenReleaseButton")).Style);
+                Assert.Same(Application.Current.Resources["PrimaryActionButtonStyle"],
+                    Assert.IsType<Button>(aboutContent.FindName("CheckForUpdatesButton")).Style);
+
                 var sameWindow = shell;
                 localization.Apply(AppLanguage.English);
                 shell.UpdateLayout();

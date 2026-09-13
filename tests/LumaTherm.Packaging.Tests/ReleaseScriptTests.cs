@@ -8,6 +8,22 @@ namespace LumaTherm.Packaging.Tests;
 public sealed class ReleaseScriptTests
 {
     [Fact]
+    public void ReleaseSignerCheckAllowsOnlyExactSelfSignedUntrustedRootAfterSignToolVerification()
+    {
+        var script = File.ReadAllText(Path.Combine(RepositoryLayout.Root, "scripts", "build-release.ps1"));
+
+        Assert.Contains("function Assert-ExpectedSigner", script, StringComparison.Ordinal);
+        Assert.Contains("function Assert-AuthenticodeSignature", script, StringComparison.Ordinal);
+        Assert.Contains("& $SignTool verify /pa /v $Path", script, StringComparison.Ordinal);
+        Assert.Contains("if ($signToolExit -ne 0 -and -not $isExpectedSelfSignedUntrustedRoot)", script, StringComparison.Ordinal);
+        Assert.Contains("$signature.SignerCertificate.Thumbprint", script, StringComparison.Ordinal);
+        Assert.Contains("$Certificate.Subject.Equals($Certificate.Issuer", script, StringComparison.Ordinal);
+        Assert.Contains("$signature.Status -eq 'UnknownError'", script, StringComparison.Ordinal);
+        Assert.DoesNotContain("& $tools.SignTool verify /pa /v $appExe", script, StringComparison.Ordinal);
+        Assert.DoesNotContain("$signature.Status -ne 'Valid' -or $null -eq $signature.SignerCertificate", script, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void PlanNamesEveryArtifactToolCommandAndForbiddenSideEffect()
     {
         var result = PowerShellTestHost.Run(Path.Combine(RepositoryLayout.Root, "scripts", "build-release.ps1"), new[] { "-Mode", "Plan" },
@@ -28,7 +44,11 @@ public sealed class ReleaseScriptTests
         var compileArguments = root.GetProperty("plannedCommands").EnumerateArray()
             .Single(command => command.GetProperty("name").GetString() == "compile-installer")
             .GetProperty("arguments").EnumerateArray().Select(value => value.GetString()).ToArray();
+        var testArguments = root.GetProperty("plannedCommands").EnumerateArray()
+            .Single(command => command.GetProperty("name").GetString() == "test")
+            .GetProperty("arguments").EnumerateArray().Select(value => value.GetString()).ToArray();
         Assert.Contains(compileArguments, value => value!.StartsWith("/DPayloadRoot=", StringComparison.Ordinal));
+        Assert.Contains("-m:1", testArguments);
         Assert.Empty(root.GetProperty("allowedWriteRoots").EnumerateArray());
         Assert.Empty(root.GetProperty("planWriteRoots").EnumerateArray());
         Assert.All(root.GetProperty("fullBuildWriteRoots").EnumerateArray(), value => Assert.True(Path.IsPathFullyQualified(value.GetString()!)));

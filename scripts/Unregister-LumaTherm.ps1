@@ -2,6 +2,7 @@
 param(
     [switch]$Force,
     [switch]$RemoveUserData,
+    [switch]$RemoveCertificate,
     [switch]$AuditOnly,
     [string]$InstalledPackageNameForTest,
     [string]$InstalledPublisherForTest,
@@ -47,6 +48,21 @@ else {
     else { Remove-AppxPackage -Package $fullName; $events.Add('packageRemoved') }
 }
 
+if ($RemoveCertificate) {
+    $scriptRoot = [IO.Path]::GetFullPath($PSScriptRoot).TrimEnd('\')
+    $certificatePath = [IO.Path]::GetFullPath((Join-Path $scriptRoot 'LumaTherm.cer'))
+    if (-not $certificatePath.StartsWith($scriptRoot + '\', [StringComparison]::OrdinalIgnoreCase) -or
+        -not (Test-Path -LiteralPath $certificatePath -PathType Leaf)) { throw 'Bundled LumaTherm certificate is missing or outside the helper directory.' }
+    $certificate = [Security.Cryptography.X509Certificates.X509Certificate2]::new($certificatePath)
+    try {
+        if ($certificate.Subject -cne 'CN=LumaTherm Local') { throw 'Bundled certificate subject is not the exact LumaTherm publisher.' }
+        $trustedPath = 'Cert:\LocalMachine\Root\' + $certificate.Thumbprint
+        if ($AuditOnly) { $events.Add('certificateRemovalPlanned') }
+        elseif (Test-Path -LiteralPath $trustedPath) { Remove-Item -LiteralPath $trustedPath -Force; $events.Add('certificateRemoved') }
+        else { $events.Add('certificateAlreadyAbsent') }
+    } finally { $certificate.Dispose() }
+}
+
 $userDataPath = [IO.Path]::GetFullPath((Join-Path $env:LOCALAPPDATA 'LumaTherm'))
 if ($RemoveUserData) {
     $localRoot = [IO.Path]::GetFullPath($env:LOCALAPPDATA).TrimEnd('\')
@@ -68,4 +84,4 @@ if ($RemoveUserData) {
     elseif (Test-Path -LiteralPath $userDataPath) { Remove-Item -LiteralPath $userDataPath -Recurse -Force; $events.Add('userDataRemoved') }
 }
 
-[pscustomobject]@{ events = $events.ToArray(); removalCommand = $command; packageIdentityName = 'LumaTherm'; publisher = 'CN=LumaTherm Local'; removeUserData = [bool]$RemoveUserData; userDataPath = $userDataPath } | ConvertTo-Json -Depth 3 -Compress | Write-Output
+[pscustomobject]@{ events = $events.ToArray(); removalCommand = $command; packageIdentityName = 'LumaTherm'; publisher = 'CN=LumaTherm Local'; removeUserData = [bool]$RemoveUserData; removeCertificate = [bool]$RemoveCertificate; userDataPath = $userDataPath } | ConvertTo-Json -Depth 3 -Compress | Write-Output

@@ -2,12 +2,14 @@
 
 > English · [Русский](README.ru.md)
 
-LumaTherm changes compatible Windows Dynamic Lighting colors from GPU temperature: cold blue, warm yellow, and hot red. It uses NVIDIA NVML first and MSI Afterburner shared memory as an optional read-only fallback.
+LumaTherm changes compatible Windows Dynamic Lighting colors from GPU temperature: cold saturated blue, warm magenta, and hot red. It uses NVIDIA NVML first and MSI Afterburner shared memory as an optional read-only fallback.
 
 ## Features
 
-- Smooth, editable temperature/color profile with 60-second history and tray control.
-- Optional autostart, notifications, and English/Russian/system language selection.
+- Smooth, editable temperature/color profile. The default stops are 35°C blue, 65°C magenta, and 85°C pure red (`#FF0000`); eased HSV interpolation keeps physical-LED transitions continuous near every stop.
+- A dedicated lighting-test window lets you drag the temperature slider and edit the same profile before starting a game or benchmark.
+- Live GPU monitoring, 60-second history, configurable tray menu, and tray-first background operation.
+- Optional autostart that resumes the last thermal-mode state, notifications, and English/Russian/system language selection.
 - Direct output through Windows `LampArray`; no vendor DLLs or raw HID writes.
 - GitHub stable-release checks run only when you manually initiate a check, with no startup or background polling. The app opens a release page/download; it does not download or install updates itself.
 - Free and open source under the [MIT License](LICENSE).
@@ -18,7 +20,17 @@ LumaTherm 1.1.0 requires x64 Windows 11 (22H2 or later), an NVIDIA driver, and a
 
 ## Screenshots
 
-Screenshots will be linked here after final manual hardware acceptance is recorded. This repository does not present unrecorded visual evidence as a completed result.
+### Dashboard
+
+![LumaTherm dashboard](docs/screenshots/dashboard.png)
+
+### Settings
+
+![LumaTherm settings](docs/screenshots/settings.png)
+
+### Interactive lighting test
+
+![LumaTherm lighting test](docs/screenshots/lighting-test.png)
 
 ## Setup quick start
 

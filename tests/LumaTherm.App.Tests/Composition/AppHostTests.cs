@@ -51,18 +51,18 @@ public sealed class AppHostTests
     }
 
     [Fact]
-    public async Task PriorCrash_PersistsModeOffBeforeUiAndRuntimeStart_AndWarnsOnce()
+    public async Task PriorCrashDuringAutostart_PreservesEnabledModeAndWarnsOnce()
     {
         var fixture = new HostFixture(priorCrash: true, settings: AppSettings.Default with { IsModeEnabled = true });
-        await using var host = new AppHost(fixture.Services, [], fixture.RequestExit);
+        await using var host = new AppHost(fixture.Services, ["--autostart"], fixture.RequestExit);
 
         Assert.True(await host.StartAsync(TestContext.Current.CancellationToken));
 
-        Assert.Equal([false], fixture.RuntimeUpdates);
-        Assert.Equal(false, fixture.SettingsSeenByUi?.IsModeEnabled);
+        Assert.Empty(fixture.RuntimeUpdates);
+        Assert.True(fixture.SettingsSeenByUi?.IsModeEnabled);
         Assert.Equal(1, fixture.RecoveryWarnings);
-        Assert.True(fixture.Events.IndexOf("runtime.mode:false") < fixture.Events.IndexOf("ui.create"));
-        Assert.True(fixture.Events.IndexOf("runtime.mode:false") < fixture.Events.IndexOf("runtime.start"));
+        Assert.DoesNotContain("ui.show", fixture.Events);
+        Assert.Equal(1, fixture.RuntimeStarts);
     }
 
     [Fact]

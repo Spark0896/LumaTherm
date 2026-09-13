@@ -195,7 +195,7 @@ public sealed class JsonSettingsStoreTests : IDisposable
         var result = await store.LoadAsync(TestContext.Current.CancellationToken);
 
         Assert.Equal(
-            [new ThermalPoint(35, new RgbColor(0x00, 0x6B, 0xFF)), new(65, new RgbColor(0xD0, 0x00, 0xFF)), new(85, new RgbColor(0xFF, 0x18, 0x00))],
+            [new ThermalPoint(35, new RgbColor(0x00, 0x6B, 0xFF)), new(65, new RgbColor(0xD0, 0x00, 0xFF)), new(85, new RgbColor(0xFF, 0x00, 0x00))],
             result.Settings.Profile.Points);
         Assert.Equal(1.3, result.Settings.Profile.SmoothingSeconds);
         Assert.True(result.Settings.IsModeEnabled);

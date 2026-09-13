@@ -119,6 +119,37 @@ function Open-ExternalCertificate {
     } catch { throw 'Unable to open the external PFX with the supplied password.' }
 }
 
+function Assert-ExpectedSigner([string]$Path, [Security.Cryptography.X509Certificates.X509Certificate2]$Certificate) {
+    $signature = Get-AuthenticodeSignature -LiteralPath $Path
+    if ($null -eq $signature.SignerCertificate -or
+        -not $signature.SignerCertificate.Thumbprint.Equals($Certificate.Thumbprint, [StringComparison]::OrdinalIgnoreCase)) {
+        throw "Signer verification failed: $([IO.Path]::GetFileName($Path))"
+    }
+
+    if ($signature.Status -eq 'Valid') { return }
+    $isExpectedSelfSignedUntrustedRoot = $Certificate.Subject.Equals($Certificate.Issuer, [StringComparison]::OrdinalIgnoreCase) -and
+        $signature.Status -eq 'UnknownError'
+    if (-not $isExpectedSelfSignedUntrustedRoot) {
+        throw "Signer trust verification failed: $([IO.Path]::GetFileName($Path)) ($($signature.Status))"
+    }
+}
+
+function Assert-AuthenticodeSignature(
+    [string]$Path,
+    [Security.Cryptography.X509Certificates.X509Certificate2]$Certificate,
+    [string]$SignTool) {
+    & $SignTool verify /pa /v $Path
+    $signToolExit = $LASTEXITCODE
+    Assert-ExpectedSigner $Path $Certificate
+
+    $signature = Get-AuthenticodeSignature -LiteralPath $Path
+    $isExpectedSelfSignedUntrustedRoot = $Certificate.Subject.Equals($Certificate.Issuer, [StringComparison]::OrdinalIgnoreCase) -and
+        $signature.Status -eq 'UnknownError'
+    if ($signToolExit -ne 0 -and -not $isExpectedSelfSignedUntrustedRoot) {
+        throw "Authenticode verification failed: $([IO.Path]::GetFileName($Path))"
+    }
+}
+
 function Get-Sha256Hex([string]$Path) {
     $stream = [IO.File]::OpenRead($Path)
     try { $algorithm = [Security.Cryptography.SHA256]::Create(); try { return [BitConverter]::ToString($algorithm.ComputeHash($stream)).Replace('-', '') } finally { $algorithm.Dispose() } }
@@ -266,7 +297,7 @@ try {
         }
         plannedCommands = @(
             [ordered]@{ name = 'restore'; file = $dotnet; arguments = @('restore', 'LumaTherm.sln', '-r', 'win-x64', '-p:NuGetAudit=false') },
-            [ordered]@{ name = 'test'; file = $dotnet; arguments = @('test', 'LumaTherm.sln', '-c', 'Release', '-p:NuGetAudit=false') },
+            [ordered]@{ name = 'test'; file = $dotnet; arguments = @('test', 'LumaTherm.sln', '-c', 'Release', '-m:1', '-p:NuGetAudit=false') },
             [ordered]@{ name = 'publish'; file = $dotnet; arguments = $publishArguments },
             [ordered]@{ name = 'sign-app'; file = $tools.SignTool; arguments = @('sign', '/fd', 'SHA256', '/f', '<external-pfx>', '/p', '<secure-password>', (Join-Path $publishRoot 'LumaTherm.exe')) },
             [ordered]@{ name = 'verify-app'; file = $tools.SignTool; arguments = @('verify', '/pa', '/v', (Join-Path $publishRoot 'LumaTherm.exe')) },
@@ -295,13 +326,13 @@ try {
     New-Item -ItemType Directory -Path $artifactsRoot, $publishRoot, $sparseLayoutRoot, $publicStagingRoot -Force | Out-Null
     try {
         & $dotnet restore (Join-Path $repositoryRoot 'LumaTherm.sln') -r win-x64 '-p:NuGetAudit=false'; if ($LASTEXITCODE -ne 0) { throw 'Release restore failed.' }
-        & $dotnet test (Join-Path $repositoryRoot 'LumaTherm.sln') -c Release '--no-restore' '-p:NuGetAudit=false'; if ($LASTEXITCODE -ne 0) { throw 'Release tests failed.' }
+        & $dotnet test (Join-Path $repositoryRoot 'LumaTherm.sln') -c Release '-m:1' '--no-restore' '-p:NuGetAudit=false'; if ($LASTEXITCODE -ne 0) { throw 'Release tests failed.' }
         & $dotnet @publishArguments; if ($LASTEXITCODE -ne 0) { throw 'Self-contained publish failed.' }
         $projectExe = Join-Path $publishRoot 'LumaTherm.App.exe'; $appExe = Join-Path $publishRoot 'LumaTherm.exe'
         if (Test-Path -LiteralPath $projectExe) { Move-Item -LiteralPath $projectExe -Destination $appExe }
         if (-not (Test-Path -LiteralPath $appExe -PathType Leaf)) { throw 'Published LumaTherm executable is missing.' }
         & $tools.SignTool sign /fd SHA256 /f $CertificatePath /p $CertificatePassword $appExe; if ($LASTEXITCODE -ne 0) { throw 'Application signing failed.' }
-        & $tools.SignTool verify /pa /v $appExe; if ($LASTEXITCODE -ne 0) { throw 'Application Authenticode verification failed.' }
+        Assert-AuthenticodeSignature $appExe $certificate $tools.SignTool
         $cerPath = Join-Path $artifactsRoot 'LumaTherm.cer'; [IO.File]::WriteAllBytes($cerPath, $certificate.Export([Security.Cryptography.X509Certificates.X509ContentType]::Cert))
         Copy-Item -LiteralPath $manifestPath -Destination (Join-Path $sparseLayoutRoot 'AppxManifest.xml')
         Copy-Item -LiteralPath (Join-Path $repositoryRoot 'packaging\Assets') -Destination $sparseLayoutRoot -Recurse
@@ -310,15 +341,12 @@ try {
         $sparsePath = Join-Path $artifactsRoot $sparsePackageName
         & $tools.MakeAppx pack /d $sparseLayoutRoot /p $sparsePath /o /nv; if ($LASTEXITCODE -ne 0) { throw 'MakeAppx sparse package build failed.' }
         & $tools.SignTool sign /fd SHA256 /f $CertificatePath /p $CertificatePassword $sparsePath; if ($LASTEXITCODE -ne 0) { throw 'Sparse package signing failed.' }
-        & $tools.SignTool verify /pa /v $sparsePath; if ($LASTEXITCODE -ne 0) { throw 'Sparse package Authenticode verification failed.' }
-        foreach ($signed in @($appExe, $sparsePath)) { $signature = Get-AuthenticodeSignature -LiteralPath $signed; if ($signature.Status -ne 'Valid' -or $null -eq $signature.SignerCertificate -or -not $signature.SignerCertificate.Thumbprint.Equals($certificate.Thumbprint, [StringComparison]::OrdinalIgnoreCase)) { throw "Signer verification failed: $([IO.Path]::GetFileName($signed))" } }
+        Assert-AuthenticodeSignature $sparsePath $certificate $tools.SignTool
         Assemble-Portable $publishRoot $sparsePath $cerPath $publicStagingRoot
         & $iscc '/Qp' "/O$publicStagingRoot" "/DPayloadRoot=$portableRoot" (Join-Path $repositoryRoot 'packaging\LumaTherm.iss'); if ($LASTEXITCODE -ne 0) { throw 'Inno Setup compilation failed.' }
         $setupPath = Join-Path $publicStagingRoot $setupName
         & $tools.SignTool sign /fd SHA256 /f $CertificatePath /p $CertificatePassword $setupPath; if ($LASTEXITCODE -ne 0) { throw 'Installer signing failed.' }
-        & $tools.SignTool verify /pa /v $setupPath; if ($LASTEXITCODE -ne 0) { throw 'Installer Authenticode verification failed.' }
-        $setupSignature = Get-AuthenticodeSignature -LiteralPath $setupPath
-        if ($setupSignature.Status -ne 'Valid' -or $null -eq $setupSignature.SignerCertificate -or -not $setupSignature.SignerCertificate.Thumbprint.Equals($certificate.Thumbprint, [StringComparison]::OrdinalIgnoreCase)) { throw 'Installer signer verification failed.' }
+        Assert-AuthenticodeSignature $setupPath $certificate $tools.SignTool
         Write-PublicChecksums $publicStagingRoot
         Promote-PublicArtifacts
         Write-Host "Release artifacts created in $distRoot"

@@ -66,6 +66,23 @@ public sealed class InstallerScriptTests
     }
 
     [Fact]
+    public void LocalSigningCertificateUsesMachineTrustedRootAndIsRemovedExactlyOnUninstall()
+    {
+        var registerScript = File.ReadAllText(Path.Combine(RepositoryLayout.Root, "scripts", "Register-LumaTherm.ps1"));
+        var unregisterScript = File.ReadAllText(Path.Combine(RepositoryLayout.Root, "scripts", "Unregister-LumaTherm.ps1"));
+        var consentScript = File.ReadAllText(Path.Combine(RepositoryLayout.Root, "packaging", "LumaTherm.Consent.iss"));
+        var installerScript = File.ReadAllText(Path.Combine(RepositoryLayout.Root, "packaging", "LumaTherm.iss"));
+
+        Assert.Contains(@"Cert:\LocalMachine\Root\", registerScript, StringComparison.Ordinal);
+        Assert.Contains("-CertStoreLocation 'Cert:\\LocalMachine\\Root'", registerScript, StringComparison.Ordinal);
+        Assert.DoesNotContain(@"LocalMachine\TrustedPeople", registerScript, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Trusted Root Certification Authorities", consentScript, StringComparison.Ordinal);
+        Assert.Contains("-RemoveCertificate", installerScript, StringComparison.Ordinal);
+        Assert.Contains(@"Cert:\LocalMachine\Root\", unregisterScript, StringComparison.Ordinal);
+        Assert.DoesNotContain("Get-ChildItem -Path 'Cert:\\LocalMachine\\Root'", unregisterScript, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void RegistrationAcceptsUnknownErrorOnlyForTheExactUntrustedRootCase()
     {
         using var fixture = PortableFixture.Create();

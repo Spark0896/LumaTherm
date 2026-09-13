@@ -110,11 +110,6 @@ public sealed class AppHost : IAsyncDisposable
             _runtime = _services.CreateRuntime(settings, _settingsStore);
             _runtime.SnapshotChanged += OnRuntimeSnapshotChanged;
             CaptureRuntimeState(_runtime.CurrentSnapshot);
-            if (priorCrash && settings.IsModeEnabled)
-            {
-                await _runtime.SetModeEnabledAsync(false, cancellationToken).ConfigureAwait(false);
-                settings = _runtime.CurrentSettings;
-            }
 
             _startup = _services.CreateStartupService(_runtime);
             await _services.Dispatcher.InvokeAsync(() =>

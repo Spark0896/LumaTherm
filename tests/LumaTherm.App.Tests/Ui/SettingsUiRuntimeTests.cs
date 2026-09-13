@@ -36,6 +36,16 @@ public sealed class SettingsUiRuntimeTests
         Assert.Same(vm.OpenLightingTestCommand, Button(view, "OpenLightingTestButton").Command);
         Assert.Same(vm.SaveCommand, Button(view, "SaveButton").Command);
         Assert.Same(vm.ResetDefaultsCommand, Button(view, "ResetButton").Command);
+        var language = Assert.IsType<ComboBox>(view.FindName("LanguageSelector"));
+        Assert.Equal(Color.FromRgb(0x1A, 0x21, 0x28), Assert.IsType<SolidColorBrush>(language.Background).Color);
+        Assert.Equal(Color.FromRgb(0xF4, 0xF7, 0xFA), Assert.IsType<SolidColorBrush>(language.Foreground).Color);
+        language.ApplyTemplate();
+        var comboChrome = Assert.IsType<Border>(language.Template.FindName("ComboChrome", language));
+        Assert.Equal(Color.FromRgb(0x1A, 0x21, 0x28), Assert.IsType<SolidColorBrush>(comboChrome.Background).Color);
+        Assert.NotNull(Assert.IsType<Path>(language.Template.FindName("DropDownArrow", language)).Data);
+        var swatch = Button(view, "SelectedPointColorButton");
+        Assert.Equal(new Thickness(2), swatch.BorderThickness);
+        Assert.Equal(Color.FromRgb(0xAE, 0xBA, 0xC4), Assert.IsType<SolidColorBrush>(swatch.BorderBrush).Color);
         AssertBinding<Slider>(view, "SmoothingSlider", Slider.ValueProperty, nameof(SettingsViewModel.SmoothingSeconds));
         AssertBinding<TextBlock>(view, "ValidationText", TextBlock.TextProperty, nameof(SettingsViewModel.ValidationMessage));
         AssertBinding<ComboBox>(view, "LanguageSelector", ComboBox.SelectedValueProperty, nameof(SettingsViewModel.SelectedLanguage));
@@ -100,6 +110,33 @@ public sealed class SettingsUiRuntimeTests
         Assert.Equal(Visibility.Collapsed, mode.Visibility);
         Assert.Equal(Visibility.Visible, exit.Visibility);
         Assert.Null(BindingOperations.GetBindingExpression(exit, UIElement.VisibilityProperty));
+    });
+
+    [Fact]
+    public void SettingsView_TrayPreviewActionsRemainReadableOnTheDarkCard() => _sta.Run(() =>
+    {
+        using var vm = CreateViewModel();
+        var view = Arrange(new SettingsView { DataContext = vm }, 1104, 900);
+        var expected = Assert.IsType<SolidColorBrush>(Application.Current.Resources["PrimaryTextBrush"]).Color;
+
+        foreach (var name in new[] { "TrayOpenPreviewEntry", "TrayModePreviewEntry", "TrayExitPreviewEntry" })
+        {
+            var entry = Assert.IsType<TextBlock>(view.FindName(name));
+            Assert.Equal(expected, Assert.IsType<SolidColorBrush>(entry.Foreground).Color);
+        }
+    });
+
+    [Fact]
+    public void SettingsView_LightingTestActionLivesInsideTheColorScaleCard() => _sta.Run(() =>
+    {
+        using var vm = CreateViewModel();
+        var view = Arrange(new SettingsView { DataContext = vm }, 1104, 900);
+        var colorScale = Assert.IsType<Border>(view.FindName("ColorScalePanel"));
+        var hardware = Assert.IsType<Border>(view.FindName("HardwarePanel"));
+        var button = Assert.IsType<Button>(view.FindName("OpenLightingTestButton"));
+
+        Assert.True(IsVisualAncestor(colorScale, button));
+        Assert.False(IsVisualAncestor(hardware, button));
     });
 
     [Fact]
@@ -233,6 +270,10 @@ public sealed class SettingsUiRuntimeTests
         var editor = Assert.IsType<TextBox>(view.FindName("SelectedPointTemperatureEditor"));
         var reset = Assert.IsType<Button>(view.FindName("ResetButton"));
         var save = Assert.IsType<Button>(view.FindName("SaveButton"));
+        var openTest = Assert.IsType<Button>(view.FindName("OpenLightingTestButton"));
+        Assert.Same(Application.Current.Resources["ActionButtonStyle"], reset.Style);
+        Assert.Same(Application.Current.Resources["ActionButtonStyle"], openTest.Style);
+        Assert.Same(Application.Current.Resources["PrimaryActionButtonStyle"], save.Style);
         toggle.ApplyTemplate();
         editor.ApplyTemplate();
         reset.ApplyTemplate();
@@ -242,12 +283,12 @@ public sealed class SettingsUiRuntimeTests
         var switchThumb = Assert.IsType<Ellipse>(toggle.Template.FindName("SwitchThumb", toggle));
         toggle.IsChecked = true;
         toggle.UpdateLayout();
-        Assert.Equal(Color.FromRgb(0x50, 0xC8, 0xFF), Assert.IsType<SolidColorBrush>(switchTrack.Background).Color);
+        Assert.Equal(Color.FromRgb(0x55, 0xCB, 0xFF), Assert.IsType<SolidColorBrush>(switchTrack.Background).Color);
         Assert.Equal(HorizontalAlignment.Right, switchThumb.HorizontalAlignment);
         Assert.Equal(new CornerRadius(6), Assert.IsType<Border>(editor.Template.FindName("EditorChrome", editor)).CornerRadius);
         Assert.Equal(new CornerRadius(8), Assert.IsType<Border>(reset.Template.FindName("ActionChrome", reset)).CornerRadius);
         var saveChrome = Assert.IsType<Border>(save.Template.FindName("ActionChrome", save));
-        Assert.Equal(Color.FromRgb(0x50, 0xC8, 0xFF), Assert.IsType<SolidColorBrush>(saveChrome.Background).Color);
+        Assert.Equal(Color.FromRgb(0x55, 0xCB, 0xFF), Assert.IsType<SolidColorBrush>(saveChrome.Background).Color);
     });
 
     private static string FlattenText(DependencyObject root) => string.Join(" ", Descendants(root).OfType<TextBlock>().Select(block => block.Text));
@@ -260,6 +301,16 @@ public sealed class SettingsUiRuntimeTests
             yield return child;
             foreach (var descendant in Descendants(child)) yield return descendant;
         }
+    }
+
+    private static bool IsVisualAncestor(DependencyObject ancestor, DependencyObject child)
+    {
+        for (var current = VisualTreeHelper.GetParent(child); current is not null; current = VisualTreeHelper.GetParent(current))
+        {
+            if (ReferenceEquals(current, ancestor)) return true;
+        }
+
+        return false;
     }
 
     private static SettingsViewModel CreateViewModel(FakeRuntime? runtime = null) => new(

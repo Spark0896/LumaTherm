@@ -36,17 +36,17 @@ public sealed class ThermalCoreRuntimeTests
     {
         var expected = new Dictionary<string, string>
         {
-            ["WindowBackground"] = "#FF171B20",
-            ["RailBackground"] = "#FF111419",
-            ["PanelBackground"] = "#FF20252B",
-            ["PanelSecondary"] = "#FF1B2025",
-            ["PrimaryText"] = "#FFEEF4F8",
-            ["SecondaryText"] = "#FFC5D0D8",
-            ["MutedText"] = "#FFAAB6C0",
-            ["ColdColor"] = "#FF50C8FF",
-            ["WarmColor"] = "#FFFFC64A",
-            ["HotColor"] = "#FFFF565D",
-            ["SuccessColor"] = "#FF55D69C",
+            ["WindowBackground"] = "#FF161B21",
+            ["RailBackground"] = "#FF0F1419",
+            ["PanelBackground"] = "#FF20272F",
+            ["PanelSecondary"] = "#FF1A2128",
+            ["PrimaryText"] = "#FFF4F7FA",
+            ["SecondaryText"] = "#FFD5DDE3",
+            ["MutedText"] = "#FFAEBAC4",
+            ["ColdColor"] = "#FF55CBFF",
+            ["WarmColor"] = "#FFE066FF",
+            ["HotColor"] = "#FFFF5D65",
+            ["SuccessColor"] = "#FF61DDA6",
         };
 
         foreach (var (key, value) in expected)
@@ -87,8 +87,10 @@ public sealed class ThermalCoreRuntimeTests
             Assert.Equal(Application.Current.Resources["Accessibility.ToggleThermalSync"], AutomationProperties.GetName(toggle));
             Assert.NotEmpty(shell.IconOnlyButtons.Select(AutomationProperties.GetName));
             Assert.All(
-                new[] { shell.MinimizeButtonContent, shell.MaximizeButtonContent, shell.CloseButtonContent },
-                icon => Assert.Equal("Segoe MDL2 Assets", icon.FontFamily.Source));
+                new[] { shell.MinimizeButton, shell.MaximizeButton, shell.CloseButton },
+                button => Assert.NotNull(Assert.IsType<Path>(button.Content).Data));
+            var description = Assert.IsType<TextBlock>(shell.FindName("AppDescriptionText"));
+            Assert.Same(Application.Current.Resources["MutedTextBrush"], description.Foreground);
         }
         finally
         {
@@ -430,7 +432,7 @@ public sealed class ThermalCoreRuntimeTests
 
         Assert.Equal("#006BFF", Assert.IsType<TextBlock>(view.FindName("ColdColorText")).Text);
         Assert.Equal("#D000FF", Assert.IsType<TextBlock>(view.FindName("WarmColorText")).Text);
-        Assert.Equal("#FF1800", Assert.IsType<TextBlock>(view.FindName("HotColorText")).Text);
+        Assert.Equal("#FF0000", Assert.IsType<TextBlock>(view.FindName("HotColorText")).Text);
     });
 
     [Fact]
@@ -443,12 +445,12 @@ public sealed class ThermalCoreRuntimeTests
         {
             Arrange(Assert.IsType<Border>(shell.Content), 1180, 720);
             var dot = Assert.IsType<System.Windows.Shapes.Ellipse>(shell.FindName("DeviceStatusDot"));
-            Assert.Equal(Color.FromRgb(0x9A, 0xA8, 0xB3), Assert.IsType<SolidColorBrush>(dot.Fill).Color);
+            Assert.Equal(Color.FromRgb(0xB0, 0xBB, 0xC4), Assert.IsType<SolidColorBrush>(dot.Fill).Color);
 
             runtime.Publish(Snapshot(RuntimeStatus.Active, 68, new RgbColor(0xFF, 0xC6, 0x4A)));
             Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
 
-            Assert.Equal(Color.FromRgb(0x55, 0xD6, 0x9C), Assert.IsType<SolidColorBrush>(dot.Fill).Color);
+            Assert.Equal(Color.FromRgb(0x61, 0xDD, 0xA6), Assert.IsType<SolidColorBrush>(dot.Fill).Color);
         }
         finally
         {
@@ -473,9 +475,9 @@ public sealed class ThermalCoreRuntimeTests
             var indicator = Assert.IsType<Border>(shell.FindName("HomeSelectionIndicator"));
             Assert.Equal(3, indicator.Width);
             Assert.Equal(24, indicator.Height);
-            Assert.Equal(Color.FromRgb(0x50, 0xC8, 0xFF), Assert.IsType<SolidColorBrush>(indicator.Background).Color);
+            Assert.Equal(Color.FromRgb(0x55, 0xCB, 0xFF), Assert.IsType<SolidColorBrush>(indicator.Background).Color);
             var glow = Assert.IsType<DropShadowEffect>(indicator.Effect);
-            Assert.Equal(Color.FromRgb(0x50, 0xC8, 0xFF), glow.Color);
+            Assert.Equal(Color.FromRgb(0x55, 0xCB, 0xFF), glow.Color);
             Assert.Equal(0, glow.ShadowDepth);
             Assert.Equal(12, glow.BlurRadius);
             var settingsIndicator = Assert.IsType<Border>(shell.FindName("SettingsSelectionIndicator"));
@@ -487,7 +489,7 @@ public sealed class ThermalCoreRuntimeTests
             var dashboard = Arrange(new DashboardView { DataContext = vm }, 1104, 652);
             var temperatureGlow = Assert.IsType<Ellipse>(dashboard.FindName("TemperatureCardGlow"));
             var radial = Assert.IsType<RadialGradientBrush>(temperatureGlow.Fill);
-            Assert.Equal(Color.FromArgb(0x26, 0xFF, 0xC6, 0x4A), radial.GradientStops[0].Color);
+            Assert.Equal(Color.FromArgb(0x24, 0x55, 0xCB, 0xFF), radial.GradientStops[0].Color);
             Assert.Equal(0, radial.GradientStops[^1].Color.A);
         }
         finally

@@ -3,6 +3,7 @@ using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Media;
+using System.Windows.Shapes;
 using System.Windows.Threading;
 using LumaTherm.App.Controls;
 using LumaTherm.App.Localization;
@@ -218,7 +219,7 @@ public sealed class Task13LocalizationRuntimeTests(ThermalCoreStaFixture sta)
                 Assert.DoesNotMatch("[А-Яа-яЁё]", visibleText);
                 Assert.DoesNotMatch("[А-Яа-яЁё]", accessibleText);
                 var dot = Assert.IsType<System.Windows.Shapes.Ellipse>(shell.FindName("DeviceStatusDot"));
-                Assert.Equal(Color.FromRgb(0x9A, 0xA8, 0xB3), Assert.IsType<SolidColorBrush>(dot.Fill).Color);
+                Assert.Equal(Color.FromRgb(0xB0, 0xBB, 0xC4), Assert.IsType<SolidColorBrush>(dot.Fill).Color);
             }
             finally
             {
@@ -269,30 +270,26 @@ public sealed class Task13LocalizationRuntimeTests(ThermalCoreStaFixture sta)
     }
 
     [Fact]
-    public void ChromeButtons_UseIntendedMdl2GlyphsWithInstalledFontFallbackCoverage()
+    public void ChromeButtons_UseVectorGeometryWithoutFontFallbackDependency()
     {
         sta.Run(() =>
         {
             var shell = new MainWindow();
             try
             {
-                var expected = new Dictionary<TextBlock, int>
+                Arrange(Assert.IsType<Border>(shell.Content), 1180, 720);
+                var buttons = new[]
                 {
-                    [shell.MinimizeButtonContent] = 0xE921,
-                    [shell.MaximizeButtonContent] = 0xE922,
-                    [shell.CloseButtonContent] = 0xE8BB,
+                    shell.MinimizeButton,
+                    shell.MaximizeButton,
+                    shell.CloseButton,
                 };
-                foreach (var (block, codePoint) in expected)
+                foreach (var button in buttons)
                 {
-                    Assert.Equal("Segoe MDL2 Assets", block.FontFamily.Source);
-                    Assert.Equal(char.ConvertFromUtf32(codePoint), block.Text);
-                }
-
-                if (Fonts.SystemFontFamilies.Any(family => family.Source.Equals("Segoe MDL2 Assets", StringComparison.OrdinalIgnoreCase)))
-                {
-                    Assert.True(new Typeface(new FontFamily("Segoe MDL2 Assets"), FontStyles.Normal, FontWeights.Normal, FontStretches.Normal)
-                        .TryGetGlyphTypeface(out var glyphs));
-                    Assert.All(expected.Values, codePoint => Assert.True(glyphs.CharacterToGlyphMap.ContainsKey(codePoint)));
+                    var path = Assert.IsType<Path>(button.Content);
+                    Assert.NotNull(path.Data);
+                    Assert.Equal(Brushes.Transparent, path.Fill);
+                    Assert.Same(button.Foreground, path.Stroke);
                 }
             }
             finally

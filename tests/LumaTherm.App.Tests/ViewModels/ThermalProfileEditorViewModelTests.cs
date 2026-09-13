@@ -129,7 +129,7 @@ public sealed class ThermalProfileEditorViewModelTests
         var hot = editor.AddAt(120);
 
         Assert.Equal(new RgbColor(0x00, 0x6B, 0xFF), cold.Color);
-        Assert.Equal(new RgbColor(0xFF, 0x18, 0x00), hot.Color);
+        Assert.Equal(new RgbColor(0xFF, 0x00, 0x00), hot.Color);
         Assert.Equal([0d, 35d, 65d, 85d, 120d], editor.Points.Select(point => point.Temperature));
     }
 

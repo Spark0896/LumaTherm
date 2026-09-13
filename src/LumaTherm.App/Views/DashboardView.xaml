@@ -11,7 +11,7 @@
         <converters:RgbColorHexConverter x:Key="RgbColorHexConverter" />
         <Style x:Key="CaptionStyle" TargetType="TextBlock">
             <Setter Property="Foreground" Value="{StaticResource MutedTextBrush}" />
-            <Setter Property="FontSize" Value="9" />
+            <Setter Property="FontSize" Value="10" />
             <Setter Property="TextOptions.TextFormattingMode" Value="Display" />
         </Style>
         <Style x:Key="BehaviorRowStyle" TargetType="Grid">
@@ -39,7 +39,7 @@
                     <TextBlock Text="{DynamicResource Dashboard.Subtitle}" Margin="0,5,0,0" Foreground="{StaticResource MutedTextBrush}" FontSize="11" TextWrapping="Wrap" />
                 </StackPanel>
                 <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                    <TextBlock x:Name="ModeStatusText" Text="{Binding StatusText}" Foreground="#B9C2C9" FontSize="11" VerticalAlignment="Center" Margin="0,0,10,0" />
+                    <TextBlock x:Name="ModeStatusText" Text="{Binding StatusText}" Foreground="{StaticResource SecondaryTextBrush}" FontSize="11" VerticalAlignment="Center" Margin="0,0,10,0" />
                     <controls:AuthoritativeToggleButton x:Name="ModeToggle"
                             Width="44" Height="24" Padding="3" BorderThickness="0"
                             Command="{Binding ToggleModeCommand}"
@@ -100,8 +100,8 @@
                         <Ellipse x:Name="TemperatureCardGlow" Width="280" Height="130" HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,-88" IsHitTestVisible="False">
                             <Ellipse.Fill>
                                 <RadialGradientBrush>
-                                    <GradientStop Color="#26FFC64A" Offset="0" />
-                                    <GradientStop Color="#00FFC64A" Offset="0.66" />
+                                    <GradientStop Color="#2455CBFF" Offset="0" />
+                                    <GradientStop Color="#0055CBFF" Offset="0.66" />
                                 </RadialGradientBrush>
                             </Ellipse.Fill>
                         </Ellipse>
@@ -125,7 +125,7 @@
                                 <TextBlock Text="{DynamicResource Dashboard.ProfileTitle}" FontSize="12" FontWeight="SemiBold" TextWrapping="Wrap" />
                                 <TextBlock Text="{DynamicResource Dashboard.ProfileSubtitle}" Style="{StaticResource CaptionStyle}" Margin="0,4,0,0" TextWrapping="Wrap" />
                             </StackPanel>
-                            <TextBlock x:Name="CurrentColorText" Grid.Column="1" Text="{Binding CurrentColorHex}" FontSize="9" Foreground="{StaticResource MutedTextBrush}" VerticalAlignment="Center" Margin="0,0,8,0" />
+                            <TextBlock x:Name="CurrentColorText" Grid.Column="1" Text="{Binding CurrentColorHex}" FontSize="10" Foreground="{StaticResource MutedTextBrush}" VerticalAlignment="Center" Margin="0,0,8,0" />
                             <Border Grid.Column="2" Width="15" Height="15" CornerRadius="4"
                                     Background="{Binding DisplayColor, Converter={StaticResource RgbColorBrushConverter}}" />
                         </Grid>
@@ -162,7 +162,7 @@
                             <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
                             <StackPanel>
                                 <TextBlock Text="{Binding GpuName}" FontSize="12" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
-                                <TextBlock FontSize="9" Foreground="{StaticResource MutedTextBrush}" Margin="0,3,0,0">
+                                <TextBlock FontSize="10" Foreground="{StaticResource MutedTextBrush}" Margin="0,3,0,0">
                                     <Run Text="{DynamicResource Dashboard.Source}" /><Run Text=" " /><Run Text="{Binding SensorSource, Mode=OneWay}" /><Run Text=" · " /><Run Text="{DynamicResource Dashboard.UpdatedNow}" />
                                 </TextBlock>
                             </StackPanel>
@@ -174,8 +174,8 @@
                                                        Profile="{Binding Profile}"
                                                        automation:AutomationProperties.Name="{DynamicResource Dashboard.History}" />
                         <Grid Grid.Row="3" Margin="0,4,0,0">
-                            <TextBlock Text="{DynamicResource Dashboard.SixtySecondsAgo}" Style="{StaticResource CaptionStyle}" FontSize="8" />
-                            <TextBlock Text="{DynamicResource Dashboard.Now}" Style="{StaticResource CaptionStyle}" FontSize="8" HorizontalAlignment="Right" />
+                            <TextBlock Text="{DynamicResource Dashboard.SixtySecondsAgo}" Style="{StaticResource CaptionStyle}" FontSize="9" />
+                            <TextBlock Text="{DynamicResource Dashboard.Now}" Style="{StaticResource CaptionStyle}" FontSize="9" HorizontalAlignment="Right" />
                         </Grid>
                     </Grid>
                 </Border>
@@ -184,10 +184,10 @@
                     <Grid>
                         <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /><RowDefinition Height="*" /><RowDefinition Height="*" /><RowDefinition Height="*" /></Grid.RowDefinitions>
                         <TextBlock Text="{DynamicResource Dashboard.Behavior}" Style="{StaticResource CaptionStyle}" />
-                        <Grid Grid.Row="1" Style="{StaticResource BehaviorRowStyle}" Margin="0,5,0,0"><TextBlock Text="{DynamicResource Dashboard.Smoothing}" FontSize="10" VerticalAlignment="Center" Foreground="#B9C2C9" TextWrapping="Wrap" /><TextBlock Text="{Binding SmoothingText}" Margin="10,0,0,0" HorizontalAlignment="Right" VerticalAlignment="Center" FontSize="10" Foreground="{StaticResource ColdColorBrush}" /></Grid>
-                        <Grid Grid.Row="2" Style="{StaticResource BehaviorRowStyle}"><Border BorderBrush="{StaticResource SubtleLineBrush}" BorderThickness="0,1,0,0" /><TextBlock Text="{DynamicResource Dashboard.Autostart}" FontSize="10" VerticalAlignment="Center" Foreground="#B9C2C9" TextWrapping="Wrap" /><TextBlock Text="{Binding AutostartText}" Margin="10,0,0,0" HorizontalAlignment="Right" VerticalAlignment="Center" FontSize="10" Foreground="{StaticResource ColdColorBrush}" /></Grid>
-                        <Grid Grid.Row="3" Style="{StaticResource BehaviorRowStyle}"><Border BorderBrush="{StaticResource SubtleLineBrush}" BorderThickness="0,1,0,0" /><TextBlock Text="{DynamicResource Dashboard.MinimizeToTray}" FontSize="10" VerticalAlignment="Center" Foreground="#B9C2C9" TextWrapping="Wrap" /><TextBlock Text="{Binding MinimizeToTrayText}" Margin="10,0,0,0" HorizontalAlignment="Right" VerticalAlignment="Center" FontSize="10" Foreground="{StaticResource ColdColorBrush}" /></Grid>
-                        <Grid Grid.Row="4" Style="{StaticResource BehaviorRowStyle}"><Border BorderBrush="{StaticResource SubtleLineBrush}" BorderThickness="0,1,0,0" /><TextBlock Text="{DynamicResource Dashboard.LampArrayControl}" FontSize="10" VerticalAlignment="Center" Foreground="#B9C2C9" TextWrapping="Wrap" /><TextBlock Text="{Binding StatusText}" MaxWidth="120" TextTrimming="CharacterEllipsis" HorizontalAlignment="Right" VerticalAlignment="Center" FontSize="10" Foreground="{StaticResource ColdColorBrush}" /></Grid>
+                        <Grid Grid.Row="1" Style="{StaticResource BehaviorRowStyle}" Margin="0,5,0,0"><TextBlock Text="{DynamicResource Dashboard.Smoothing}" FontSize="11" VerticalAlignment="Center" Foreground="{StaticResource SecondaryTextBrush}" TextWrapping="Wrap" /><TextBlock Text="{Binding SmoothingText}" Margin="10,0,0,0" HorizontalAlignment="Right" VerticalAlignment="Center" FontSize="11" Foreground="{StaticResource ColdColorBrush}" /></Grid>
+                        <Grid Grid.Row="2" Style="{StaticResource BehaviorRowStyle}"><Border BorderBrush="{StaticResource SubtleLineBrush}" BorderThickness="0,1,0,0" /><TextBlock Text="{DynamicResource Dashboard.Autostart}" FontSize="11" VerticalAlignment="Center" Foreground="{StaticResource SecondaryTextBrush}" TextWrapping="Wrap" /><TextBlock Text="{Binding AutostartText}" Margin="10,0,0,0" HorizontalAlignment="Right" VerticalAlignment="Center" FontSize="11" Foreground="{StaticResource ColdColorBrush}" /></Grid>
+                        <Grid Grid.Row="3" Style="{StaticResource BehaviorRowStyle}"><Border BorderBrush="{StaticResource SubtleLineBrush}" BorderThickness="0,1,0,0" /><TextBlock Text="{DynamicResource Dashboard.MinimizeToTray}" FontSize="11" VerticalAlignment="Center" Foreground="{StaticResource SecondaryTextBrush}" TextWrapping="Wrap" /><TextBlock Text="{Binding MinimizeToTrayText}" Margin="10,0,0,0" HorizontalAlignment="Right" VerticalAlignment="Center" FontSize="11" Foreground="{StaticResource ColdColorBrush}" /></Grid>
+                        <Grid Grid.Row="4" Style="{StaticResource BehaviorRowStyle}"><Border BorderBrush="{StaticResource SubtleLineBrush}" BorderThickness="0,1,0,0" /><TextBlock Text="{DynamicResource Dashboard.LampArrayControl}" FontSize="11" VerticalAlignment="Center" Foreground="{StaticResource SecondaryTextBrush}" TextWrapping="Wrap" /><TextBlock Text="{Binding StatusText}" MaxWidth="120" TextTrimming="CharacterEllipsis" HorizontalAlignment="Right" VerticalAlignment="Center" FontSize="11" Foreground="{StaticResource ColdColorBrush}" /></Grid>
                     </Grid>
                 </Border>
             </Grid>

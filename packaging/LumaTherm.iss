@@ -38,7 +38,7 @@ Name: "{autodesktop}\LumaTherm"; Filename: "{app}\payload\app\LumaTherm.exe"; Ta
 Name: "{autoprograms}\LumaTherm"; Filename: "{app}\payload\app\LumaTherm.exe"; Tasks: startmenuicon
 
 [UninstallRun]
-Filename: "powershell.exe"; Parameters: "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File ""{app}\payload\Unregister-LumaTherm.ps1"" -Force"; Flags: runhidden waituntilterminated; RunOnceId: "UnregisterLumaThermIdentity"
+Filename: "powershell.exe"; Parameters: "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File ""{app}\payload\Unregister-LumaTherm.ps1"" -Force -RemoveCertificate"; Flags: runhidden waituntilterminated; RunOnceId: "UnregisterLumaThermIdentity"
 
 [Code]
 #include "LumaTherm.Consent.iss"
