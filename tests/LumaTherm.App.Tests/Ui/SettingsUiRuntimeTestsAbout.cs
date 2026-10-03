@@ -58,6 +58,9 @@ public sealed class SettingsUiRuntimeTestsAbout(ThermalCoreStaFixture sta)
                 Assert.Contains("open source", FlattenText(aboutContent), StringComparison.OrdinalIgnoreCase);
                 Assert.Contains("controls thermal lighting", FlattenText(aboutContent), StringComparison.OrdinalIgnoreCase);
                 Assert.Contains("Check for updates", FlattenText(aboutContent), StringComparison.Ordinal);
+                var updateButton = Assert.IsType<Button>(aboutContent.FindName("CheckForUpdatesButton"));
+                var actionLabel = Assert.Single(Descendants(updateButton).OfType<TextBlock>());
+                Assert.Equal(Color.FromRgb(7, 26, 41), Assert.IsType<SolidColorBrush>(actionLabel.Foreground).Color);
             }
             finally
             {
@@ -99,7 +102,7 @@ public sealed class SettingsUiRuntimeTestsAbout(ThermalCoreStaFixture sta)
                 shell.UpdateLayout();
 
                 Assert.Same(sameWindow, shell);
-                Assert.Equal("Home", AutomationProperties.GetName(home));
+                Assert.Equal("Dashboard", AutomationProperties.GetName(home));
                 Assert.Equal("Settings", AutomationProperties.GetName(settings));
                 Assert.Equal("About", AutomationProperties.GetName(about));
                 Assert.Equal(string.Empty, AutomationProperties.GetItemStatus(home));

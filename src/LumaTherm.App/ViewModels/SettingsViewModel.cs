@@ -87,9 +87,18 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
         runtime.SnapshotChanged += OnRuntimeSnapshotChanged;
 
         SaveCommand = new AsyncRelayCommand(() => RunSettingsMutationAsync(SaveAsync), onException: _ => SetValidation("Validation.SaveFailed"));
+        ApplyAutostartCommand = new AsyncRelayCommand(
+            () => RunSettingsMutationAsync(token => SaveAsync(token, onlyAutostart: true)),
+            onException: _ => SetValidation("Validation.AutostartFailed"));
+        OpenStartupSettingsCommand = new RelayCommand(() =>
+        {
+            try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("ms-settings:startupapps") { UseShellExecute = true }); }
+            catch (Exception) { SetValidation("Validation.OpenWindowsSettingsFailed"); }
+        });
         PickSelectedColorCommand = new AsyncRelayCommand(PickSelectedColorAsync, () => SelectedPoint is not null, _ => SetValidation("Validation.ColorPickFailed"));
         DiscoverLightingDevicesCommand = new AsyncRelayCommand(DiscoverLightingDevicesAsync);
         ResetDefaultsCommand = new RelayCommand(ResetDefaults);
+        ResetColorsCommand = new RelayCommand(() => LoadEditableProfile(ThermalProfile.Default with { SmoothingSeconds = SmoothingSeconds }));
         OpenLightingTestCommand = new RelayCommand(() => LightingTestRequested?.Invoke(this, EventArgs.Empty));
         AutostartInitialization = InitializeAutostartAsync(_disposeCancellation.Token);
     }
@@ -191,12 +200,17 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
     public bool IsLightingDeviceSelectorVisible { get => _isLightingDeviceSelectorVisible; private set => SetProperty(ref _isLightingDeviceSelectorVisible, value); }
     public string? ValidationMessage => _validationKey is null ? null : _localization.Get(_validationKey);
     public AsyncRelayCommand SaveCommand { get; }
+    public AsyncRelayCommand ApplyAutostartCommand { get; }
+    public RelayCommand OpenStartupSettingsCommand { get; }
     public AsyncRelayCommand PickSelectedColorCommand { get; }
     public AsyncRelayCommand DiscoverLightingDevicesCommand { get; }
     public RelayCommand ResetDefaultsCommand { get; }
+    public RelayCommand ResetColorsCommand { get; }
     public RelayCommand OpenLightingTestCommand { get; }
     public Task AutostartInitialization { get; }
     public Task RefreshAutostartAsync(CancellationToken cancellationToken) => ReadAuthoritativeAutostartAsync(forceDraftRefresh: true, cancellationToken);
+    public Task RefreshAutostartAfterActivationAsync() => ApplyAutostartCommand.IsExecuting || SaveCommand.IsExecuting
+        ? Task.CompletedTask : InitializeAutostartAsync(_disposeCancellation.Token);
 
     internal async Task ApplyLightingTestProfileAsync(ThermalProfile profile, CancellationToken cancellationToken)
     {
@@ -336,7 +350,9 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
         }
     }
 
-    private async Task SaveAsync(CancellationToken cancellationToken)
+    private Task SaveAsync(CancellationToken cancellationToken) => SaveAsync(cancellationToken, onlyAutostart: false);
+
+    private async Task SaveAsync(CancellationToken cancellationToken, bool onlyAutostart)
     {
         await AutostartInitialization;
         cancellationToken.ThrowIfCancellationRequested();
@@ -344,7 +360,7 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
 
         try
         {
-            candidate = CreateCandidate();
+            candidate = onlyAutostart ? _liveSettings with { IsAutostartEnabled = IsAutostartEnabled } : CreateCandidate();
             await _runtime.UpdatePreferencesAsync(candidate, cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
         }
@@ -376,9 +392,13 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
             {
                 throw;
             }
-            catch (Exception)
+            catch (Exception exception)
             {
-                SetValidation(await RollBackRuntimeAfterStartupFailureAsync(cancellationToken));
+                var key = await RollBackRuntimeAfterStartupFailureAsync(cancellationToken);
+                if (key == "Validation.AutostartFailed" && exception is StartupPermissionException blocked)
+                    key = blocked.Reason == StartupBlockReason.User ? "Validation.AutostartDisabledByUser" : "Validation.AutostartDisabledByPolicy";
+                SetValidation(key);
+                if (onlyAutostart) ApplyAuthoritativeAutostart(_authoritativeAutostartEnabled, markKnown: true);
                 return;
             }
         }

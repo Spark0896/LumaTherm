@@ -71,20 +71,28 @@ public partial class LightingTestWindow : Window
 
     private async void ApplyButton_Click(object sender, RoutedEventArgs args)
     {
+        _closeInProgress = true;
+        ApplyButton.IsEnabled = false;
+        CancelButton.IsEnabled = false;
+        CloseButton.IsEnabled = false;
         try
         {
             if (ViewModel is { } viewModel)
             {
                 await viewModel.ApplyAsync();
             }
+            CloseAfterCleanup();
         }
         catch (Exception)
         {
-            // ErrorMessage already contains the failure; the test session has still been released.
+            // Keep the localized error and draft visible for a retry.
         }
         finally
         {
-            CloseAfterCleanup();
+            _closeInProgress = false;
+            ApplyButton.ClearValue(IsEnabledProperty);
+            CancelButton.IsEnabled = true;
+            CloseButton.IsEnabled = true;
         }
     }
 

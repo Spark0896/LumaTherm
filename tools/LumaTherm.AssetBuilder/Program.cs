@@ -70,7 +70,11 @@ internal static class Program
         bitmap.Freeze();
 
         var encoder = new PngBitmapEncoder();
-        encoder.Frames.Add(BitmapFrame.Create(bitmap));
+        var metadata = new BitmapMetadata("png");
+        metadata.SetQuery("/tEXt/{str=impeccable:prompt}",
+            "Origin: deterministic WPF rendering of src/LumaTherm.App/Assets/LogoGeometry.xaml; " +
+            "Arctic two-peak LumaTherm logo, authored vector geometry from the user-selected reference, 2026-10-03.");
+        encoder.Frames.Add(BitmapFrame.Create(bitmap, null, metadata, null));
         using var output = new MemoryStream();
         encoder.Save(output);
         return output.ToArray();

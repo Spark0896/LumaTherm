@@ -23,6 +23,7 @@ public sealed class LightingTestViewModelTests
         await vm.OpenAsync();
 
         Assert.Equal(1, runtime.BeginCalls);
+        Assert.Equal(vm.Editor.BuildProfile(vm.SmoothingSeconds), runtime.Session.LastProfile);
         await vm.CloseAsync();
     }
 

@@ -23,6 +23,34 @@ public sealed class SettingsUiRuntimeTests
     private readonly ThermalCoreStaFixture _sta;
 
     public SettingsUiRuntimeTests(ThermalCoreStaFixture sta) => _sta = sta;
+    [Fact]
+    public void InvalidNumericTextBlocksSaveAndLightingTestUntilCorrected() => _sta.Run(() =>
+    {
+        using var vm = CreateViewModel();
+        var view = Arrange(new SettingsView { DataContext = vm }, 1104, 900);
+        var temperature = Assert.IsType<TextBox>(view.FindName("SelectedPointTemperatureEditor"));
+        var smoothing = Assert.IsType<TextBox>(view.FindName("SmoothingEditor"));
+        foreach (var invalid in new[] { "200", "not a number" })
+        {
+            temperature.Text = invalid;
+            temperature.GetBindingExpression(TextBox.TextProperty)!.UpdateSource();
+            view.UpdateLayout();
+            Assert.True(Validation.GetHasError(temperature));
+            Assert.False(Button(view, "SaveButton").IsEnabled);
+            Assert.False(Button(view, "OpenLightingTestButton").IsEnabled);
+        }
+        temperature.Text = "35";
+        temperature.GetBindingExpression(TextBox.TextProperty)!.UpdateSource();
+        smoothing.Text = "10";
+        smoothing.GetBindingExpression(TextBox.TextProperty)!.UpdateSource();
+        view.UpdateLayout();
+        Assert.True(Validation.GetHasError(smoothing));
+        Assert.False(Button(view, "SaveButton").IsEnabled);
+        smoothing.Text = "1";
+        smoothing.GetBindingExpression(TextBox.TextProperty)!.UpdateSource();
+        view.UpdateLayout();
+        Assert.True(Button(view, "SaveButton").IsEnabled);
+    });
 
     [Fact]
     public void SettingsView_UsesInteractiveProfileEditorAndNewPreferenceBindings() => _sta.Run(() =>
@@ -37,11 +65,11 @@ public sealed class SettingsUiRuntimeTests
         Assert.Same(vm.SaveCommand, Button(view, "SaveButton").Command);
         Assert.Same(vm.ResetDefaultsCommand, Button(view, "ResetButton").Command);
         var language = Assert.IsType<ComboBox>(view.FindName("LanguageSelector"));
-        Assert.Equal(Color.FromRgb(0x1A, 0x21, 0x28), Assert.IsType<SolidColorBrush>(language.Background).Color);
+        Assert.Equal(Color.FromRgb(0x18, 0x26, 0x30), Assert.IsType<SolidColorBrush>(language.Background).Color);
         Assert.Equal(Color.FromRgb(0xF4, 0xF7, 0xFA), Assert.IsType<SolidColorBrush>(language.Foreground).Color);
         language.ApplyTemplate();
         var comboChrome = Assert.IsType<Border>(language.Template.FindName("ComboChrome", language));
-        Assert.Equal(Color.FromRgb(0x1A, 0x21, 0x28), Assert.IsType<SolidColorBrush>(comboChrome.Background).Color);
+        Assert.Equal(Color.FromRgb(0x18, 0x26, 0x30), Assert.IsType<SolidColorBrush>(comboChrome.Background).Color);
         Assert.NotNull(Assert.IsType<Path>(language.Template.FindName("DropDownArrow", language)).Data);
         var swatch = Button(view, "SelectedPointColorButton");
         Assert.Equal(new Thickness(2), swatch.BorderThickness);
@@ -69,7 +97,7 @@ public sealed class SettingsUiRuntimeTests
         Assert.Equal(5, smoothing.Maximum);
         var binding = BindingOperations.GetBindingExpression(temperature, TextBox.TextProperty);
         Assert.NotNull(binding);
-        Assert.Equal(UpdateSourceTrigger.LostFocus, binding.ParentBinding.UpdateSourceTrigger);
+        Assert.Equal(UpdateSourceTrigger.PropertyChanged, binding.ParentBinding.UpdateSourceTrigger);
         temperature.Text = "40";
         binding.UpdateSource();
         Assert.Equal(40, vm.ProfileEditor.Points[0].Temperature);
@@ -168,8 +196,8 @@ public sealed class SettingsUiRuntimeTests
     });
 
     [Theory]
-    [InlineData(979, true)]
-    [InlineData(980, false)]
+    [InlineData(819, true)]
+    [InlineData(820, false)]
     public void SettingsView_NarrowBreakpointStacksWithoutClippingPrimaryEditors(double width, bool compact) => _sta.Run(() =>
     {
         using var vm = CreateViewModel();
@@ -272,8 +300,8 @@ public sealed class SettingsUiRuntimeTests
         var save = Assert.IsType<Button>(view.FindName("SaveButton"));
         var openTest = Assert.IsType<Button>(view.FindName("OpenLightingTestButton"));
         Assert.Same(Application.Current.Resources["ActionButtonStyle"], reset.Style);
-        Assert.Same(Application.Current.Resources["ActionButtonStyle"], openTest.Style);
-        Assert.Same(Application.Current.Resources["PrimaryActionButtonStyle"], save.Style);
+        Assert.Same(Application.Current.Resources["ActionButtonStyle"], openTest.Style.BasedOn);
+        Assert.Same(Application.Current.Resources["PrimaryActionButtonStyle"], save.Style.BasedOn);
         toggle.ApplyTemplate();
         editor.ApplyTemplate();
         reset.ApplyTemplate();
@@ -283,12 +311,51 @@ public sealed class SettingsUiRuntimeTests
         var switchThumb = Assert.IsType<Ellipse>(toggle.Template.FindName("SwitchThumb", toggle));
         toggle.IsChecked = true;
         toggle.UpdateLayout();
-        Assert.Equal(Color.FromRgb(0x55, 0xCB, 0xFF), Assert.IsType<SolidColorBrush>(switchTrack.Background).Color);
+        Assert.Equal(Color.FromRgb(0x47, 0xB4, 0xFF), Assert.IsType<SolidColorBrush>(switchTrack.Background).Color);
         Assert.Equal(HorizontalAlignment.Right, switchThumb.HorizontalAlignment);
         Assert.Equal(new CornerRadius(6), Assert.IsType<Border>(editor.Template.FindName("EditorChrome", editor)).CornerRadius);
-        Assert.Equal(new CornerRadius(8), Assert.IsType<Border>(reset.Template.FindName("ActionChrome", reset)).CornerRadius);
+        Assert.Equal(new CornerRadius(6), Assert.IsType<Border>(reset.Template.FindName("ActionChrome", reset)).CornerRadius);
         var saveChrome = Assert.IsType<Border>(save.Template.FindName("ActionChrome", save));
-        Assert.Equal(Color.FromRgb(0x55, 0xCB, 0xFF), Assert.IsType<SolidColorBrush>(saveChrome.Background).Color);
+        Assert.Equal(Color.FromRgb(0x47, 0xB4, 0xFF), Assert.IsType<SolidColorBrush>(saveChrome.Background).Color);
+    });
+
+    [Fact]
+    public void SidebarLightingTest_CannotBypassInvalidSettingsText() => _sta.Run(() =>
+    {
+        using var vm = CreateViewModel();
+        var requested = 0;
+        vm.LightingTestRequested += (_, _) => requested++;
+        var shell = new MainWindow { SettingsDataContext = vm };
+        try
+        {
+            shell.Show();
+            shell.ShowSettingsCommand.Execute(null);
+            shell.UpdateLayout();
+            var view = Assert.IsType<SettingsView>(shell.FindName("SettingsContent"));
+            var editor = Assert.IsType<TextBox>(view.FindName("SelectedPointTemperatureEditor"));
+            var smoothing = Assert.IsType<TextBox>(view.FindName("SmoothingEditor"));
+            var sidebar = Assert.IsType<Button>(shell.FindName("LightingTestButton"));
+            foreach (var invalid in new[] { "200", "abc" })
+            {
+                editor.Text = invalid;
+                editor.GetBindingExpression(TextBox.TextProperty)!.UpdateSource();
+                Assert.True(Validation.GetHasError(editor));
+                sidebar.Command.Execute(null);
+                Assert.Equal(0, requested);
+                Assert.Equal(Visibility.Visible, view.Visibility);
+            }
+            editor.Text = "35";
+            editor.GetBindingExpression(TextBox.TextProperty)!.UpdateSource();
+            smoothing.Text = "abc";
+            smoothing.GetBindingExpression(TextBox.TextProperty)!.UpdateSource();
+            sidebar.Command.Execute(null);
+            Assert.Equal(0, requested);
+            smoothing.Text = "1";
+            smoothing.GetBindingExpression(TextBox.TextProperty)!.UpdateSource();
+            sidebar.Command.Execute(null);
+            Assert.Equal(1, requested);
+        }
+        finally { shell.Close(); }
     });
 
     private static string FlattenText(DependencyObject root) => string.Join(" ", Descendants(root).OfType<TextBlock>().Select(block => block.Text));

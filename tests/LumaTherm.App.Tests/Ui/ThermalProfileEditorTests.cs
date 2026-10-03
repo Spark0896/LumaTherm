@@ -36,8 +36,8 @@ public sealed class ThermalProfileEditorTests
 
         Assert.True(Canvas.GetLeft(Assert.IsType<ContentPresenter>(markers.ItemContainerGenerator.ContainerFromItem(editor.Points[1])))
                     < Canvas.GetLeft(Assert.IsType<ContentPresenter>(markers.ItemContainerGenerator.ContainerFromItem(editor.Points[2]))));
-        Assert.Equal(3, Assert.IsType<LinearGradientBrush>(track.Background).GradientStops.Count);
-        Assert.Equal([0d, 0.25, 1d], Assert.IsType<LinearGradientBrush>(track.Background).GradientStops.Select(stop => stop.Offset));
+        Assert.Equal(241, Assert.IsType<LinearGradientBrush>(track.Background).GradientStops.Count);
+        Assert.Equal(Color.FromRgb(0, 255, 255), Assert.IsType<LinearGradientBrush>(track.Background).GradientStops[60].Color);
     });
 
     [Fact]
@@ -115,6 +115,12 @@ public sealed class ThermalProfileEditorTests
 
             Assert.DoesNotContain(editor.Points, point => point.Id == removed.Id);
             control.UpdateLayout();
+            System.Windows.Threading.Dispatcher.CurrentDispatcher.Invoke(() => { }, System.Windows.Threading.DispatcherPriority.Background);
+            var selected = Assert.Single(editor.Points, point => point.IsSelected);
+            Assert.True(Marker(control, selected).IsKeyboardFocused);
+            var selectedTemperature = selected.Temperature;
+            RaiseKey(Marker(control, selected), Key.Left);
+            Assert.Equal(selectedTemperature - 1, selected.Temperature);
             RaiseKey(Marker(control, editor.Points[0]), Key.Delete);
             Assert.Equal(2, editor.Points.Count);
         }

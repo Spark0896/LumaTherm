@@ -138,6 +138,21 @@ public partial class ThermalProfileEditor : UserControl
         {
             var previousCount = _editor.Points.Count;
             _editor.Remove(id);
+            if (_editor.Points.Count < previousCount)
+            {
+                Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Input, (Action)(() =>
+                {
+                    var selected = _editor?.Points.FirstOrDefault(candidate => candidate.IsSelected);
+                    if (selected is null) return;
+                    PointMarkers.UpdateLayout();
+                    if (PointMarkers.ItemContainerGenerator.ContainerFromItem(selected) is ContentPresenter container)
+                    {
+                        container.ApplyTemplate();
+                        for (var child = 0; child < VisualTreeHelper.GetChildrenCount(container); child++)
+                            if (VisualTreeHelper.GetChild(container, child) is Button marker) { marker.Focus(); break; }
+                    }
+                }));
+            }
             return _editor.Points.Count < previousCount;
         }
 
@@ -264,19 +279,33 @@ public partial class ThermalProfileEditor : UserControl
             return;
         }
 
-        if (_editor is null || _editor.Points.Count == 0)
+        if (_editor is null || _editor.Points.Count < 2)
         {
             GradientTrack.Background = System.Windows.Media.Brushes.Transparent;
             return;
         }
 
-        var stops = new GradientStopCollection();
-        foreach (var point in _editor.Points)
-        {
-            stops.Add(new GradientStop(point.Color.ToMediaColor(), point.Temperature / MaximumTemperature));
-        }
+        GradientTrack.Background = ThermalGradientBrush.Create(_editor.BuildProfile(0.8), MinimumTemperature, MaximumTemperature);
+    }
 
-        GradientTrack.Background = new LinearGradientBrush(stops, new Point(0, 0.5), new Point(1, 0.5));
+    private void PointList_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is Button { DataContext: ThermalPointEditorViewModel point }) _editor?.Select(point.Id);
+    }
+
+    private void AddPoint_Click(object sender, RoutedEventArgs e)
+    {
+        if (_editor is null) return;
+        var positions = new[] { MinimumTemperature }.Concat(_editor.Points.Select(point => point.Temperature)).Append(MaximumTemperature).ToArray();
+        var gap = positions.Zip(positions.Skip(1), (a, b) => (Start: a, Width: b - a)).OrderByDescending(pair => pair.Width).First();
+        if (gap.Width >= 2) _editor.AddAt(Math.Round(gap.Start + gap.Width / 2, 1));
+    }
+
+    private void RemovePoint_Click(object sender, RoutedEventArgs e)
+    {
+        if (_editor?.Points.FirstOrDefault(point => point.IsSelected) is not { } selected) return;
+        _editor.Remove(selected.Id);
+        if (_editor.Points.All(point => !point.IsSelected)) _editor.Select(_editor.Points[0].Id);
     }
 
     private void GradientTrack_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)

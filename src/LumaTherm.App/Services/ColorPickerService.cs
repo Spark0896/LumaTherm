@@ -8,7 +8,7 @@ public sealed class ColorPickerService : IColorPickerService
     private readonly Func<RgbColor, nint, RgbColor?> _showDialog;
 
     public ColorPickerService()
-        : this(ShowNativeDialog)
+        : this(ShowDialog)
     {
     }
 
@@ -37,24 +37,11 @@ public sealed class ColorPickerService : IColorPickerService
         }
     }
 
-    private static RgbColor? ShowNativeDialog(RgbColor current, nint ownerHandle)
+    private static RgbColor? ShowDialog(RgbColor current, nint ownerHandle)
     {
-        using var dialog = new System.Windows.Forms.ColorDialog
-        {
-            AllowFullOpen = true,
-            FullOpen = true,
-            Color = System.Drawing.Color.FromArgb(current.R, current.G, current.B),
-        };
-        var result = ownerHandle == 0
-            ? dialog.ShowDialog()
-            : dialog.ShowDialog(new NativeDialogOwner(ownerHandle));
-        return result == System.Windows.Forms.DialogResult.OK
-            ? new RgbColor(dialog.Color.R, dialog.Color.G, dialog.Color.B)
-            : null;
+        var dialog = new LumaTherm.App.Views.ColorPickerWindow(current);
+        if (ownerHandle != 0) new WindowInteropHelper(dialog).Owner = ownerHandle;
+        return dialog.ShowDialog() == true ? dialog.SelectedColor : null;
     }
 
-    private sealed class NativeDialogOwner(nint handle) : System.Windows.Forms.IWin32Window
-    {
-        public nint Handle { get; } = handle;
-    }
 }

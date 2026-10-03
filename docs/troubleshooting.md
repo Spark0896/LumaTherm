@@ -31,3 +31,19 @@ Check `%LOCALAPPDATA%\LumaTherm\logs`. Corrupted settings are quarantined and de
 ## Updating
 
 Use a stable GitHub Release, verify its hashes, then run the newer setup. The update check only reads GitHub release metadata and opens a release download; it does not silently download or install anything. For portable deployments, unregister first, replace the folder with a verified archive, and register again.
+
+## Startup, tray, and profile editing (current source)
+
+Start with Windows applies immediately. If Windows reports a user-disabled task,
+open Windows startup settings and enable LumaTherm there. A policy-controlled task
+requires a policy change by the administrator. Keep a registered portable folder
+in place.
+
+With Minimize to tray enabled, minimize or close hides the main window. Click the
+tray icon to restore it; use Exit in its menu to stop the app. Check Windows hidden
+tray icons if it is not visible.
+
+Default colors restores blue/green/red without resetting other preferences. Drag
+points, use arrows/Delete or Add point/Remove. Correct invalid temperature
+(0–120°C) and smoothing (0.1–5 seconds) before saving or testing. Test Apply saves
+the draft; Cancel/close ends the temporary test and restores the prior mode.

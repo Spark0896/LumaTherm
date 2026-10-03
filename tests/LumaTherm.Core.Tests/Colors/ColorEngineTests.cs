@@ -4,12 +4,23 @@ namespace LumaTherm.Core.Tests.Colors;
 
 public sealed class ColorEngineTests
 {
+    [Fact]
+    public void AchromaticStopsKeepTheHueOfTheAdjacentColor()
+    {
+        var blue = new RgbColor(0, 0, 255);
+        var profile = ThermalProfile.Create([new(0, new RgbColor(0, 0, 0)), new(120, blue)], 0.8);
+        var middle = new ColorEngine(profile, 60).Map(60);
+        Assert.Equal(0, middle.R);
+        Assert.Equal(0, middle.G);
+        Assert.True(middle.B > 0);
+    }
+
     private static readonly ThermalProfile Profile = ThermalProfile.Default;
 
     [Theory]
     [InlineData(0, 0x00, 0x6B, 0xFF)]
     [InlineData(35, 0x00, 0x6B, 0xFF)]
-    [InlineData(65, 0xD0, 0x00, 0xFF)]
+    [InlineData(65, 0x3C, 0xFF, 0x00)]
     [InlineData(85, 0xFF, 0x00, 0x00)]
     [InlineData(110, 0xFF, 0x00, 0x00)]
     public void Map_ClampsAndHitsControlPoints(double temperature, byte r, byte g, byte b)
@@ -123,10 +134,10 @@ public sealed class ColorEngineTests
     }
 
     [Fact]
-    public void Default_ContainsTheThreeHardwareValidatedSaturatedPoints()
+    public void Default_ContainsTheThreeRequestedFactoryPoints()
     {
         Assert.Equal(
-            [new ThermalPoint(35, new RgbColor(0x00, 0x6B, 0xFF)), new(65, new(0xD0, 0x00, 0xFF)), new(85, new(0xFF, 0x00, 0x00))],
+            [new ThermalPoint(35, new RgbColor(0x00, 0x6B, 0xFF)), new(65, new(0x3C, 0xFF, 0x00)), new(85, new(0xFF, 0x00, 0x00))],
             ThermalProfile.Default.Points);
     }
 
@@ -135,7 +146,7 @@ public sealed class ColorEngineTests
     {
         var oneStep = new ColorEngine(Profile, 35);
         var eightSteps = new ColorEngine(Profile, 35);
-        var expected = new RgbColor(209, 0, 255);
+        var expected = new RgbColor(62, 255, 0);
 
         var oneStepActual = oneStep.Step(85, TimeSpan.FromSeconds(0.8));
         RgbColor eightStepsActual = default;

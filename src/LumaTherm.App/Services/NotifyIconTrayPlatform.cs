@@ -90,6 +90,24 @@ public sealed class NotifyIconTrayPlatform : ITrayIconPlatform
 
     private void RebuildMenu(TrayMenuState? state)
     {
+        // Sensor snapshots arrive twice a second. Replacing the native menu here
+        // dismisses an open menu before the user can choose a command.
+        if (state is not null && _icon.ContextMenuStrip is { } current &&
+            current.Items.Count == state.Entries.Count &&
+            current.Items.Cast<Forms.ToolStripItem>().Select(item => item.Tag)
+                .SequenceEqual(state.Entries.Select(entry => (object)entry.Kind)))
+        {
+            for (var index = 0; index < state.Entries.Count; index++)
+            {
+                var entry = state.Entries[index];
+                current.Items[index].Text = entry.Label;
+                current.Items[index].Enabled = entry.Enabled;
+                current.Items[index].ToolTipText = entry.Kind == TrayCommandKind.Temperature ? state.DeviceStatus : string.Empty;
+            }
+            _icon.Text = state.Tooltip;
+            return;
+        }
+
         Forms.ContextMenuStrip? replacement = null;
         if (state is not null)
         {

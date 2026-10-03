@@ -55,7 +55,8 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     public double CurrentTemperature { get => _currentTemperature; private set => SetProperty(ref _currentTemperature, value); }
     public RgbColor DisplayColor { get => _displayColor; private set => SetProperty(ref _displayColor, value); }
     public ThermalRange? CurrentRange { get => _currentRange; private set => SetProperty(ref _currentRange, value); }
-    public ThermalProfile Profile { get => _profile; private set => SetProperty(ref _profile, value); }
+    public ThermalProfile Profile { get => _profile; private set { if (SetProperty(ref _profile, value)) OnPropertyChanged(nameof(ProfileSummary)); } }
+    public string ProfileSummary => string.Join(" · ", Profile.Points.Select(point => $"{point.Temperature:0.#}° {point.Color.ToHex()}"));
     public string TemperatureText { get => _temperatureText; private set => SetProperty(ref _temperatureText, value); }
     public string StatusText { get => _statusText; private set => SetProperty(ref _statusText, value); }
     public string CurrentColorHex { get => _currentColorHex; private set => SetProperty(ref _currentColorHex, value); }
@@ -64,6 +65,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     public string LightingDeviceName { get => _lightingDeviceName; private set => SetProperty(ref _lightingDeviceName, value); }
     public bool IsModeEnabled { get => _isModeEnabled; private set => SetProperty(ref _isModeEnabled, value); }
     public bool HasLightingDevice { get => _hasLightingDevice; private set => SetProperty(ref _hasLightingDevice, value); }
+    public bool IsHealthy => _lastSnapshot.Status == RuntimeStatus.Active;
     public string SmoothingText { get => _smoothingText; private set => SetProperty(ref _smoothingText, value); }
     public string AutostartText { get => _autostartText; private set => SetProperty(ref _autostartText, value); }
     public string MinimizeToTrayText { get => _minimizeToTrayText; private set => SetProperty(ref _minimizeToTrayText, value); }
@@ -145,7 +147,8 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         GpuName = snapshot.Temperature?.DeviceName ?? _localization.Get("Runtime.GpuNotFound");
         SensorSource = snapshot.Temperature?.SourceName ?? "—";
         LightingDeviceName = snapshot.LightingDevice?.Name ?? _localization.Get("Runtime.LightingNotFound");
-        HasLightingDevice = snapshot.LightingDevice is not null;
+        HasLightingDevice = snapshot.LightingDevice is { IsAvailable: true };
+        OnPropertyChanged(nameof(IsHealthy));
 
         IsModeEnabled = snapshot.IsModeEnabled;
 

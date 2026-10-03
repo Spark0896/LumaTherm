@@ -6,6 +6,20 @@ namespace LumaTherm.App.Tests.ViewModels;
 public sealed class ThermalProfileEditorViewModelTests
 {
     [Fact]
+    public void AddingAndMovingPointsKeepsSynchronousObserverSnapshotsValid()
+    {
+        var editor = new ThermalProfileEditorViewModel(ThermalProfile.Default);
+        editor.Points.CollectionChanged += (_, _) => editor.BuildProfile(0.8).Validate();
+        foreach (var point in editor.Points)
+            point.PropertyChanged += (_, _) => editor.BuildProfile(0.8).Validate();
+
+        var added = editor.AddAt(17.5);
+        Assert.Equal(17.5, editor.Points[0].Temperature);
+        editor.Move(added.Id, 100);
+        Assert.Equal(100, editor.Points[^1].Temperature);
+        editor.BuildProfile(0.8).Validate();
+    }
+    [Fact]
     public void AddMoveAndRemove_PreservesGradientAndEnforcesNeighborSpacing()
     {
         var editor = new ThermalProfileEditorViewModel(ThermalProfile.Default);

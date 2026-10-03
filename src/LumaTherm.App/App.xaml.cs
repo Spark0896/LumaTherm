@@ -13,6 +13,7 @@ public partial class App : System.Windows.Application
     private WpfExceptionSource? _exceptionSource;
     private AppExceptionBoundary? _exceptionBoundary;
     private Task? _startupObserver;
+    private bool _shutdownRequested;
 
     public App()
         : this(startHost: true, activationArguments: null)
@@ -79,10 +80,24 @@ public partial class App : System.Windows.Application
         }
     }
 
-    private void RequestShutdown()
+    internal void RequestShutdown()
     {
-        if (Dispatcher.CheckAccess()) Shutdown();
-        else Dispatcher.BeginInvoke((Action)Shutdown);
+        if (!Dispatcher.CheckAccess()) { Dispatcher.BeginInvoke((Action)RequestShutdown); return; }
+        if (_shutdownRequested) return;
+        _shutdownRequested = true;
+        StopThenShutdownAsync();
+    }
+
+    private async void StopThenShutdownAsync()
+    {
+        try
+        {
+            // Release hardware and dispatcher-owned tray/UI resources while the
+            // dispatcher is still fully available, before entering WPF shutdown.
+            if (_host is not null) await _host.StopAsync(CancellationToken.None);
+        }
+        catch (Exception exception) { _host?.LogUnhandled(exception, foreground: false, notify: false); }
+        finally { Shutdown(); }
     }
 
     internal static void WaitWithDispatcherPumpUntilCompleted(Task task, TimeSpan observationInterval)

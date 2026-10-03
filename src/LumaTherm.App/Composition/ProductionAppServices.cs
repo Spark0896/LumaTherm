@@ -125,6 +125,8 @@ public static class ProductionAppServices
                 ClosePolicy = ClosePolicy,
             };
             System.Windows.Application.Current.MainWindow = Window;
+            Window.Closed += OnMainWindowClosed;
+            Window.Activated += OnMainWindowActivated;
             _settingsViewModel.LightingTestRequested += OnLightingTestRequested;
         }
 
@@ -132,6 +134,22 @@ public static class ProductionAppServices
         public WindowClosePolicy ClosePolicy { get; }
         public SettingsViewModel Settings => _settingsViewModel;
         public void Show() => Window.Show();
+        private void OnMainWindowClosed(object? sender, EventArgs args)
+        {
+            // With explicit shutdown, closing the last window otherwise leaves
+            // a headless process and a tray icon pointing to a disposed window.
+            if (!_isDisposing)
+            {
+                if (System.Windows.Application.Current is App app) app.RequestShutdown();
+                else System.Windows.Application.Current.Shutdown();
+            }
+        }
+        private async void OnMainWindowActivated(object? sender, EventArgs args)
+        {
+            if (_isDisposing) return;
+            try { await _settingsViewModel.RefreshAutostartAfterActivationAsync(); }
+            catch (Exception) { /* Initialization reports read failures without interrupting the window. */ }
+        }
         public void ShowRestoreActivate()
         {
             var adapter = new WpfTrayWindow(Window);
@@ -149,6 +167,8 @@ public static class ProductionAppServices
         private async Task DisposeCoreAsync()
         {
             _isDisposing = true;
+            Window.Closed -= OnMainWindowClosed;
+            Window.Activated -= OnMainWindowActivated;
             _settingsViewModel.LightingTestRequested -= OnLightingTestRequested;
             var lightingTestWindow = _lightingTestWindow;
             if (lightingTestWindow is not null)
@@ -180,6 +200,11 @@ public static class ProductionAppServices
 
         private async void OnLightingTestRequested(object? sender, EventArgs args)
         {
+            if (!Window.CanStartLightingTest)
+            {
+                Window.ShowSettingsCommand.Execute(null);
+                return;
+            }
             if (_lightingTestWindow is { } existing)
             {
                 if (existing.IsVisible)

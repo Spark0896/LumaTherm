@@ -11,6 +11,36 @@ namespace LumaTherm.App.Tests.ViewModels;
 public sealed class SettingsViewModelTests
 {
     [Fact]
+    public void DefaultColorsRestoresGreenProfileWithoutResettingOtherPreferences()
+    {
+        var recorder = new OperationRecorder();
+        using var vm = new SettingsViewModel(new FakeThermalRuntime(recorder), new FakeStartupService(recorder), AppSettings.Default);
+        vm.NotificationsEnabled = false;
+        vm.SmoothingSeconds = 2;
+        vm.ProfileEditor.Points[1].Color = new RgbColor(208, 0, 255);
+        vm.ResetColorsCommand.Execute(null);
+        Assert.Equal(new RgbColor(60, 255, 0), vm.ProfileEditor.Points[1].Color);
+        Assert.False(vm.NotificationsEnabled);
+        Assert.Equal(2, vm.SmoothingSeconds);
+    }
+    [Fact]
+    public async Task AutostartActionCommitsImmediatelyWithoutApplyingOtherDrafts()
+    {
+        var recorder = new OperationRecorder();
+        var runtime = new FakeThermalRuntime(recorder);
+        var startup = new FakeStartupService(recorder);
+        using var vm = new SettingsViewModel(runtime, startup, AppSettings.Default);
+        await vm.AutostartInitialization;
+        MovePoint(vm, 0, 42);
+        vm.IsAutostartEnabled = true;
+        await vm.ApplyAutostartCommand.ExecuteAsync();
+        Assert.True(startup.IsEnabled);
+        Assert.True(vm.LiveSettings.IsAutostartEnabled);
+        Assert.Equal(35, vm.LiveSettings.Profile.Points[0].Temperature);
+        Assert.Equal(42, vm.ProfileEditor.Points[0].Temperature);
+    }
+
+    [Fact]
     public async Task AutostartInitialization_SystemEnabledOverridesStaleDisabledJsonAndProfileSavePersistsTruth()
     {
         var recorder = new OperationRecorder();

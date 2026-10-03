@@ -2,6 +2,30 @@
 
 All notable changes are documented here. Version numbers follow semantic versioning.
 
+## [Unreleased]
+
+### Changed
+
+- Arctic Minimal WPF interface, two-peak identity, responsive navigation, fixed
+  settings/test actions, dark color picker, and consistent EN/RU controls.
+- Factory profile: 35°C blue `#006BFF`, 65°C green `#3CFF00`, 85°C red `#FF0000`.
+  Custom profiles remain editable; Default colors resets only the palette.
+- All previews use the physical eased HSV map. Dashboard summaries handle
+  arbitrary point counts; temperature labels avoid overlap.
+- English and Russian READMEs with matching actual application screenshots.
+
+### Fixed
+
+- Tray menu survives sensor updates; minimize/restore/Exit work independently.
+  Shutdown releases services before WPF exits.
+- Startup applies immediately, reflects Windows state and explains user/policy
+  refusal with access to Windows startup settings.
+- Sorted point insertion prevents Add-point crashes; Delete retains focus/selection.
+- Invalid numeric text blocks Save/Test/Apply. Test failure retains a retryable draft;
+  Cancel and close release the temporary session and restore normal operation.
+- Black/gray transitions preserve the neighboring hue; primary-button text renders
+  with the intended contrast.
+
 ## [1.1.0] - 2026-09-13
 
 ### Added

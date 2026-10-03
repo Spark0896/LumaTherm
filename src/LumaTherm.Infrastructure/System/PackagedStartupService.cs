@@ -15,7 +15,7 @@ public sealed class PackagedStartupService : IStartupService
     public async Task<bool> GetEnabledAsync(CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        return await _platform.GetStateAsync(cancellationToken) == StartupTaskState.Enabled;
+        return await _platform.GetStateAsync(cancellationToken) is StartupTaskState.Enabled or StartupTaskState.EnabledByPolicy;
     }
 
     public async Task SetEnabledAsync(bool enabled, CancellationToken cancellationToken)
@@ -28,6 +28,10 @@ public sealed class PackagedStartupService : IStartupService
         }
 
         var result = await _platform.RequestEnableAsync(cancellationToken);
+        if (result == StartupTaskState.DisabledByUser)
+            throw new StartupPermissionException(StartupBlockReason.User);
+        if (result == StartupTaskState.DisabledByPolicy)
+            throw new StartupPermissionException(StartupBlockReason.Policy);
         if (result is not (StartupTaskState.Enabled or StartupTaskState.EnabledByPolicy))
         {
             throw new InvalidOperationException("Windows не разрешила включить автозапуск LumaTherm.");

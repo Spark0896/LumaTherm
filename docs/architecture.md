@@ -17,7 +17,7 @@ When the mode is disabled, the app exits, or sensor loss requires release, the r
 
 Settings reside in `%LOCALAPPDATA%\LumaTherm\settings.json`; logs are in `%LOCALAPPDATA%\LumaTherm\logs`. `AppSettings` currently uses `schemaVersion: 2`. The JSON store saves atomically through a temporary file and validates on load. Invalid or unreadable settings are quarantined as `settings.corrupt-<UTC timestamp>.json`, then defaults are used.
 
-`SettingsMigrator` accepts schema 0 and 1 as legacy formats and produces schema 2. Do not change a persisted field or add a schema version without migration tests. The default profile has three saturated default points. Users may define unlimited user-defined points (minimum two); temperatures must be 0–120 °C, adjacent points at least 1 °C apart, and smoothing must be 0.1–5.0 seconds. Defaults keep mode and autostart disabled. Saving preferences does not change the live mode; enabling or disabling it remains a separate runtime operation.
+`SettingsMigrator` accepts schema 0 and 1 as legacy formats and produces schema 2. Do not change a persisted field or add a schema version without migration tests. The default profile has three saturated default points: 35°C blue (#006BFF), 65°C green (#3CFF00), and 85°C red (#FF0000). Users may define unlimited user-defined points (minimum two); temperatures must be 0–120 °C, adjacent points at least 1 °C apart, and smoothing must be 0.1–5.0 seconds. Defaults keep mode and autostart disabled. Saving preferences does not change the live mode; enabling or disabling it remains a separate runtime operation.
 
 ## Localization and updates
 

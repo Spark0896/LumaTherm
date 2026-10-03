@@ -89,7 +89,7 @@ public sealed class SmokeCommandTests
         var result = await RunAsync(["cycle", "--confirm-light-write"], new FakeTemperatureProvider(null), new FakeTemperatureProvider(null), lights);
 
         Assert.Equal(0, result.ExitCode);
-        Assert.Equal(["#006BFF", "#D000FF", "#FF0000"], lights.Colors.Select(color => color.ToHex()));
+        Assert.Equal(["#006BFF", "#3CFF00", "#FF0000"], lights.Colors.Select(color => color.ToHex()));
         Assert.Equal(1, lights.ReleaseCount);
     }
 
@@ -101,7 +101,7 @@ public sealed class SmokeCommandTests
         var result = await RunAsync(["cycle", "--confirm-light-write"], new FakeTemperatureProvider(null), new FakeTemperatureProvider(null), lights);
 
         Assert.Equal(1, result.ExitCode);
-        Assert.Equal(["#006BFF", "#D000FF"], lights.Colors.Select(color => color.ToHex()));
+        Assert.Equal(["#006BFF", "#3CFF00"], lights.Colors.Select(color => color.ToHex()));
         Assert.Equal(1, lights.ReleaseCount);
     }
 

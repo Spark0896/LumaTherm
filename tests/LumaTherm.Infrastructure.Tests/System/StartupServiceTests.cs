@@ -14,7 +14,7 @@ public sealed class StartupServiceTests
         Assert.True(await service.GetEnabledAsync(CancellationToken.None));
 
         platform.State = StartupTaskState.EnabledByPolicy;
-        Assert.False(await service.GetEnabledAsync(CancellationToken.None));
+        Assert.True(await service.GetEnabledAsync(CancellationToken.None));
         platform.EnableResult = StartupTaskState.EnabledByPolicy;
         await service.SetEnabledAsync(true, CancellationToken.None);
         await service.SetEnabledAsync(false, CancellationToken.None);
@@ -31,10 +31,12 @@ public sealed class StartupServiceTests
     {
         var platform = new FakeStartupTaskPlatform { EnableResult = state };
 
-        var error = await Assert.ThrowsAsync<InvalidOperationException>(
+        var error = await Assert.ThrowsAnyAsync<InvalidOperationException>(
             () => new PackagedStartupService(platform).SetEnabledAsync(true, CancellationToken.None));
 
         Assert.Contains("автозапуск", error.Message, StringComparison.OrdinalIgnoreCase);
+        if (state is StartupTaskState.DisabledByUser or StartupTaskState.DisabledByPolicy)
+            Assert.IsType<LumaTherm.Core.System.StartupPermissionException>(error);
     }
 
     [Fact]

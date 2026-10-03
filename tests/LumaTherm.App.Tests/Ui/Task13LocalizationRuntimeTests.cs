@@ -64,9 +64,9 @@ public sealed class Task13LocalizationRuntimeTests(ThermalCoreStaFixture sta)
                 PumpBindings(shell);
 
                 Assert.Same(sameShell, shell);
-                Assert.Contains("Thermal synchronization", FlattenText(dashboardView), StringComparison.Ordinal);
+                Assert.Contains("Thermal sync", FlattenText(dashboardView), StringComparison.Ordinal);
                 Assert.Contains("Settings", FlattenText(settingsView), StringComparison.Ordinal);
-                Assert.Equal("Home", AutomationProperties.GetName(home));
+                Assert.Equal("Dashboard", AutomationProperties.GetName(home));
                 Assert.Equal("Settings", AutomationProperties.GetName(settingsButton));
                 Assert.Equal("About", AutomationProperties.GetName(aboutButton));
                 Assert.Equal("Selected", AutomationProperties.GetItemStatus(settingsButton));

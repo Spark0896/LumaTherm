@@ -19,6 +19,53 @@ namespace LumaTherm.App.Tests.Ui;
 public sealed class LightingTestWindowTests(ThermalCoreStaFixture sta)
 {
     [Fact]
+    public void InvalidTemperatureTextBlocksApplyUntilCorrected() => sta.Run(() =>
+    {
+        var vm = new LightingTestViewModel(new FakeRuntime(), ThermalProfile.Default, (_, _) => Task.CompletedTask);
+        var window = new LightingTestWindow(vm);
+        try
+        {
+            window.Show();
+            window.UpdateLayout();
+            var editor = Assert.IsType<TextBox>(window.FindName("SelectedPointTemperatureEditor"));
+            var apply = Assert.IsType<Button>(window.FindName("ApplyButton"));
+            foreach (var text in new[] { "200", "abc" })
+            {
+                editor.Text = text;
+                editor.GetBindingExpression(TextBox.TextProperty)!.UpdateSource();
+                Assert.True(Validation.GetHasError(editor));
+                Assert.False(apply.IsEnabled);
+            }
+            editor.Text = "35";
+            editor.GetBindingExpression(TextBox.TextProperty)!.UpdateSource();
+            Assert.True(apply.IsEnabled);
+        }
+        finally { window.CloseAfterCleanup(); }
+    });
+    [Fact]
+    public void FailedApplyKeepsTheDraftAndWindowOpenForRetry() => sta.Run(() =>
+    {
+        var calls = 0;
+        var runtime = new FakeRuntime();
+        var vm = new LightingTestViewModel(runtime, ThermalProfile.Default, (_, _) =>
+            ++calls == 1 ? Task.FromException(new System.IO.IOException("save failure")) : Task.CompletedTask);
+        vm.OpenAsync().GetAwaiter().GetResult();
+        var window = new LightingTestWindow(vm) { ShowInTaskbar = false };
+        window.Show();
+        try
+        {
+            Assert.IsType<Button>(window.FindName("ApplyButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Assert.True(window.IsVisible);
+            Assert.False(string.IsNullOrWhiteSpace(vm.ErrorMessage));
+            Assert.True(runtime.Session.Disposed);
+            Assert.IsType<Button>(window.FindName("ApplyButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Assert.False(window.IsVisible);
+            Assert.Equal(2, calls);
+        }
+        finally { window.CloseAfterCleanup(); }
+    });
+
+    [Fact]
     public void Window_UsesProfileEditorPreviewAndExactTemperatureRange() => sta.Run(() =>
     {
         var vm = new LightingTestViewModel(new FakeRuntime(), ThermalProfile.Default, (_, _) => Task.CompletedTask);
@@ -99,7 +146,7 @@ public sealed class LightingTestWindowTests(ThermalCoreStaFixture sta)
             var apply = Assert.IsType<Button>(window.FindName("ApplyButton"));
             var cancel = Assert.IsType<Button>(window.FindName("CancelButton"));
             var close = Assert.IsType<Button>(window.FindName("CloseButton"));
-            Assert.Same(Application.Current.Resources["PrimaryActionButtonStyle"], apply.Style);
+            Assert.Same(Application.Current.Resources["PrimaryActionButtonStyle"], apply.Style.BasedOn);
             Assert.Same(Application.Current.Resources["ActionButtonStyle"], cancel.Style);
             Assert.Same(Application.Current.Resources["WindowButtonStyle"], close.Style);
             Assert.NotNull(Assert.IsType<Path>(close.Content).Data);

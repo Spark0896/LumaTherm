@@ -102,8 +102,11 @@ public sealed class LightingTestViewModel : ObservableObject, IAsyncDisposable
     public RgbColor PreviewColor
     {
         get => _previewColor;
-        private set => SetProperty(ref _previewColor, value);
+        private set { if (SetProperty(ref _previewColor, value)) OnPropertyChanged(nameof(PreviewHex)); }
     }
+    public string PreviewHex => PreviewColor.ToHex();
+    public System.Windows.Media.LinearGradientBrush PreviewGradient =>
+        LumaTherm.App.Controls.ThermalGradientBrush.Create(Editor.BuildProfile(SmoothingSeconds), 0, 120);
 
     public string ErrorMessage
     {
@@ -176,6 +179,7 @@ public sealed class LightingTestViewModel : ObservableObject, IAsyncDisposable
                 return;
             }
 
+            QueueProfileUpdate(Editor.BuildProfile(SmoothingSeconds));
             QueueTemperatureUpdate(TestTemperature);
             await TemperatureUpdate;
         }
@@ -186,7 +190,18 @@ public sealed class LightingTestViewModel : ObservableObject, IAsyncDisposable
     }
 
     public Task ApplyAsync() => ApplyAsync(CancellationToken.None);
-    public Task ApplyAsync(CancellationToken cancellationToken) => CompleteAsync(apply: true, cancellationToken);
+    public async Task ApplyAsync(CancellationToken cancellationToken)
+    {
+        SetErrorKey(null);
+        try { await CompleteAsync(apply: true, cancellationToken); }
+        catch
+        {
+            // The physical test has been released. Keep the editable draft so
+            // a transient persistence failure can be retried without reopening it.
+            lock (_stateLock) _completion = null;
+            throw;
+        }
+    }
     public Task CancelAsync() => CancelAsync(CancellationToken.None);
     public Task CancelAsync(CancellationToken cancellationToken) => CompleteAsync(apply: false, cancellationToken);
     public Task CloseAsync() => CloseAsync(CancellationToken.None);
@@ -262,7 +277,7 @@ public sealed class LightingTestViewModel : ObservableObject, IAsyncDisposable
                 }
             }
 
-            DetachEditor();
+            if (!apply || failure is null) DetachEditor();
         }
 
         if (failure is not null)
@@ -376,6 +391,7 @@ public sealed class LightingTestViewModel : ObservableObject, IAsyncDisposable
         {
             var profile = Editor.BuildProfile(SmoothingSeconds);
             PreviewColor = new ColorEngine(profile, TestTemperature).Map(TestTemperature);
+            OnPropertyChanged(nameof(PreviewGradient));
             QueueProfileUpdate(profile);
             if (_errorKey is "Validation.TemperatureRange" or "Validation.TemperatureOrder" or "Validation.SmoothingRange" or "Validation.Profile")
             {

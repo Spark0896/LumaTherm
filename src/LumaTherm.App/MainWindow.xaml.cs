@@ -14,7 +14,7 @@ namespace LumaTherm.App;
 
 public partial class MainWindow : System.Windows.Window
 {
-    private const double WorkspaceGradientAngleDegrees = 145;
+
 
     public static readonly DependencyProperty SettingsDataContextProperty = DependencyProperty.Register(
         nameof(SettingsDataContext),
@@ -31,6 +31,11 @@ public partial class MainWindow : System.Windows.Window
         ShowDashboardCommand = new RelayCommand(ShowDashboard);
         ShowSettingsCommand = new RelayCommand(ShowSettings);
         ShowAboutCommand = new RelayCommand(ShowAbout);
+        OpenLightingTestCommand = new RelayCommand(() =>
+        {
+            if (!CanStartLightingTest) { ShowSettings(); return; }
+            SettingsDataContext?.OpenLightingTestCommand.Execute(null);
+        });
         InitializeComponent();
         Closing += OnWindowClosing;
         StateChanged += OnWindowStateChanged;
@@ -53,6 +58,8 @@ public partial class MainWindow : System.Windows.Window
     public RelayCommand ShowDashboardCommand { get; }
     public RelayCommand ShowSettingsCommand { get; }
     public RelayCommand ShowAboutCommand { get; }
+    public RelayCommand OpenLightingTestCommand { get; }
+    internal bool CanStartLightingTest => !SettingsContent.HasInvalidNumericInput;
 
     internal IReadOnlyList<Button> IconOnlyButtons => [HomeButton, SettingsButton, AboutButton, MinimizeButton, MaximizeButton, CloseButton];
 
@@ -92,7 +99,7 @@ public partial class MainWindow : System.Windows.Window
     private static void SetNavigationState(Button active, params Button[] inactive)
     {
         active.Foreground = (Brush)Application.Current.Resources["ColdColorBrush"];
-        active.Background = new SolidColorBrush(Color.FromRgb(0x20, 0x27, 0x2D));
+        active.Background = new SolidColorBrush(Color.FromRgb(0x29, 0x44, 0x59));
         active.SetResourceReference(System.Windows.Automation.AutomationProperties.ItemStatusProperty, "Accessibility.Selected");
         foreach (var button in inactive)
         {
@@ -138,21 +145,4 @@ public partial class MainWindow : System.Windows.Window
         if (e.ButtonState == MouseButtonState.Pressed) DragMove();
     }
 
-    private void WorkspaceSurface_SizeChanged(object sender, SizeChangedEventArgs e)
-    {
-        if (e.NewSize.Width <= 0 || e.NewSize.Height <= 0 || WorkspaceSurface.Background is not LinearGradientBrush brush)
-        {
-            return;
-        }
-
-        var radians = WorkspaceGradientAngleDegrees * Math.PI / 180;
-        var directionX = Math.Sin(radians);
-        var directionY = -Math.Cos(radians);
-        var lineLength = Math.Abs(e.NewSize.Width * directionX) + Math.Abs(e.NewSize.Height * directionY);
-        var halfRelativeX = directionX * lineLength / (2 * e.NewSize.Width);
-        var halfRelativeY = directionY * lineLength / (2 * e.NewSize.Height);
-
-        brush.StartPoint = new System.Windows.Point(0.5 - halfRelativeX, 0.5 - halfRelativeY);
-        brush.EndPoint = new System.Windows.Point(0.5 + halfRelativeX, 0.5 + halfRelativeY);
-    }
 }

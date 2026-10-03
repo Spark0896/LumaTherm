@@ -1,73 +1,83 @@
 # LumaTherm
 
-> English · [Русский](README.ru.md)
+**GPU temperature → RGB lighting.** A lightweight Windows 11 app for monitoring your GPU and synchronizing compatible Dynamic Lighting devices.
 
-LumaTherm changes compatible Windows Dynamic Lighting colors from GPU temperature: cold saturated blue, warm magenta, and hot red. It uses NVIDIA NVML first and MSI Afterburner shared memory as an optional read-only fallback.
+English · [Русский](README.ru.md) · [Downloads](https://github.com/Spark0896/LumaTherm/releases) · [Installation](docs/installation.md)
 
-## Features
+![LumaTherm dashboard in English](docs/screenshots/en/dashboard.png)
 
-- Smooth, editable temperature/color profile. The default stops are 35°C blue, 65°C magenta, and 85°C pure red (`#FF0000`); eased HSV interpolation keeps physical-LED transitions continuous near every stop.
-- A dedicated lighting-test window lets you drag the temperature slider and edit the same profile before starting a game or benchmark.
-- Live GPU monitoring, 60-second history, configurable tray menu, and tray-first background operation.
-- Optional autostart that resumes the last thermal-mode state, notifications, and English/Russian/system language selection.
-- Direct output through Windows `LampArray`; no vendor DLLs or raw HID writes.
-- GitHub stable-release checks run only when you manually initiate a check, with no startup or background polling. The app opens a release page/download; it does not download or install updates itself.
-- Free and open source under the [MIT License](LICENSE).
+## Make temperature visible
 
-## Requirements
+Watch your GPU temperature, follow its last 60 seconds, and let your lighting show how warm it is. LumaTherm reads NVIDIA NVML first, with MSI Afterburner shared memory as an optional read-only fallback. Lighting is controlled through Windows LampArray.
 
-LumaTherm 1.1.0 requires x64 Windows 11 (22H2 or later), an NVIDIA driver, and a compatible Windows Dynamic Lighting / LampArray device. A clean Windows 11 installation needs no .NET Runtime, GCC, or MSI Afterburner because the app is self-contained. MSI Afterburner is only an optional read-only fallback sensor. A device must be exposed by Windows as an available LampArray; support for every RGB product or manufacturer application is not promised.
+| Default profile | Temperature | Color |
+| --- | --- | --- |
+| Cool | 35°C | Blue `#006BFF` |
+| Warm | 65°C | Green `#3CFF00` |
+| Hot | 85°C | Red `#FF0000` |
+
+Add, drag, or remove profile points; edit colors using HEX, RGB sliders, or swatches. The displayed gradient uses the same eased HSV interpolation as the lighting output. **Default colors** restores these three stops without resetting other preferences.
+
+## Built for everyday use
+
+- Live temperature, GPU name, device availability, thermal-mode state, and a 60-second history.
+- A lighting test with a temperature slider, editable draft, current HEX color, and a schematic device preview. Apply saves the draft; Cancel restores normal operation.
+- Background operation with a tray menu. Restore the window, toggle thermal mode, or explicitly exit from the tray.
+- Optional Windows startup, start minimized, notifications, and English/Russian/system language selection.
+- Manual stable-release checks: only when you manually initiate a check, with no startup or background polling. Updates open a release page; nothing is installed automatically.
+- Local settings and logs, no accounts, and an [MIT license](LICENSE).
 
 ## Screenshots
 
-### Dashboard
+Actual captures of the current Arctic redesign in English. The [Russian README](README.ru.md) includes matching Russian screenshots.
 
-![LumaTherm dashboard](docs/screenshots/dashboard.png)
+| Settings and profile editor | Lighting test |
+| --- | --- |
+| ![Settings in English](docs/screenshots/en/settings.png) | ![Lighting test in English](docs/screenshots/en/lighting-test.png) |
 
-### Settings
+| HEX and RGB color editor | About and manual updates |
+| --- | --- |
+| ![Color editor in English](docs/screenshots/en/color-picker.png) | ![About in English](docs/screenshots/en/about.png) |
 
-![LumaTherm settings](docs/screenshots/settings.png)
+## Get started
 
-### Interactive lighting test
+**Release status:** the redesign is in the current source tree. The published **1.1.0** installer predates this redesign; screenshots above show the source build.
 
-![LumaTherm lighting test](docs/screenshots/lighting-test.png)
+1. Download the setup and `SHA256SUMS.txt` from [GitHub Releases](https://github.com/Spark0896/LumaTherm/releases), then [verify SHA-256](docs/installation.md#verify-sha-256).
+2. Run setup as Administrator and explicitly approve import of its bundled **public** certificate. This registers the Windows lighting identity; no private key is imported.
+3. Open LumaTherm, select an available LampArray device, then enable thermal synchronization.
+4. Enable Dynamic Lighting in Windows and prioritize LumaTherm above competing background lighting controllers.
 
-## Setup quick start
+The installer does not launch the app automatically. For optional startup, enable **Start with Windows** in Settings. If Windows has disabled the task, use **Windows startup settings** to allow it again.
 
-1. Download `LumaTherm-1.1.0-win-x64-setup.exe` and `SHA256SUMS.txt` only from [GitHub Releases](https://github.com/Spark0896/LumaTherm/releases).
-2. Verify the SHA-256 value as described in [installation](docs/installation.md#verify-sha-256).
-3. Run setup as Administrator and explicitly approve import of the bundled **public** certificate. It is needed to register the Windows lighting identity; no private key is imported.
-4. Start LumaTherm from the chosen shortcut, select a LampArray device, and enable thermal synchronization only after Windows reports it available.
+### Requirements
 
-The installer has no post-install launch entry and does not automatically start the application.
+- x64 Windows 11, version 22H2 or later.
+- NVIDIA driver for NVML temperature readings, or the optional MSI Afterburner shared-memory fallback.
+- A device Windows exposes as an available Dynamic Lighting / LampArray device.
 
-## Portable registration
+Release builds are self-contained: no separate .NET Runtime or GCC installation is needed. Support for every RGB device is not promised. LumaTherm uses no vendor lighting DLLs or raw HID writes.
 
-The portable zip contains a self-contained application plus a sparse package identity. Extract it to a permanent local folder, verify its hashes, and use an elevated PowerShell:
+### Portable deployment
 
-```powershell
-.\install.ps1 -ConfirmCertificateImport
-```
+Extract the portable archive to a permanent folder, verify its hashes, and run `./install.ps1 -ConfirmCertificateImport` in elevated PowerShell. Registration is explicit and certificate-gated. Keep the registered folder in place; see [portable deployment](docs/portable.md).
 
-Portable registration is explicit and certificate-gated. It verifies signatures, checksums, and its signed payload anchor before registering the identity against the exact external folder. Do not move or delete that folder while registered; see [portable deployment](docs/portable.md).
+## Privacy and help
 
-## Dynamic Lighting priority
+Settings and logs stay in `%LOCALAPPDATA%/LumaTherm`. A manual update check requests the [latest GitHub release endpoint](https://api.github.com/repos/Spark0896/LumaTherm/releases/latest); no personal data is sent. LumaTherm does not inspect or change vendor RGB applications.
 
-Enable Dynamic Lighting in Windows and prioritize LumaTherm above competing background controllers. If discovery is unavailable, close only the RGB Fusion page in GIGABYTE Control Center if it holds the device, then retry. LumaTherm does not edit, stop, or inspect GIGABYTE software.
+[Troubleshooting](docs/troubleshooting.md) · [Compatibility](docs/compatibility.md) · [Hardware validation](docs/hardware-validation.md) · [Redesign verification](docs/qa/2026-10-03-arctic-redesign.md)
 
-## Privacy and troubleshooting
+## Build from source
 
-Settings and logs stay under `%LOCALAPPDATA%\LumaTherm`. A manually initiated update check requests only the [latest GitHub release endpoint](https://api.github.com/repos/Spark0896/LumaTherm/releases/latest). The response must be a published stable semantic-version release; no personal data is sent and no update is silently installed.
-
-Read [troubleshooting](docs/troubleshooting.md) for sensor, LampArray, setup, portable, settings, and update guidance. [Compatibility](docs/compatibility.md) and [hardware validation](docs/hardware-validation.md) explain the evidence boundary.
-
-## Build and contribute
-
-Source builds use the SDK pinned in `global.json` (8.0.423):
+Use Windows and the .NET SDK pinned in `global.json` (**8.0.423**):
 
 ```powershell
 dotnet restore LumaTherm.sln -p:NuGetAudit=false
 dotnet test LumaTherm.sln -c Release -p:NuGetAudit=false
+dotnet publish src/LumaTherm.App -c Release -r win-x64 --self-contained true
 ```
 
-See [development](docs/development.md), [contributing](CONTRIBUTING.md), [security](SECURITY.md), [changelog](CHANGELOG.md), and [license](LICENSE). Maintainers should use [releasing](docs/releasing.md); it covers external certificates, manual gates, checksums, and rollback.
+Lighting access additionally requires the registered Windows identity described in [development](docs/development.md) and [portable deployment](docs/portable.md).
+
+[Contributing](CONTRIBUTING.md) · [Security](SECURITY.md) · [Architecture](docs/architecture.md) · [Changelog](CHANGELOG.md) · [Release process](docs/releasing.md)

@@ -1,0 +1,659 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-03T16:49:31Z",
+  "title": "Design System: LumaTherm",
+  "extensions": {
+    "colorMeta": {
+      "ice-accent": {
+        "role": "primary",
+        "displayName": "Ice Accent"
+      },
+      "window-background": {
+        "role": "neutral",
+        "displayName": "Deep Canvas"
+      },
+      "rail-background": {
+        "role": "neutral",
+        "displayName": "Blue-Gray Rail"
+      },
+      "panel-background": {
+        "role": "neutral",
+        "displayName": "Raised Tonal Panel"
+      },
+      "panel-secondary": {
+        "role": "neutral",
+        "displayName": "Inset Panel"
+      },
+      "primary-text": {
+        "role": "neutral",
+        "displayName": "Primary Text"
+      },
+      "secondary-text": {
+        "role": "neutral",
+        "displayName": "Secondary Text"
+      },
+      "muted-text": {
+        "role": "neutral",
+        "displayName": "Muted Text"
+      },
+      "subtle-line": {
+        "role": "neutral",
+        "displayName": "Subtle Line"
+      },
+      "icon-idle": {
+        "role": "neutral",
+        "displayName": "Idle Icon"
+      },
+      "action-background": {
+        "role": "neutral",
+        "displayName": "Action Surface"
+      },
+      "action-border": {
+        "role": "neutral",
+        "displayName": "Action Border"
+      },
+      "primary-action-foreground": {
+        "role": "neutral",
+        "displayName": "Primary Action Foreground"
+      },
+      "navigation-active": {
+        "role": "neutral",
+        "displayName": "Selected Navigation"
+      },
+      "navigation-hover": {
+        "role": "neutral",
+        "displayName": "Hover Navigation"
+      },
+      "editor-border": {
+        "role": "neutral",
+        "displayName": "Editor Border"
+      },
+      "selection-background": {
+        "role": "neutral",
+        "displayName": "Highlighted Item"
+      },
+      "switch-off": {
+        "role": "neutral",
+        "displayName": "Switch Off"
+      },
+      "switch-thumb": {
+        "role": "neutral",
+        "displayName": "Switch Thumb"
+      },
+      "validation-border": {
+        "role": "semantic",
+        "displayName": "Validation Border"
+      },
+      "validation-text": {
+        "role": "semantic",
+        "displayName": "Validation Text"
+      },
+      "success": {
+        "role": "semantic",
+        "displayName": "Success"
+      },
+      "status-active-background": {
+        "role": "semantic",
+        "displayName": "Active Status Surface"
+      },
+      "status-active-text": {
+        "role": "semantic",
+        "displayName": "Active Status Text"
+      },
+      "status-idle-background": {
+        "role": "neutral",
+        "displayName": "Idle Status Surface"
+      },
+      "brand-wordmark": {
+        "role": "primary",
+        "displayName": "Pale Arctic Wordmark"
+      },
+      "logo-light": {
+        "role": "primary",
+        "displayName": "Logo Light"
+      },
+      "logo-blue": {
+        "role": "primary",
+        "displayName": "Logo Blue"
+      },
+      "marker-background": {
+        "role": "neutral",
+        "displayName": "Marker Halo Surface"
+      },
+      "marker-stroke": {
+        "role": "neutral",
+        "displayName": "Marker Halo Stroke"
+      },
+      "factory-cold": {
+        "role": "data",
+        "displayName": "Factory Cold"
+      },
+      "factory-warm": {
+        "role": "data",
+        "displayName": "Factory Warm"
+      },
+      "factory-hot": {
+        "role": "data",
+        "displayName": "Factory Hot"
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "display",
+        "purpose": "Leading dashboard GPU temperature."
+      },
+      "test-display": {
+        "displayName": "test display",
+        "purpose": "Lighting-test temperature."
+      },
+      "headline": {
+        "displayName": "headline",
+        "purpose": "Dashboard, Settings, and Lighting Test page titles."
+      },
+      "dialog-headline": {
+        "displayName": "dialog headline",
+        "purpose": "About and color dialog titles."
+      },
+      "title": {
+        "displayName": "title",
+        "purpose": "Settings section headings."
+      },
+      "panel-title": {
+        "displayName": "panel title",
+        "purpose": "Dashboard and lighting-test panel headings."
+      },
+      "body": {
+        "displayName": "body",
+        "purpose": "Ordinary interface text and control labels."
+      },
+      "action-label": {
+        "displayName": "action label",
+        "purpose": "SemiBold labels in primary actions."
+      },
+      "label": {
+        "displayName": "label",
+        "purpose": "Supporting hints, field captions, and profile instructions."
+      },
+      "chart-caption": {
+        "displayName": "chart caption",
+        "purpose": "Chart time labels and bounded profile summary."
+      },
+      "chart-axis": {
+        "displayName": "chart axis",
+        "purpose": "History chart axis labels."
+      },
+      "wordmark": {
+        "displayName": "wordmark",
+        "purpose": "Main and test-window product wordmark; the color-dialog instance uses normal weight."
+      },
+      "ring-value": {
+        "displayName": "ring value",
+        "purpose": "Temperature text drawn inside the custom ring."
+      },
+      "ring-label": {
+        "displayName": "ring label",
+        "purpose": "Localized live-reading label drawn inside the ring."
+      }
+    },
+    "shadows": [],
+    "motion": [],
+    "breakpoints": [
+      {
+        "name": "content-compact",
+        "value": "820 DIP",
+        "measurement": "DashboardView.ActualWidth and SettingsView.ActualWidth; stack below the threshold, retain two columns at the threshold."
+      }
+    ],
+    "native": {
+      "platform": "Windows WPF",
+      "units": {
+        "length": "DIP",
+        "fontSize": "DIP",
+        "dipDefinition": "1/96 inch before Windows display scaling",
+        "thicknessOrder": "horizontal,vertical or left,top,right,bottom",
+        "previewAdapter": "CSS px in component snippets represent one DIP for illustrative browser rendering only; native source and Windows scaling remain authoritative."
+      },
+      "sourceAuthority": [
+        "PRODUCT.md",
+        "src/LumaTherm.App/Resources/Theme.xaml",
+        "src/LumaTherm.App/MainWindow.xaml",
+        "src/LumaTherm.App/MainWindow.xaml.cs",
+        "src/LumaTherm.App/Views/",
+        "src/LumaTherm.App/Controls/",
+        "src/LumaTherm.App/Assets/LogoGeometry.xaml",
+        "src/LumaTherm.Core/Colors/ThermalProfile.cs",
+        "src/LumaTherm.Core/Colors/ColorEngine.cs"
+      ],
+      "extractionPolicy": "Token primitives live only in DESIGN.md frontmatter. No synthesized tonal ramps, inferred font metrics, shadows, or animation timings.",
+      "windowLayout": {
+        "main": {
+          "initialSize": "1180 × 800 DIP",
+          "minimumSize": "920 × 620 DIP",
+          "titleBarHeight": "48 DIP",
+          "outerBorderThickness": "1 DIP",
+          "resizeBorderThickness": "6 DIP",
+          "chromeCornerRadius": "8 DIP",
+          "railWidth": "178 DIP"
+        },
+        "lightingTest": {
+          "initialSize": "860 × 780 DIP",
+          "minimumSize": "700 × 580 DIP",
+          "titleBarHeight": "48 DIP",
+          "bodyMargin": "26,24 DIP",
+          "footerPadding": "26,14 DIP",
+          "bodyScroll": "vertical auto",
+          "footer": "separate grid row"
+        },
+        "colorPicker": {
+          "fixedSize": "470 × 550 DIP",
+          "titleBarHeight": "48 DIP",
+          "bodyMargin": "24 DIP",
+          "owner": "active native WPF window",
+          "modality": "ShowDialog",
+          "resizable": false
+        },
+        "dashboard": {
+          "workspaceMargin": "28,26,28,28 DIP",
+          "columnRatio": "1.05:1",
+          "panelGap": "16 DIP",
+          "headingGap": "24 DIP",
+          "runtimeRowHeights": {
+            "temperature": "260 DIP",
+            "deviceAndSync": "230 DIP",
+            "compactChart": "240 DIP",
+            "compactProfile": "220 DIP"
+          },
+          "scroll": "vertical auto; horizontal disabled"
+        },
+        "settings": {
+          "workspaceMargin": "28,26,28,12 DIP",
+          "columnRatio": "1.1:1",
+          "panelGap": "16 DIP",
+          "headingGap": "24 DIP",
+          "footerPadding": "28,14 DIP",
+          "footer": "separate grid row",
+          "temperatureFieldWidth": "74 DIP",
+          "scroll": "vertical auto; horizontal disabled"
+        },
+        "about": {
+          "workspaceMargin": "28,24,28,28 DIP",
+          "maxWidth": "900 DIP",
+          "panelPadding": "24 DIP",
+          "scroll": "vertical auto; horizontal disabled"
+        }
+      },
+      "interactions": {
+        "keyboardFocus": {
+          "borderThickness": "2 DIP",
+          "cornerRadius": "7 DIP",
+          "margin": "-3 DIP",
+          "thermalPointCornerRadius": "16 DIP",
+          "colorRef": "colors.ice-accent"
+        },
+        "actionButton": {
+          "minWidth": "100 DIP",
+          "minHeight": "36 DIP",
+          "borderThickness": "1 DIP",
+          "hover": "accent border",
+          "pressedChromeOpacity": 0.7,
+          "disabledOpacity": 0.45,
+          "disabledCursor": "Arrow",
+          "primaryLabel": "ContentTemplate binds TextBlock.Foreground to its ancestor Button"
+        },
+        "iconButton": {
+          "size": "40 × 40 DIP",
+          "windowControlSize": "44 × 44 DIP",
+          "names": "localized AutomationProperties.Name"
+        },
+        "navigation": {
+          "margin": "6,3 DIP",
+          "selectionIndicator": "2 × 26 DIP",
+          "hoverColorRef": "colors.navigation-hover",
+          "pressedOpacity": 0.7,
+          "selection": "fill, foreground, indicator, and localized AutomationProperties.ItemStatus update together"
+        },
+        "textField": {
+          "minHeight": "36 DIP",
+          "borderThickness": "1 DIP",
+          "focus": "accent border and caret",
+          "error": "validation border and tooltip",
+          "temperatureDomain": "0–120°C",
+          "smoothingDomain": "0.1–5 seconds"
+        },
+        "comboBox": {
+          "popupOffset": "0,3,0,0 DIP",
+          "popupPadding": "4 DIP",
+          "popupMaxHeight": "260 DIP",
+          "itemPadding": "10,8 DIP",
+          "focus": "accent border",
+          "disabledOpacity": 0.45,
+          "highlightAndSelectionRef": "colors.selection-background"
+        },
+        "applicationSwitch": {
+          "trackHeight": "24 DIP",
+          "trackPadding": "3 DIP",
+          "thumbDiameter": "18 DIP",
+          "checked": "accent track and right-aligned thumb",
+          "hoverOpacity": 0.85,
+          "disabledOpacity": 0.4
+        },
+        "authoritativeSyncSwitch": {
+          "checkedState": "one-way from runtime",
+          "command": "ToggleModeCommand",
+          "disabledOpacity": 0.45
+        },
+        "slider": {
+          "trackHeight": "8 DIP",
+          "trackHorizontalInset": "12 DIP",
+          "thumbHitArea": "24 × 28 DIP",
+          "thumbFaceDiameter": "22 DIP",
+          "thumbStrokeThickness": "2 DIP",
+          "disabledOpacity": 0.4,
+          "temperatureStep": "1°C",
+          "rgbDomain": "0–255 integer",
+          "moveToPoint": true
+        },
+        "thermalEditor": {
+          "domain": "0–120°C",
+          "trackHeight": "12 DIP",
+          "markerHitArea": "28 × 34 DIP",
+          "haloDiameter": "22 DIP",
+          "colorCenterDiameter": "12 DIP",
+          "haloStroke": "2 DIP; selected/focused 3 DIP",
+          "dragPrecision": "0.1°C",
+          "arrowStep": "1°C",
+          "delete": "remove selected point when view model permits",
+          "doubleClick": "add at track position",
+          "drag": "native pointer capture; release on completion, lost capture, unload, or context change",
+          "gradient": "241 sampled ColorEngine.Map positions using HSV interpolation and smoother-step easing"
+        },
+        "temperatureRing": {
+          "size": "148 × 148 DIP",
+          "arcStart": "135 degrees",
+          "arcSweep": "270 degrees",
+          "strokeThickness": "10 DIP",
+          "range": "active profile first and last points",
+          "unavailable": "em dash visual and localized accessible unavailable value"
+        },
+        "history": {
+          "duration": "60 seconds",
+          "axis": "0–120°C in 30°C steps",
+          "gridThickness": "0.5 DIP",
+          "traceThickness": "2 DIP",
+          "endpointRadius": "3 DIP",
+          "areaOpacity": "45/255 to 0",
+          "invalidReadings": "nonfinite readings excluded"
+        },
+        "lightingPreview": {
+          "ledCount": 12,
+          "arrangement": "UniformGrid one row",
+          "cellCornerRadius": "5 DIP",
+          "cellMargin": "3 DIP",
+          "color": "every cell binds the current shared-engine preview color",
+          "truthfulness": "localized hint describes possible difference from physical LEDs"
+        },
+        "modalCompletion": {
+          "colorPicker": "default Apply, cancel action, invalid HEX disables Apply, close cancels",
+          "lightingTest": "Apply saves draft and completes cleanup; Cancel and close clean up without applying; failed Apply retains draft and localized error for retry"
+        },
+        "mainWindow": {
+          "titleBar": "drag; double-click maximize/restore",
+          "minimizeAndClose": "follow configured tray policy"
+        },
+        "validationLiveRegions": {
+          "settings": "Assertive",
+          "lightingTest": "Assertive",
+          "updates": "Polite"
+        },
+        "startup": "display the state confirmed by Windows startup service; failures remain localized and authoritative state is restored"
+      },
+      "localization": {
+        "dictionaries": [
+          "src/LumaTherm.App/Resources/Strings.en-US.xaml",
+          "src/LumaTherm.App/Resources/Strings.ru-RU.xaml"
+        ],
+        "visibleAndAccessibleText": "DynamicResource",
+        "choices": [
+          "System",
+          "English",
+          "Russian"
+        ],
+        "systemResolution": "Russian for a Russian system culture, English otherwise",
+        "lookupFallback": "English",
+        "wrapping": "supporting copy, errors, and hardware descriptions",
+        "intentionalEllipsis": [
+          "title-bar app description",
+          "title-bar device name",
+          "dashboard profile summary"
+        ]
+      },
+      "observedDifferences": [
+        {
+          "area": "Typography",
+          "detail": "TemperatureRing draws Segoe UI Variable; global WPF controls use Segoe UI. Documented as an existing exception."
+        },
+        {
+          "area": "Dashboard layout",
+          "detail": "Bottom-row XAML initializes at 240 DIP; ApplyLayout overrides the effective runtime device/sync row to 230 DIP."
+        },
+        {
+          "area": "Token naming",
+          "detail": "Theme ColdColor is the UI accent; ThermalProfile.Default.ColdColor is the separate factory cold anchor."
+        },
+        {
+          "area": "Color dialog wordmark",
+          "detail": "The color dialog uses normal wordmark weight; main and test windows use SemiBold."
+        }
+      ],
+      "screenshotPaths": {
+        "en": {
+          "dashboard": "docs/screenshots/en/dashboard.png",
+          "settings": "docs/screenshots/en/settings.png",
+          "lightingTest": "docs/screenshots/en/lighting-test.png",
+          "colorPicker": "docs/screenshots/en/color-picker.png",
+          "about": "docs/screenshots/en/about.png"
+        },
+        "ru": {
+          "dashboard": "docs/screenshots/ru/dashboard.png",
+          "settings": "docs/screenshots/ru/settings.png",
+          "lightingTest": "docs/screenshots/ru/lighting-test.png",
+          "colorPicker": "docs/screenshots/ru/color-picker.png",
+          "about": "docs/screenshots/ru/about.png"
+        }
+      },
+      "tokenSources": {
+        "themeColors": {
+          "ice-accent": "ColdColor",
+          "window-background": "WindowBackground",
+          "rail-background": "RailBackground",
+          "panel-background": "PanelBackground",
+          "panel-secondary": "PanelSecondary",
+          "primary-text": "PrimaryText",
+          "secondary-text": "SecondaryText",
+          "muted-text": "MutedText",
+          "subtle-line": "SubtleLineBrush",
+          "icon-idle": "IconIdleBrush",
+          "validation-border": "HotColor",
+          "success": "SuccessColor"
+        },
+        "themeStyleLiterals": [
+          "action-background",
+          "action-border",
+          "primary-action-foreground",
+          "navigation-hover",
+          "editor-border",
+          "selection-background",
+          "switch-off",
+          "switch-thumb"
+        ],
+        "mainWindowAndState": [
+          "navigation-active",
+          "brand-wordmark"
+        ],
+        "viewLiterals": [
+          "validation-text",
+          "status-active-background",
+          "status-active-text",
+          "status-idle-background"
+        ],
+        "controlLiterals": [
+          "marker-background",
+          "marker-stroke"
+        ],
+        "logoGradient": [
+          "logo-light",
+          "logo-blue"
+        ],
+        "thermalProfileDefault": [
+          "factory-cold",
+          "factory-warm",
+          "factory-hot"
+        ]
+      }
+    }
+  },
+  "components": [
+    {
+      "name": "Primary Action",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Native primary action with the current content-template foreground binding.",
+      "html": "<button class=\"ds-primary\">Save</button>",
+      "css": ".ds-primary{box-sizing:border-box;font-family:'Segoe UI';font-size:13px;font-weight:600;min-width:100px;min-height:36px;padding:8px 16px;border:1px solid #47B4FF;border-radius:6px;background:#47B4FF;color:#071A29;cursor:pointer}.ds-primary:hover{border-color:#47B4FF}.ds-primary:focus-visible{outline:2px solid #47B4FF;outline-offset:3px;}.ds-primary:active{opacity:.7}.ds-primary:disabled{opacity:.45;cursor:default}"
+    },
+    {
+      "name": "Secondary Action",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Bordered action used for Reset, Manage, Cancel, and editor actions.",
+      "html": "<button class=\"ds-secondary\">Reset</button>",
+      "css": ".ds-secondary{box-sizing:border-box;font-family:'Segoe UI';font-size:13px;font-weight:400;min-width:100px;min-height:36px;padding:8px 16px;border:1px solid #4A6172;border-radius:6px;background:#2A3B49;color:#F4F7FA;cursor:pointer}.ds-secondary:hover{border-color:#47B4FF}.ds-secondary:focus-visible{outline:2px solid #47B4FF;outline-offset:3px;}.ds-secondary:active{opacity:.7}.ds-secondary:disabled{opacity:.45;cursor:default}"
+    },
+    {
+      "name": "Labeled Navigation",
+      "kind": "nav",
+      "refersTo": "navigation-selected",
+      "description": "Selected rail row; the native rail remains 178 DIP at supported widths.",
+      "html": "<nav class=\"ds-rail\"><div class=\"ds-nav-row\"><span class=\"ds-nav-indicator\"></span><button class=\"ds-nav\" aria-current=\"page\"><svg width=\"17\" height=\"17\" viewBox=\"0 0 18 18\" aria-hidden=\"true\"><path d=\"M1 8L9 1L17 8M3 7L3 17L7 17L7 11L11 11L11 17L15 17L15 7\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\"/></svg><span>Dashboard</span></button></div></nav>",
+      "css": ".ds-rail{width:178px;background:#14212B;padding:18px 0}.ds-nav-row{position:relative}.ds-nav{box-sizing:border-box;display:flex;align-items:center;gap:12px;margin:3px 6px;padding:0 16px;width:166px;height:46px;border:0;border-radius:6px;background:#294459;color:#47B4FF;font:13px 'Segoe UI';cursor:pointer}.ds-nav:hover{background:#273F51}.ds-nav:focus-visible{outline:2px solid #47B4FF;outline-offset:3px;}.ds-nav:active{opacity:.7}.ds-nav-indicator{position:absolute;left:0;top:13px;width:2px;height:26px;background:#47B4FF}"
+    },
+    {
+      "name": "Editor Field",
+      "kind": "input",
+      "refersTo": "editor-field",
+      "description": "Dark text field; native numeric validation supplies the error tooltip and message.",
+      "html": "<input class=\"ds-field\" aria-label=\"Point temperature\" value=\"35\">",
+      "css": ".ds-field{box-sizing:border-box;font:13px 'Segoe UI';min-height:36px;padding:7px 10px;border:1px solid #53697A;border-radius:6px;background:#182630;color:#F4F7FA;caret-color:#47B4FF}.ds-field:focus{outline:none;border-color:#47B4FF}.ds-field[aria-invalid=true]{border-color:#FF5D65}"
+    },
+    {
+      "name": "Dark Selector",
+      "kind": "input",
+      "refersTo": "dark-combobox",
+      "description": "Appearance adapter for the WPF selector; native popup and keyboard behavior remain authoritative.",
+      "html": "<div class=\"ds-combo\"><select aria-label=\"Language\"><option>System</option><option>English</option><option>Русский</option></select><svg width=\"8\" height=\"4\" viewBox=\"0 0 8 4\" aria-hidden=\"true\"><path d=\"M0 0L4 4L8 0\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\"/></svg></div>",
+      "css": ".ds-combo{position:relative;display:inline-block;color:#F4F7FA}.ds-combo select{box-sizing:border-box;appearance:none;font:13px 'Segoe UI';min-height:36px;padding:5px 30px 5px 10px;border:1px solid #53697A;border-radius:6px;background:#182630;color:#F4F7FA}.ds-combo select:focus{outline:none;border-color:#47B4FF}.ds-combo select:disabled{opacity:.45}.ds-combo svg{position:absolute;right:12px;top:calc(50% - 2px);pointer-events:none}.ds-combo option{padding:8px 10px;background:#182630;color:#F4F7FA}.ds-combo option:checked{background:#2B4B63}"
+    },
+    {
+      "name": "Application Switch",
+      "kind": "custom",
+      "refersTo": "toggle-on",
+      "description": "Checked switch with both positional and color cues; static preview of the native state.",
+      "html": "<button class=\"ds-toggle\" role=\"switch\" aria-checked=\"true\" aria-label=\"Launch with Windows\"><span class=\"ds-switch-track\"><span class=\"ds-switch-thumb\"></span></span></button>",
+      "css": ".ds-toggle{width:44px;height:28px;padding:0;border:0;background:transparent;display:flex;align-items:center;cursor:pointer}.ds-switch-track{position:relative;display:block;width:44px;height:24px;border-radius:12px;background:#50606D}.ds-switch-thumb{position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:#EEF6FD}.ds-toggle[aria-checked=true] .ds-switch-track{background:#47B4FF}.ds-toggle[aria-checked=true] .ds-switch-thumb{left:auto;right:3px}.ds-toggle:hover{opacity:.85}.ds-toggle:focus-visible{outline:2px solid #47B4FF;outline-offset:3px;}.ds-toggle:disabled{opacity:.4}"
+    },
+    {
+      "name": "Task Panel",
+      "kind": "card",
+      "refersTo": "panel",
+      "description": "Shared tonal panel with the common 20 DIP view padding.",
+      "html": "<section class=\"ds-panel\"><h3>Active device</h3><p>GIGABYTE Device</p></section>",
+      "css": ".ds-panel{background:#202D37;border:1px solid #394B59;border-radius:10px;padding:20px;color:#F4F7FA;font:13px 'Segoe UI'}.ds-panel h3{font-size:14px;font-weight:600;margin:0}.ds-panel p{color:#D5DDE3;margin:8px 0 0}"
+    },
+    {
+      "name": "Native Slider",
+      "kind": "input",
+      "refersTo": "temperature-slider",
+      "description": "Geometry adapter for the shared WPF slider; thermal tracks use the separately sampled profile brush.",
+      "html": "<input class=\"ds-slider\" type=\"range\" min=\"0\" max=\"120\" step=\"1\" value=\"65\" aria-label=\"Temperature\">",
+      "css": ".ds-slider{appearance:none;background:transparent;height:42px;margin:0 12px;cursor:pointer}.ds-slider:focus-visible{outline:2px solid #47B4FF;outline-offset:3px;}.ds-slider:disabled{opacity:.4}.ds-slider::-webkit-slider-runnable-track{height:8px;border-radius:4px;background:#50606D}.ds-slider::-moz-range-track{height:8px;border-radius:4px;background:#50606D}.ds-slider::-webkit-slider-thumb{box-sizing:border-box;appearance:none;width:22px;height:22px;margin-top:-7px;border:2px solid #47B4FF;border-radius:50%;background:#F4F7FA}.ds-slider::-moz-range-thumb{box-sizing:border-box;width:22px;height:22px;border:2px solid #47B4FF;border-radius:50%;background:#F4F7FA}"
+    },
+    {
+      "name": "Thermal Point Marker",
+      "kind": "custom",
+      "refersTo": "thermal-point",
+      "description": "Selected factory cold point; native pointer capture, keyboard adjustment, and removal are documented in DESIGN.md.",
+      "html": "<button class=\"ds-point\" aria-label=\"35 °C\" aria-selected=\"true\"><span class=\"ds-halo\"><span class=\"ds-color\"></span></span></button>",
+      "css": ".ds-point{display:flex;align-items:center;justify-content:center;width:28px;height:34px;padding:0;border:0;background:transparent;cursor:ew-resize}.ds-halo{box-sizing:border-box;display:flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;border:2px solid #F1F8FB;background:#171B20}.ds-color{display:block;width:12px;height:12px;border-radius:50%;background:#006BFF}.ds-point:hover .ds-halo{border-color:#47B4FF}.ds-point:focus-visible{outline:2px solid #47B4FF;outline-offset:3px;border-radius:16px}.ds-point:focus-visible .ds-halo,.ds-point[aria-selected=true] .ds-halo{border-color:#47B4FF;border-width:3px}"
+    }
+  ],
+  "narrative": {
+    "northStar": "Arctic Minimal",
+    "overview": "A calm dark blue-gray control panel follows the user's selected Arctic Minimal reference. Ice-blue controls, fully labeled navigation, bordered rounded panels, and the two-peak Arctic logo establish the visual identity. The temperature reading leads the hierarchy; hardware availability and explicit editing, testing, and saving actions remain easy to find.\n\nThis is an extraction of the current native WPF implementation. The frontmatter is normative for the documented tokens; application source remains the implementation authority. Every size in this document is a WPF device-independent unit (DIP), not a screenshot pixel measurement. WPF thickness shorthand follows horizontal,vertical or left,top,right,bottom order. Font weights map Normal to 400 and SemiBold to 600. No line-height, letter-spacing, shadow, transition duration, or tonal ramp is invented where the source does not define one.",
+    "keyCharacteristics": [
+      "Dark blue-gray canvas, rail, and tonal panels.",
+      "Ice-blue action and selection states.",
+      "Temperature colors reserved for profile and lighting data.",
+      "Native keyboard, focus, validation, modal, tray, and resizing behavior.",
+      "English and Russian resource-driven UI."
+    ],
+    "rules": [
+      {
+        "name": "The Two Palettes Rule",
+        "body": "UI accent and thermal profile colors have separate roles. Read a temperature color from the active profile and the shared color engine; do not substitute a similarly named theme brush.",
+        "section": "colors"
+      },
+      {
+        "name": "The State Plus Meaning Rule",
+        "body": "Color accompanies a label, accessible name, position, or shape change. Hardware availability, sync state, errors, and selected points must remain understandable without hue alone.",
+        "section": "colors"
+      },
+      {
+        "name": "The Reading First Rule",
+        "body": "Keep page titles, temperature values, panel headings, and supporting captions distinct. Let localized supporting copy wrap; restrict ellipsis to the intentionally bounded title-bar text and profile summary.",
+        "section": "typography"
+      },
+      {
+        "name": "The Fixed Action Rule",
+        "body": "Save, Reset, Cancel, Apply, and their current validation feedback stay in their existing footer rows. Scrolling must not hide the action that completes the current task.",
+        "section": "layout"
+      },
+      {
+        "name": "The Content Width Rule",
+        "body": "Stack dashboard and settings panels at the implemented content threshold. Retain the labeled rail, vertical scrolling, and wrapped localized text.",
+        "section": "layout"
+      },
+      {
+        "name": "The Tonal Depth Rule",
+        "body": "Use the observed surface hierarchy and outlines to separate task areas. Preserve the flat resting state; do not introduce decorative shadow tokens.",
+        "section": "elevation-and-depth"
+      },
+      {
+        "name": "The Shape Indicates Role Rule",
+        "body": "Rounded rectangles contain tasks and actions; circles represent colors, thermal anchors, switch thumbs, and the temperature instrument.",
+        "section": "shapes"
+      },
+      {
+        "name": "The Native State Rule",
+        "body": "Preserve WPF focus, validation, pointer capture, owned modal behavior, accessibility names, and the authoritative runtime/startup states when adding a screen. A visual state must describe the actual state of the application or Windows.",
+        "section": "components"
+      }
+    ],
+    "dos": [
+      "**Do** use the extracted WPF DIP tokens and the existing shared styles.",
+      "**Do** retain the fully labeled rail and measured content-width layout change.",
+      "**Do** keep primary actions and validation feedback visible while content scrolls.",
+      "**Do** derive lighting previews and temperature colors from the active profile and shared color engine.",
+      "**Do** use localized resources and verify English and Russian layouts.",
+      "**Do** preserve custom saved profiles and use the selected factory anchors only for defaults and explicit resets.",
+      "**Do** expose native focus, selected, disabled, error, and modal completion states."
+    ],
+    "donts": [
+      "**Don't** use the UI accent as a replacement for the factory cold-point color.",
+      "**Don't** treat the retired magenta midpoint as the current factory default.",
+      "**Don't** infer device capability or thermal-sync success from a decorative preview or a selected-looking switch.",
+      "**Don't** replace the sampled HSV thermal gradient with a generic RGB gradient.",
+      "**Don't** move fixed action footers inside their scroll viewers.",
+      "**Don't** introduce undocumented font metrics, tonal ramps, motion durations, or shadow values into the normative extraction."
+    ]
+  }
+}

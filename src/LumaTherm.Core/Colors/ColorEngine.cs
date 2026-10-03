@@ -64,6 +64,10 @@ public sealed class ColorEngine
     {
         var first = RgbToHsv(start);
         var second = RgbToHsv(end);
+        // Hue is undefined for grey and black. Borrow the chromatic neighbour's
+        // hue instead of taking a detour through red; black also has no saturation.
+        if (first.Saturation == 0) first = first with { Hue = second.Hue, Saturation = first.Value == 0 ? second.Saturation : first.Saturation };
+        if (second.Saturation == 0) second = second with { Hue = first.Hue, Saturation = second.Value == 0 ? first.Saturation : second.Saturation };
         var hueDelta = ((second.Hue - first.Hue + 540) % 360) - 180;
         return HsvToRgb(new Hsv(
             (first.Hue + (amount * hueDelta) + 360) % 360,

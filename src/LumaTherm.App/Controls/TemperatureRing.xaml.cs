@@ -82,13 +82,10 @@ public partial class TemperatureRing : UserControl
         if (sweep > 0.01) DrawArc(drawingContext, center, radius, 135, sweep, valuePen);
 
         var marker = PointOnCircle(center, radius, 135 + sweep);
-        drawingContext.DrawEllipse(new SolidColorBrush(Color.FromArgb(44, color.R, color.G, color.B)), null, marker, 11, 11);
-        drawingContext.DrawEllipse(new SolidColorBrush(color), new Pen(new SolidColorBrush(Color.FromRgb(0xEE, 0xF4, 0xF8)), 3), marker, 7, 7);
-
         var dpi = VisualTreeHelper.GetDpi(this).PixelsPerDip;
-        var valueText = double.IsFinite(Temperature) ? $"{Temperature:0.#}°" : "—°";
-        DrawCenteredText(drawingContext, valueText, center.Y - 31, 44, FontWeights.SemiBold, Color.FromRgb(0xEE, 0xF4, 0xF8), dpi);
-        DrawCenteredText(drawingContext, NowLabel, center.Y + 21, 10, FontWeights.Normal, Color.FromRgb(0x92, 0x9C, 0xA5), dpi);
+        var valueText = double.IsFinite(Temperature) ? $"{Temperature:0.#}°C" : "—°C";
+        DrawCenteredText(drawingContext, valueText, center.Y - 23, 26, FontWeights.SemiBold, Color.FromRgb(0xEE, 0xF4, 0xF8), dpi);
+        DrawCenteredText(drawingContext, NowLabel, center.Y + 13, 12, FontWeights.Normal, Color.FromRgb(0xAE, 0xBA, 0xC4), dpi);
     }
 
     private static Pen RoundedPen(Brush brush, double thickness) => new(brush, thickness)

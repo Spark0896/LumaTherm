@@ -30,21 +30,31 @@ public sealed class ThermalCoreRuntimeTests
     private readonly ThermalCoreStaFixture _sta;
 
     public ThermalCoreRuntimeTests(ThermalCoreStaFixture sta) => _sta = sta;
+    [Fact]
+    public void DenseProfileLabelsRemainReadableAtCompactWidth() => _sta.Run(() =>
+    {
+        var profile = ThermalProfile.Create(new[] { 20d, 64, 65, 66, 85 }.Select(temperature => new ThermalPoint(temperature, new RgbColor(0, 255, 0))), 0.8);
+        var bar = Arrange(new ThermalGradientBar { Profile = profile }, 240, 100);
+        _ = RenderChecksum(bar, 240, 100);
+        Assert.InRange(bar.RenderedLabelBounds.Count, 2, 4);
+        for (var index = 1; index < bar.RenderedLabelBounds.Count; index++)
+            Assert.True(bar.RenderedLabelBounds[index].Left >= bar.RenderedLabelBounds[index - 1].Right + 9);
+    });
 
     [Fact]
     public void Theme_ResolvesExactColorsAndFrozenBrushesAtRuntime() => _sta.Run(() =>
     {
         var expected = new Dictionary<string, string>
         {
-            ["WindowBackground"] = "#FF161B21",
-            ["RailBackground"] = "#FF0F1419",
-            ["PanelBackground"] = "#FF20272F",
-            ["PanelSecondary"] = "#FF1A2128",
+            ["WindowBackground"] = "#FF131D25",
+            ["RailBackground"] = "#FF14212B",
+            ["PanelBackground"] = "#FF202D37",
+            ["PanelSecondary"] = "#FF182630",
             ["PrimaryText"] = "#FFF4F7FA",
             ["SecondaryText"] = "#FFD5DDE3",
             ["MutedText"] = "#FFAEBAC4",
-            ["ColdColor"] = "#FF55CBFF",
-            ["WarmColor"] = "#FFE066FF",
+            ["ColdColor"] = "#FF47B4FF",
+            ["WarmColor"] = "#FF3CFF00",
             ["HotColor"] = "#FFFF5D65",
             ["SuccessColor"] = "#FF61DDA6",
         };
@@ -60,17 +70,12 @@ public sealed class ThermalCoreRuntimeTests
     });
 
     [Fact]
-    public void Logo_RuntimeDrawingKeepsExactSuppliedCircleAndBladeGeometry() => _sta.Run(() =>
+    public void Logo_UsesTwoArcticPeaks() => _sta.Run(() =>
     {
         var drawing = Assert.IsType<DrawingGroup>(Application.Current.Resources["LogoDrawing"]);
-        var ring = Assert.IsType<EllipseGeometry>(Assert.IsType<GeometryDrawing>(drawing.Children[0]).Geometry);
-
-        Assert.Equal(new Point(24, 24), ring.Center);
-        Assert.Equal(20, ring.RadiusX);
-        Assert.Equal(20, ring.RadiusY);
-        Assert.Same(Application.Current.Resources["LogoBladeOneGeometry"], Assert.IsType<GeometryDrawing>(drawing.Children[1]).Geometry);
-        Assert.Same(Application.Current.Resources["LogoBladeTwoGeometry"], Assert.IsType<GeometryDrawing>(drawing.Children[2]).Geometry);
-        Assert.Same(Application.Current.Resources["LogoBladeThreeGeometry"], Assert.IsType<GeometryDrawing>(drawing.Children[3]).Geometry);
+        Assert.Equal(2, drawing.Children.Count);
+        Assert.Same(Application.Current.Resources["LogoBladeOneGeometry"], ((GeometryDrawing)drawing.Children[0]).Geometry);
+        Assert.Same(Application.Current.Resources["LogoBladeTwoGeometry"], ((GeometryDrawing)drawing.Children[1]).Geometry);
     });
 
     [Fact]
@@ -234,9 +239,9 @@ public sealed class ThermalCoreRuntimeTests
             HotColor = new RgbColor(0xFF, 0x56, 0x5D),
         }, 600, 100);
 
-        Assert.Equal(3, bar.RenderedStops.Count);
+        Assert.Equal(241, bar.RenderedStops.Count);
         Assert.Equal(["35°", "65°", "85°"], bar.RenderedLabels);
-        Assert.Equal([Color.FromRgb(0x50, 0xC8, 0xFF), Color.FromRgb(0xFF, 0xC6, 0x4A), Color.FromRgb(0xFF, 0x56, 0x5D)], bar.RenderedStops.Select(stop => stop.Color));
+        Assert.Equal([Color.FromRgb(0x50, 0xC8, 0xFF), Color.FromRgb(0xFF, 0xC6, 0x4A), Color.FromRgb(0xFF, 0x56, 0x5D)], new[] { bar.RenderedStops[0].Color, bar.RenderedStops[144].Color, bar.RenderedStops[^1].Color });
         Assert.NotEqual(BlankChecksum(600, 100), RenderChecksum(bar, 600, 100));
     });
 
@@ -247,9 +252,9 @@ public sealed class ThermalCoreRuntimeTests
             [new(20, new(0, 0, 255)), new(40, new(0, 255, 255)), new(60, new(0, 255, 0)), new(80, new(255, 0, 0))], 0.8);
         var bar = Arrange(new ThermalGradientBar { Profile = profile }, 600, 100);
 
-        Assert.Equal(4, bar.RenderedStops.Count);
-        Assert.Equal([0d, 1d / 3, 2d / 3, 1d], bar.RenderedStops.Select(stop => stop.Offset));
-        Assert.Equal([Color.FromRgb(0, 0, 255), Color.FromRgb(0, 255, 255), Color.FromRgb(0, 255, 0), Color.FromRgb(255, 0, 0)], bar.RenderedStops.Select(stop => stop.Color));
+        Assert.Equal(241, bar.RenderedStops.Count);
+        Assert.Equal([0d, 1d / 3, 2d / 3, 1d], new[] { bar.RenderedStops[0].Offset, bar.RenderedStops[80].Offset, bar.RenderedStops[160].Offset, bar.RenderedStops[240].Offset });
+        Assert.Equal([Color.FromRgb(0, 0, 255), Color.FromRgb(0, 255, 255), Color.FromRgb(0, 255, 0), Color.FromRgb(255, 0, 0)], new[] { bar.RenderedStops[0].Color, bar.RenderedStops[80].Color, bar.RenderedStops[160].Color, bar.RenderedStops[240].Color });
     });
 
     [Fact]
@@ -279,14 +284,16 @@ public sealed class ThermalCoreRuntimeTests
 
 
     [Fact]
-    public void Sparkline_UsesEveryPointFromItsProfileGradient() => _sta.Run(() =>
+    public void Sparkline_UsesActualTimeSpacingAndStableTemperatureScale() => _sta.Run(() =>
     {
-        var profile = ThermalProfile.Create(
-            [new(20, new(0, 0, 255)), new(40, new(0, 255, 255)), new(60, new(0, 255, 0)), new(80, new(255, 0, 0))], 0.8);
-        var sparkline = new TemperatureSparkline { Profile = profile };
-
-        Assert.Equal(4, sparkline.RenderedStops.Count);
-        Assert.Equal([Color.FromRgb(0, 0, 255), Color.FromRgb(0, 255, 255), Color.FromRgb(0, 255, 0), Color.FromRgb(255, 0, 0)], sparkline.RenderedStops.Select(stop => stop.Color));
+        var sparkline = Arrange(new TemperatureSparkline { ItemsSource = new[] {
+            new TemperaturePoint(DateTimeOffset.UnixEpoch, 0),
+            new TemperaturePoint(DateTimeOffset.UnixEpoch.AddSeconds(15), 60),
+            new TemperaturePoint(DateTimeOffset.UnixEpoch.AddSeconds(60), 120),
+        } }, 634, 132);
+        Assert.Equal(new Point(30, 126), sparkline.ProjectedPoints[0]);
+        Assert.Equal(new Point(180, 66), sparkline.ProjectedPoints[1]);
+        Assert.Equal(new Point(630, 6), sparkline.ProjectedPoints[2]);
     });
 
     [Fact]
@@ -346,8 +353,8 @@ public sealed class ThermalCoreRuntimeTests
 
     [Theory]
     [InlineData(1104, false)]
-    [InlineData(900, true)]
-    public void Dashboard_ReflowsAtNineHundredEightyPixels(double width, bool compact) => _sta.Run(() =>
+    [InlineData(800, true)]
+    public void Dashboard_ReflowsAtEightHundredTwentyPixels(double width, bool compact) => _sta.Run(() =>
     {
         using var vm = new MainViewModel(new FakeRuntime());
         var view = Arrange(new DashboardView { DataContext = vm }, width, compact ? 1050 : 652);
@@ -360,10 +367,10 @@ public sealed class ThermalCoreRuntimeTests
     });
 
     [Theory]
-    [InlineData(979, 552, true)]
-    [InlineData(980, 652, false)]
-    [InlineData(981, 652, false)]
-    [InlineData(884, 552, true)]
+    [InlineData(819, 552, true)]
+    [InlineData(820, 652, false)]
+    [InlineData(821, 652, false)]
+    [InlineData(740, 552, true)]
     public void Dashboard_BoundaryAndMinimumClientKeepEveryPersistentElementInLayout(double width, double height, bool compact) => _sta.Run(() =>
     {
         using var vm = new MainViewModel(new FakeRuntime());
@@ -401,6 +408,7 @@ public sealed class ThermalCoreRuntimeTests
         using var vm = new MainViewModel(runtime, new DispatcherSynchronizationContext(Dispatcher.CurrentDispatcher));
         var view = Arrange(new DashboardView { DataContext = vm }, 1104, 652);
         var gradient = Assert.IsType<ThermalGradientBar>(view.FindName("ProfileGradientBar"));
+        view.HistorySparkline.RaiseEvent(new RoutedEventArgs(FrameworkElement.LoadedEvent));
         var gradientWidth = Math.Max(1, (int)Math.Round(gradient.ActualWidth));
         var gradientHeight = Math.Max(1, (int)Math.Round(gradient.ActualHeight));
         var historyWidth = Math.Max(1, (int)Math.Round(view.HistorySparkline.ActualWidth));
@@ -430,9 +438,10 @@ public sealed class ThermalCoreRuntimeTests
         using var vm = new MainViewModel(new FakeRuntime());
         var view = Arrange(new DashboardView { DataContext = vm }, 1104, 652);
 
-        Assert.Equal("#006BFF", Assert.IsType<TextBlock>(view.FindName("ColdColorText")).Text);
-        Assert.Equal("#D000FF", Assert.IsType<TextBlock>(view.FindName("WarmColorText")).Text);
-        Assert.Equal("#FF0000", Assert.IsType<TextBlock>(view.FindName("HotColorText")).Text);
+        var summary = Assert.IsType<TextBlock>(view.FindName("ProfilePointsSummaryText")).Text;
+        Assert.Contains("35° #006BFF", summary);
+        Assert.Contains("65° #3CFF00", summary);
+        Assert.Contains("85° #FF0000", summary);
     });
 
     [Fact]
@@ -459,7 +468,7 @@ public sealed class ThermalCoreRuntimeTests
     });
 
     [Fact]
-    public void ApprovedVisualLayersResolveAsCompiledWpfElementsAndBrushes() => _sta.Run(() =>
+    public void NavigationSelectionIsVisibleAndFollowsTheActiveView() => _sta.Run(() =>
     {
         using var vm = new MainViewModel(new FakeRuntime());
         var shell = new MainWindow { DataContext = vm };
@@ -467,91 +476,37 @@ public sealed class ThermalCoreRuntimeTests
         {
             Arrange(Assert.IsType<Border>(shell.Content), 1180, 720);
             var workspace = Assert.IsType<Grid>(shell.FindName("WorkspaceSurface"));
-            var workspaceBrush = Assert.IsType<LinearGradientBrush>(workspace.Background);
-            Assert.Equal(Color.FromRgb(0x1B, 0x20, 0x25), workspaceBrush.GradientStops[0].Color);
-            Assert.Equal(Color.FromRgb(0x15, 0x19, 0x1D), workspaceBrush.GradientStops[1].Color);
-            Assert.Equal(0.65, workspaceBrush.GradientStops[1].Offset);
-
+            Assert.Same(Application.Current.Resources["WindowBackgroundBrush"], workspace.Background);
             var indicator = Assert.IsType<Border>(shell.FindName("HomeSelectionIndicator"));
-            Assert.Equal(3, indicator.Width);
-            Assert.Equal(24, indicator.Height);
-            Assert.Equal(Color.FromRgb(0x55, 0xCB, 0xFF), Assert.IsType<SolidColorBrush>(indicator.Background).Color);
-            var glow = Assert.IsType<DropShadowEffect>(indicator.Effect);
-            Assert.Equal(Color.FromRgb(0x55, 0xCB, 0xFF), glow.Color);
-            Assert.Equal(0, glow.ShadowDepth);
-            Assert.Equal(12, glow.BlurRadius);
+            Assert.Equal(2, indicator.Width);
+            Assert.Equal(26, indicator.Height);
+            Assert.Same(Application.Current.Resources["ColdColorBrush"], indicator.Background);
+            Assert.Null(indicator.Effect);
             var settingsIndicator = Assert.IsType<Border>(shell.FindName("SettingsSelectionIndicator"));
             Assert.Equal(Visibility.Collapsed, settingsIndicator.Visibility);
             Assert.IsType<Button>(shell.FindName("SettingsButton")).Command.Execute(null);
             Assert.Equal(Visibility.Collapsed, indicator.Visibility);
             Assert.Equal(Visibility.Visible, settingsIndicator.Visibility);
-
-            var dashboard = Arrange(new DashboardView { DataContext = vm }, 1104, 652);
-            var temperatureGlow = Assert.IsType<Ellipse>(dashboard.FindName("TemperatureCardGlow"));
-            var radial = Assert.IsType<RadialGradientBrush>(temperatureGlow.Fill);
-            Assert.Equal(Color.FromArgb(0x24, 0x55, 0xCB, 0xFF), radial.GradientStops[0].Color);
-            Assert.Equal(0, radial.GradientStops[^1].Color.A);
         }
-        finally
-        {
-            shell.Close();
-        }
-    });
-
-    [Theory]
-    [InlineData(1104, 720, 0.182294282442410, -0.195720540466015, 0.817705717557590, 1.195720540466020)]
-    [InlineData(884, 620, 0.170739926983209, -0.170459986143814, 0.829260073016791, 1.170459986143810)]
-    public void WorkspaceGradient_UsesCssOneHundredFortyFiveDegreeGeometry(
-        double width,
-        double height,
-        double expectedStartX,
-        double expectedStartY,
-        double expectedEndX,
-        double expectedEndY) => _sta.Run(() =>
-    {
-        using var vm = new MainViewModel(new FakeRuntime());
-        var shell = new MainWindow { DataContext = vm };
-        try
-        {
-            var workspace = Assert.IsType<Grid>(shell.FindName("WorkspaceSurface"));
-            Arrange(workspace, width, height);
-            var brush = Assert.IsType<LinearGradientBrush>(workspace.Background);
-
-            Assert.Equal(expectedStartX, brush.StartPoint.X, 12);
-            Assert.Equal(expectedStartY, brush.StartPoint.Y, 12);
-            Assert.Equal(expectedEndX, brush.EndPoint.X, 12);
-            Assert.Equal(expectedEndY, brush.EndPoint.Y, 12);
-
-            var physicalX = (brush.EndPoint.X - brush.StartPoint.X) * width;
-            var physicalY = (brush.EndPoint.Y - brush.StartPoint.Y) * height;
-            Assert.Equal(0.573576436351046, physicalX / Math.Sqrt((physicalX * physicalX) + (physicalY * physicalY)), 12);
-            Assert.Equal(0.819152044288992, physicalY / Math.Sqrt((physicalX * physicalX) + (physicalY * physicalY)), 12);
-            Assert.Equal(Color.FromRgb(0x1B, 0x20, 0x25), brush.GradientStops[0].Color);
-            Assert.Equal(Color.FromRgb(0x15, 0x19, 0x1D), brush.GradientStops[1].Color);
-            Assert.Equal(0.65, brush.GradientStops[1].Offset);
-        }
-        finally
-        {
-            shell.Close();
-        }
+        finally { shell.Close(); }
     });
 
     [Fact]
-    public void Sparkline_RendersAmberAreaBelowActualLine() => _sta.Run(() =>
+    public void Sparkline_RendersBlueAreaBelowActualLine() => _sta.Run(() =>
     {
         var points = new ObservableCollection<TemperaturePoint>
         {
             new(DateTimeOffset.UnixEpoch, 60),
-            new(DateTimeOffset.UnixEpoch.AddSeconds(1), 60),
-            new(DateTimeOffset.UnixEpoch.AddSeconds(2), 60),
+            new(DateTimeOffset.UnixEpoch.AddSeconds(30), 60),
+            new(DateTimeOffset.UnixEpoch.AddSeconds(60), 60),
         };
         var sparkline = Arrange(new TemperatureSparkline { ItemsSource = points }, 520, 107);
 
         var belowLine = RenderPixel(sparkline, 520, 107, 260, 80);
 
         Assert.True(belowLine.A > 0);
-        Assert.True(belowLine.R > belowLine.B);
-        Assert.True(belowLine.G > belowLine.B);
+        Assert.True(belowLine.B > belowLine.R);
+        Assert.True(belowLine.B > belowLine.G);
     });
 
     private static T Arrange<T>(T element, double width, double height) where T : FrameworkElement

@@ -8,7 +8,7 @@ namespace LumaTherm.Smoke;
 public static class SmokeCommand
 {
     private static readonly TimeSpan CleanupTimeout = TimeSpan.FromSeconds(2);
-    private static readonly RgbColor[] CycleColors = [new(0x00, 0x6B, 0xFF), new(0xD0, 0x00, 0xFF), new(0xFF, 0x00, 0x00)];
+    private static readonly RgbColor[] CycleColors = ThermalProfile.Default.Points.Select(point => point.Color).ToArray();
 
     public static Task<int> RunAsync(string[] arguments, ITemperatureProvider normal, ITemperatureProvider fallback, ILightingController lights, TextWriter output, TextReader input, CancellationToken cancellationToken) =>
         RunAsync(arguments, normal, fallback, lights, output, TextWriter.Null, input, cancellationToken);

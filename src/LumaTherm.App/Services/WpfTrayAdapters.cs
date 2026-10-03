@@ -28,5 +28,9 @@ public sealed class WpfTrayApplication : ITrayApplication
         _application = application ?? WpfApplication.Current;
     }
 
-    public void RequestShutdown() => _application.Dispatcher.BeginInvoke((Action)_application.Shutdown);
+    public void RequestShutdown() => _application.Dispatcher.BeginInvoke((Action)(() =>
+    {
+        if (_application is App app) app.RequestShutdown();
+        else _application.Shutdown();
+    }));
 }

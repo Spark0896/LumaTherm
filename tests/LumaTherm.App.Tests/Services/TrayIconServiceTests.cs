@@ -138,6 +138,26 @@ public sealed class TrayIconServiceTests
 
 
     [Fact]
+    public void NotifyPlatform_TemperatureUpdatesKeepTheMenuAndClickableItemsAlive()
+    {
+        _sta.Run(() =>
+        {
+            var icon = new Forms.NotifyIcon();
+            using var platform = new NotifyIconTrayPlatform((Icon)SystemIcons.Application.Clone(), icon);
+            platform.MenuState = new("LumaTherm · 48°C", "device",
+                [new(TrayCommandKind.Temperature, "48°C", false), new(TrayCommandKind.Open, "Open", true), new(TrayCommandKind.Exit, "Exit", true)]);
+            var menu = icon.ContextMenuStrip;
+            var open = menu!.Items[1];
+            platform.MenuState = new("LumaTherm · 49°C", "device",
+                [new(TrayCommandKind.Temperature, "49°C", false), new(TrayCommandKind.Open, "Open", true), new(TrayCommandKind.Exit, "Exit", true)]);
+            Assert.Same(menu, icon.ContextMenuStrip);
+            Assert.Same(open, icon.ContextMenuStrip!.Items[1]);
+            Assert.False(open.IsDisposed);
+            Assert.Equal("49°C", menu.Items[0].Text);
+        });
+    }
+
+    [Fact]
     public void NotifyPlatform_RebuildsFreshTypedMenuAndDisposesReplacedAndCurrentItems()
     {
         _sta.Run(() =>

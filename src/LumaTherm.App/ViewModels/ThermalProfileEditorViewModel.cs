@@ -25,8 +25,7 @@ public sealed class ThermalProfileEditorViewModel
 
         var snapshot = ThermalProfile.Create(Points.Select(ToThermalPoint), smoothingSeconds: 0.8);
         var point = new ThermalPointEditorViewModel(Guid.NewGuid(), temperature, new ColorEngine(snapshot, temperature).Map(temperature));
-        Points.Add(point);
-        SortPoints();
+        Points.Insert(Points.TakeWhile(existing => existing.Temperature < temperature).Count(), point);
         Select(point.Id);
         return point;
     }
@@ -67,7 +66,9 @@ public sealed class ThermalProfileEditorViewModel
             return;
         }
 
+        var wasSelected = Points[index].IsSelected;
         Points.RemoveAt(index);
+        if (wasSelected) Select(Points[Math.Min(index, Points.Count - 1)].Id);
     }
 
     public void Select(Guid id)
@@ -79,7 +80,7 @@ public sealed class ThermalProfileEditorViewModel
     }
 
     public ThermalProfile BuildProfile(double smoothingSeconds) =>
-        ThermalProfile.Create(Points.Select(ToThermalPoint), smoothingSeconds);
+        ThermalProfile.Create(Points.OrderBy(point => point.Temperature).Select(ToThermalPoint), smoothingSeconds);
 
     public void ResetToDefault() => Load(ThermalProfile.Default);
 
