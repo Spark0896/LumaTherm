@@ -33,8 +33,8 @@ public sealed class PackagingProjectTests
         var assembly = typeof(PackagingProjectTests).Assembly;
         var fileVersion = FileVersionInfo.GetVersionInfo(assembly.Location);
 
-        Assert.Equal("1.1.0", fileVersion.ProductVersion);
-        Assert.Equal("1.1.0.0", fileVersion.FileVersion);
+        Assert.Equal("1.2.0", fileVersion.ProductVersion);
+        Assert.Equal("1.2.0.0", fileVersion.FileVersion);
     }
 
 }

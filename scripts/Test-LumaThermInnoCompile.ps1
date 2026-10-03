@@ -10,7 +10,7 @@ $ErrorActionPreference = 'Stop'
 
 $officialUri = 'https://github.com/jrsoftware/issrc/releases/download/is-6_7_3/innosetup-6.7.3.exe'
 $officialSha256 = '9c73c3bae7ed48d44112a0f48e66742c00090bdb5bef71d9d3c056c66e97b732'
-$expectedSetupName = 'LumaTherm-1.1.0-win-x64-setup.exe'
+$expectedSetupName = 'LumaTherm-1.2.0-win-x64-setup.exe'
 $validationRoot = $null
 $validationResult = $null
 $portableProcess = $null

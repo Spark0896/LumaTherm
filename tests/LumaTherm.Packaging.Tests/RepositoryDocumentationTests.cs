@@ -29,14 +29,14 @@ public sealed class RepositoryDocumentationTests
     ];
 
     [Fact]
-    public void OpenSourceReleaseDocuments_exist_and_describe_the_1_1_0_contract()
+    public void OpenSourceReleaseDocuments_exist_and_describe_the_1_2_0_contract()
     {
         var root = RepositoryLayout.Root;
         var missing = RequiredFiles.Where(path => !File.Exists(Path.Combine(root, path))).ToArray();
         Assert.True(missing.Length == 0, $"Missing repository documentation: {string.Join(", ", missing)}");
 
         var readme = File.ReadAllText(Path.Combine(root, "README.md"));
-        Assert.Contains("1.1.0", readme, StringComparison.Ordinal);
+        Assert.Contains("1.2.0", readme, StringComparison.Ordinal);
         Assert.Contains("https://github.com/Spark0896/LumaTherm", readme, StringComparison.Ordinal);
         Assert.DoesNotContain("controller-gated package", readme, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("hardware checks pending", readme, StringComparison.OrdinalIgnoreCase);

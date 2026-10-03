@@ -32,9 +32,9 @@ public sealed class ReleaseScriptTests
         Assert.True(result.ExitCode == 0, result.StandardError + result.StandardOutput);
         using var json = JsonDocument.Parse(result.StandardOutput);
         var root = json.RootElement;
-        Assert.Equal("LumaTherm-1.1.0-win-x64-setup.exe", root.GetProperty("setupName").GetString());
-        Assert.Equal("LumaTherm-1.1.0-portable-win-x64.zip", root.GetProperty("portableZipName").GetString());
-        Assert.Equal("LumaTherm-1.1.0-sparse.msix", root.GetProperty("sparsePackageName").GetString());
+        Assert.Equal("LumaTherm-1.2.0-win-x64-setup.exe", root.GetProperty("setupName").GetString());
+        Assert.Equal("LumaTherm-1.2.0-portable-win-x64.zip", root.GetProperty("portableZipName").GetString());
+        Assert.Equal("LumaTherm-1.2.0-sparse.msix", root.GetProperty("sparsePackageName").GetString());
         Assert.Equal("{9F6F5FEA-A89E-4D1C-9D0C-6C7C9FB5D310}", root.GetProperty("stableAppId").GetString());
         Assert.Empty(root.GetProperty("privateKeyOutputs").EnumerateArray());
         Assert.All(root.GetProperty("forbiddenSideEffects").EnumerateObject(), property => Assert.False(property.Value.GetBoolean(), property.Name));
@@ -55,6 +55,24 @@ public sealed class ReleaseScriptTests
         Assert.Contains(root.GetProperty("fullBuildWriteRoots").EnumerateArray(), value => value.GetString()!.EndsWith("src\\LumaTherm.App\\obj", StringComparison.OrdinalIgnoreCase));
         Assert.Contains(root.GetProperty("fullBuildWriteRoots").EnumerateArray(), value => value.GetString()!.EndsWith("tests\\LumaTherm.Packaging.Tests\\bin", StringComparison.OrdinalIgnoreCase));
         Assert.Contains(root.GetProperty("cacheWriteRoots").EnumerateArray(), value => value.GetString()!.EndsWith(".nuget\\packages", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void PlanAcceptsExplicitPortableCompilerWithoutEnablingTestOverridesOrExecutingIt()
+    {
+        using var fixture = ReleaseFixture.Create();
+        var result = PowerShellTestHost.Run(Path.Combine(RepositoryLayout.Root, "scripts", "build-release.ps1"),
+            new[] { "-Mode", "Plan", "-InnoSetupPath", fixture.IsccPath },
+            environment: new Dictionary<string, string> { ["LUMATHERM_PACKAGING_TEST"] = "0" },
+            invokeViaCommand: true);
+
+        Assert.True(result.ExitCode == 0, result.StandardError + result.StandardOutput);
+        using var json = JsonDocument.Parse(result.StandardOutput);
+        var compiler = json.RootElement.GetProperty("tools").GetProperty("ISCC");
+        Assert.Equal(fixture.IsccPath, compiler.GetProperty("path").GetString());
+        Assert.True(compiler.GetProperty("available").GetBoolean());
+        Assert.False(json.RootElement.GetProperty("forbiddenSideEffects").GetProperty("processStart").GetBoolean());
+        Assert.False(Directory.Exists(Path.Combine(fixture.RepositoryRoot, "dist")));
     }
 
     [Fact]
@@ -136,19 +154,19 @@ public sealed class ReleaseScriptTests
         var publish = Path.Combine(fixture.Root, "published");
         Directory.CreateDirectory(publish);
         File.WriteAllText(Path.Combine(publish, "LumaTherm.exe"), "signed app");
-        var sparse = Path.Combine(fixture.Root, "LumaTherm-1.1.0-sparse.msix");
+        var sparse = Path.Combine(fixture.Root, "LumaTherm-1.2.0-sparse.msix");
         File.WriteAllText(sparse, "signed sparse package");
         var certificate = Path.Combine(fixture.Root, "LumaTherm.cer");
         File.WriteAllText(certificate, "public cert");
 
         var first = fixture.Run("-Mode", "AssemblePortable", "-PublishedAppPath", publish, "-SparsePackagePath", sparse, "-CertificatePublicPath", certificate);
         Assert.Equal(0, first.ExitCode);
-        var zip = Path.Combine(fixture.RepositoryRoot, "dist", "LumaTherm-1.1.0-portable-win-x64.zip");
+        var zip = Path.Combine(fixture.RepositoryRoot, "dist", "LumaTherm-1.2.0-portable-win-x64.zip");
         var firstHash = SHA256.HashData(File.ReadAllBytes(zip));
         using (var archive = ZipFile.OpenRead(zip))
         {
             var names = archive.Entries.Select(entry => entry.FullName).OrderBy(name => name, StringComparer.Ordinal).ToArray();
-            Assert.Equal(new[] { "LICENSE", "LumaTherm-1.1.0-sparse.msix", "LumaTherm.cer", "README.md", "Register-LumaTherm.cmd", "Register-LumaTherm.ps1", "SHA256SUMS.txt", "Unregister-LumaTherm.ps1", "app/LumaTherm.exe" }, names);
+            Assert.Equal(new[] { "LICENSE", "LumaTherm-1.2.0-sparse.msix", "LumaTherm.cer", "README.md", "Register-LumaTherm.cmd", "Register-LumaTherm.ps1", "SHA256SUMS.txt", "Unregister-LumaTherm.ps1", "app/LumaTherm.exe" }, names);
         }
 
         var second = fixture.Run("-Mode", "AssemblePortable", "-PublishedAppPath", publish, "-SparsePackagePath", sparse, "-CertificatePublicPath", certificate);
@@ -163,7 +181,7 @@ public sealed class ReleaseScriptTests
         Directory.CreateDirectory(publish);
         File.WriteAllText(Path.Combine(publish, "LumaTherm.exe"), "signed app");
         File.WriteAllText(Path.Combine(publish, "unexpected.dll"), "not anchored");
-        var sparse = Path.Combine(fixture.Root, "LumaTherm-1.1.0-sparse.msix");
+        var sparse = Path.Combine(fixture.Root, "LumaTherm-1.2.0-sparse.msix");
         File.WriteAllText(sparse, "signed sparse package");
         var certificate = Path.Combine(fixture.Root, "LumaTherm.cer");
         File.WriteAllText(certificate, "public cert");
@@ -172,7 +190,7 @@ public sealed class ReleaseScriptTests
 
         Assert.NotEqual(0, result.ExitCode);
         Assert.Contains("unexpected published", result.StandardError + result.StandardOutput, StringComparison.OrdinalIgnoreCase);
-        Assert.False(File.Exists(Path.Combine(fixture.RepositoryRoot, "dist", "LumaTherm-1.1.0-portable-win-x64.zip")));
+        Assert.False(File.Exists(Path.Combine(fixture.RepositoryRoot, "dist", "LumaTherm-1.2.0-portable-win-x64.zip")));
     }
 
 
@@ -182,13 +200,13 @@ public sealed class ReleaseScriptTests
         using var fixture = ReleaseFixture.Create();
         var dist = Path.Combine(fixture.RepositoryRoot, "dist");
         Directory.CreateDirectory(dist);
-        File.WriteAllText(Path.Combine(dist, "LumaTherm-1.1.0-win-x64-setup.exe"), "setup");
-        File.WriteAllText(Path.Combine(dist, "LumaTherm-1.1.0-portable-win-x64.zip"), "zip");
+        File.WriteAllText(Path.Combine(dist, "LumaTherm-1.2.0-win-x64-setup.exe"), "setup");
+        File.WriteAllText(Path.Combine(dist, "LumaTherm-1.2.0-portable-win-x64.zip"), "zip");
         var result = fixture.Run("-Mode", "EmitChecksums");
         Assert.Equal(0, result.ExitCode);
         var lines = File.ReadAllLines(Path.Combine(dist, "SHA256SUMS.txt"));
         Assert.Equal(2, lines.Length);
-        Assert.Equal(new[] { "LumaTherm-1.1.0-portable-win-x64.zip", "LumaTherm-1.1.0-win-x64-setup.exe" }, lines.Select(line => line[(line.IndexOf(" *", StringComparison.Ordinal) + 2)..]).ToArray());
+        Assert.Equal(new[] { "LumaTherm-1.2.0-portable-win-x64.zip", "LumaTherm-1.2.0-win-x64-setup.exe" }, lines.Select(line => line[(line.IndexOf(" *", StringComparison.Ordinal) + 2)..]).ToArray());
         Assert.All(lines, line => Assert.Matches("^[0-9A-F]{64} \\*[^\\\\/]+$", line));
     }
 

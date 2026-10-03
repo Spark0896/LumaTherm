@@ -95,10 +95,10 @@ public sealed class Task14SecurityRegressionTests
     public void ExactSingleSameVersionIdentityIsRemovedImmediatelyBeforeRegistration()
     {
         using var fixture = SecurePortableFixture.Create();
-        const string fullName = "LumaTherm_1.1.0.0_x64__exact";
+        const string fullName = "LumaTherm_1.2.0.0_x64__exact";
         var inventory = JsonSerializer.Serialize(new[]
         {
-            new { Name = "LumaTherm", Publisher = "CN=LumaTherm Local", Version = "1.1.0.0", PackageFullName = fullName },
+            new { Name = "LumaTherm", Publisher = "CN=LumaTherm Local", Version = "1.2.0.0", PackageFullName = fullName },
         });
         var arguments = fixture.ExactPostRegistrationArguments().Concat(new[] { "-PreRegistrationPackagesJsonForTest", inventory }).ToArray();
 
@@ -115,9 +115,9 @@ public sealed class Task14SecurityRegressionTests
     [Theory]
     [InlineData("[]")]
     [InlineData("[{\"Name\":\"LumaTherm\",\"Publisher\":\"CN=LumaTherm Local\",\"Version\":\"1.0.1.0\",\"PackageFullName\":\"older\"}]")]
-    [InlineData("[{\"Name\":\"LumaTherm\",\"Publisher\":\"CN=Other\",\"Version\":\"1.1.0.0\",\"PackageFullName\":\"otherPublisher\"}]")]
-    [InlineData("[{\"Name\":\"LumaTherm.Helper\",\"Publisher\":\"CN=LumaTherm Local\",\"Version\":\"1.1.0.0\",\"PackageFullName\":\"lookalike\"}]")]
-    [InlineData("[{\"Name\":\"LumaTherm\",\"Publisher\":\"CN=LumaTherm Local\",\"Version\":\"1.1.0.0\",\"PackageFullName\":\"one\"},{\"Name\":\"LumaTherm\",\"Publisher\":\"CN=LumaTherm Local\",\"Version\":\"1.1.0.0\",\"PackageFullName\":\"two\"}]")]
+    [InlineData("[{\"Name\":\"LumaTherm\",\"Publisher\":\"CN=Other\",\"Version\":\"1.2.0.0\",\"PackageFullName\":\"otherPublisher\"}]")]
+    [InlineData("[{\"Name\":\"LumaTherm.Helper\",\"Publisher\":\"CN=LumaTherm Local\",\"Version\":\"1.2.0.0\",\"PackageFullName\":\"lookalike\"}]")]
+    [InlineData("[{\"Name\":\"LumaTherm\",\"Publisher\":\"CN=LumaTherm Local\",\"Version\":\"1.2.0.0\",\"PackageFullName\":\"one\"},{\"Name\":\"LumaTherm\",\"Publisher\":\"CN=LumaTherm Local\",\"Version\":\"1.2.0.0\",\"PackageFullName\":\"two\"}]")]
     public void FreshUpgradeUnknownAndAmbiguousInventoriesRemoveNothing(string inventory)
     {
         using var fixture = SecurePortableFixture.Create();
@@ -136,7 +136,7 @@ public sealed class Task14SecurityRegressionTests
         using var fixture = SecurePortableFixture.Create();
         var inventory = JsonSerializer.Serialize(new[]
         {
-            new { Name = "LumaTherm", Publisher = "CN=LumaTherm Local", Version = "1.1.0.0", PackageFullName = "LumaTherm_1.1.0.0_x64__exact" },
+            new { Name = "LumaTherm", Publisher = "CN=LumaTherm Local", Version = "1.2.0.0", PackageFullName = "LumaTherm_1.2.0.0_x64__exact" },
         });
         var arguments = fixture.ExactPostRegistrationArguments().Concat(new[]
         {
@@ -157,7 +157,7 @@ public sealed class Task14SecurityRegressionTests
     [Theory]
     [InlineData("-InstalledPackageNameForTest", "LumaTherm.Lookalike")]
     [InlineData("-InstalledPublisherForTest", "CN=Other")]
-    [InlineData("-InstalledVersionForTest", "1.1.0.1")]
+    [InlineData("-InstalledVersionForTest", "1.2.0.1")]
     [InlineData("-InstalledExternalLocationForTest", "C:\\elsewhere")]
     [InlineData("-InstalledApplicationIdForTest", "OtherApp")]
     [InlineData("-InstalledExtensionForTest", "com.example.unrelated")]
@@ -253,8 +253,8 @@ public sealed class Task14SecurityRegressionTests
         Assert.NotEqual(0, result.ExitCode);
         Assert.Contains($"Injected {failurePoint} failure", result.StandardError + result.StandardOutput, StringComparison.Ordinal);
         Assert.Equal("prior release marker", File.ReadAllText(Path.Combine(fixture.RepositoryRoot, "dist", "keep.txt")));
-        Assert.False(File.Exists(Path.Combine(fixture.RepositoryRoot, "dist", "LumaTherm-1.1.0-win-x64-setup.exe")));
-        Assert.False(File.Exists(Path.Combine(fixture.RepositoryRoot, "dist", "LumaTherm-1.1.0-portable-win-x64.zip")));
+        Assert.False(File.Exists(Path.Combine(fixture.RepositoryRoot, "dist", "LumaTherm-1.2.0-win-x64-setup.exe")));
+        Assert.False(File.Exists(Path.Combine(fixture.RepositoryRoot, "dist", "LumaTherm-1.2.0-portable-win-x64.zip")));
         Assert.False(File.Exists(Path.Combine(fixture.RepositoryRoot, "dist", "SHA256SUMS.txt")));
         Assert.False(Directory.Exists(Path.Combine(fixture.RepositoryRoot, "artifacts", "release", "public-staging")));
     }
@@ -267,7 +267,7 @@ public sealed class Task14SecurityRegressionTests
 
         Assert.Equal(0, result.ExitCode);
         var names = Directory.GetFiles(Path.Combine(fixture.RepositoryRoot, "dist")).Select(Path.GetFileName).OrderBy(name => name, StringComparer.Ordinal).ToArray();
-        Assert.Equal(new[] { "LumaTherm-1.1.0-portable-win-x64.zip", "LumaTherm-1.1.0-win-x64-setup.exe", "SHA256SUMS.txt" }, names);
+        Assert.Equal(new[] { "LumaTherm-1.2.0-portable-win-x64.zip", "LumaTherm-1.2.0-win-x64-setup.exe", "SHA256SUMS.txt" }, names);
     }
 
     [Fact]
@@ -424,7 +424,7 @@ public sealed class Task14SecurityRegressionTests
         public string Thumbprint { get; }
         public string ApplicationPath => Path.Combine(Root, "app", "LumaTherm.exe");
         public string ApplicationDirectory => Path.Combine(Root, "app");
-        public string PackagePath => Path.Combine(Root, "LumaTherm-1.1.0-sparse.msix");
+        public string PackagePath => Path.Combine(Root, "LumaTherm-1.2.0-sparse.msix");
 
         public static SecurePortableFixture Create()
         {
@@ -448,7 +448,7 @@ public sealed class Task14SecurityRegressionTests
         public string[] ExactPostRegistrationArguments() => new[]
         {
             "-SimulateRegistrationForTest", "-InstalledPackageNameForTest", "LumaTherm", "-InstalledPublisherForTest", "CN=LumaTherm Local",
-            "-InstalledVersionForTest", "1.1.0.0", "-InstalledExternalLocationForTest", ApplicationDirectory,
+            "-InstalledVersionForTest", "1.2.0.0", "-InstalledExternalLocationForTest", ApplicationDirectory,
             "-InstalledApplicationIdForTest", "LumaTherm", "-InstalledExtensionForTest", "com.microsoft.windows.lighting"
         };
 
@@ -490,12 +490,12 @@ public sealed class Task14SecurityRegressionTests
                 version = 1,
                 files = names.Select(name => new { path = name, sha256 = Sha(Path.Combine(root, name.Replace('/', Path.DirectorySeparatorChar))) }).ToArray()
             });
-            using var archive = ZipFile.Open(Path.Combine(root, "LumaTherm-1.1.0-sparse.msix"), ZipArchiveMode.Create);
+            using var archive = ZipFile.Open(Path.Combine(root, "LumaTherm-1.2.0-sparse.msix"), ZipArchiveMode.Create);
             var payload = archive.CreateEntry("PayloadHashes.json");
             using (var writer = new StreamWriter(payload.Open(), new UTF8Encoding(false))) writer.Write(anchor);
             var manifest = archive.CreateEntry("AppxManifest.xml");
             using var manifestWriter = new StreamWriter(manifest.Open(), new UTF8Encoding(false));
-            manifestWriter.Write("<Package xmlns=\"http://schemas.microsoft.com/appx/manifest/foundation/windows10\"><Identity Name=\"LumaTherm\" Publisher=\"CN=LumaTherm Local\" Version=\"1.1.0.0\" /></Package>");
+            manifestWriter.Write("<Package xmlns=\"http://schemas.microsoft.com/appx/manifest/foundation/windows10\"><Identity Name=\"LumaTherm\" Publisher=\"CN=LumaTherm Local\" Version=\"1.2.0.0\" /></Package>");
         }
 
         private static void RewriteChecksums(string root)

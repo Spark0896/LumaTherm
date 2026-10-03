@@ -2,7 +2,7 @@
 
 All notable changes are documented here. Version numbers follow semantic versioning.
 
-## [Unreleased]
+## [1.2.0] - 2026-10-03
 
 ### Changed
 

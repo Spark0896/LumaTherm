@@ -41,7 +41,7 @@ Actual captures of the current Arctic redesign in English. The [Russian README](
 
 ## Get started
 
-**Release status:** the redesign is in the current source tree. The published **1.1.0** installer predates this redesign; screenshots above show the source build.
+**Version 1.2.0:** the Arctic redesign is included in the [setup and portable release](https://github.com/Spark0896/LumaTherm/releases/tag/v1.2.0). Upgrading preserves your saved preferences and custom profile.
 
 1. Download the setup and `SHA256SUMS.txt` from [GitHub Releases](https://github.com/Spark0896/LumaTherm/releases), then [verify SHA-256](docs/installation.md#verify-sha-256).
 2. Run setup as Administrator and explicitly approve import of its bundled **public** certificate. This registers the Windows lighting identity; no private key is imported.
@@ -60,7 +60,7 @@ Release builds are self-contained: no separate .NET Runtime or GCC installation 
 
 ### Portable deployment
 
-Extract the portable archive to a permanent folder, verify its hashes, and run `./install.ps1 -ConfirmCertificateImport` in elevated PowerShell. Registration is explicit and certificate-gated. Keep the registered folder in place; see [portable deployment](docs/portable.md).
+Extract the portable archive to a permanent folder, verify its hashes, and run `./Register-LumaTherm.ps1 -ConfirmCertificateImport` in elevated PowerShell. Registration is explicit and certificate-gated. Keep the registered folder in place; see [portable deployment](docs/portable.md).
 
 ## Privacy and help
 

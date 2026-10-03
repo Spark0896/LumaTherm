@@ -24,7 +24,7 @@ public sealed class ManifestTests
         var identity = Assert.Single(sparse.Root!.Elements(Foundation + "Identity"));
         Assert.Equal("LumaTherm", (string?)identity.Attribute("Name"));
         Assert.Equal("CN=LumaTherm Local", (string?)identity.Attribute("Publisher"));
-        Assert.Equal("1.1.0.0", (string?)identity.Attribute("Version"));
+        Assert.Equal("1.2.0.0", (string?)identity.Attribute("Version"));
         Assert.Equal("x64", (string?)identity.Attribute("ProcessorArchitecture"));
 
         var application = Assert.Single(sparse.Descendants(Foundation + "Application"));

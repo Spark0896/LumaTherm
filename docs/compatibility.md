@@ -2,7 +2,7 @@
 
 ## Supported contract
 
-LumaTherm 1.1.0 is an x64 Windows 11 desktop application. It requires:
+LumaTherm 1.2.0 is an x64 Windows 11 desktop application. It requires:
 
 - Windows 11 version 22H2 or newer;
 - an NVIDIA GPU with a working NVIDIA driver for the preferred NVML temperature source;

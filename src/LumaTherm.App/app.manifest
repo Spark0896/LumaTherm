@@ -2,7 +2,7 @@
 <assembly manifestVersion="1.0"
           xmlns="urn:schemas-microsoft-com:asm.v1"
           xmlns:asmv3="urn:schemas-microsoft-com:asm.v3">
-  <assemblyIdentity name="LumaTherm.App" version="1.1.0.0" processorArchitecture="amd64" type="win32" />
+  <assemblyIdentity name="LumaTherm.App" version="1.2.0.0" processorArchitecture="amd64" type="win32" />
   <description>LumaTherm</description>
   <trustInfo xmlns="urn:schemas-microsoft-com:asm.v3">
     <security>

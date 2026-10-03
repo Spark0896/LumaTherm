@@ -1,4 +1,4 @@
-#define AppVersion "1.1.0"
+#define AppVersion "1.2.0"
 #ifndef PayloadRoot
   #define PayloadRoot "..\artifacts\release\portable"
 #endif
@@ -6,7 +6,7 @@
 [Setup]
 AppId={{9F6F5FEA-A89E-4D1C-9D0C-6C7C9FB5D310}
 AppName=LumaTherm
-AppVersion=1.1.0
+AppVersion=1.2.0
 DefaultDirName={autopf}\LumaTherm
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
@@ -16,7 +16,7 @@ CloseApplicationsFilter=LumaTherm.exe
 RestartApplications=no
 DisableProgramGroupPage=yes
 UninstallDisplayIcon={app}\payload\app\LumaTherm.exe
-OutputBaseFilename=LumaTherm-1.1.0-win-x64-setup
+OutputBaseFilename=LumaTherm-1.2.0-win-x64-setup
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern

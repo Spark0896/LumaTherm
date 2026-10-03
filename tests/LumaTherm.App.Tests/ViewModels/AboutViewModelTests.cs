@@ -13,11 +13,11 @@ public sealed class AboutViewModelTests
     [Fact]
     public void Constructor_DerivesCurrentVersionFromTheApplicationAssemblyMetadata()
     {
-        using var vm = Create(new FixedFeed(Release("1.1.0")));
+        using var vm = Create(new FixedFeed(Release("1.2.0")));
         var metadata = typeof(AboutViewModel).Assembly
             .GetCustomAttribute<AssemblyInformationalVersionAttribute>()!.InformationalVersion;
 
-        Assert.Equal("1.1.0", metadata);
+        Assert.Equal("1.2.0", metadata);
         Assert.Equal(metadata, vm.CurrentVersion);
         Assert.Equal(UpdateState.Idle, vm.State);
         Assert.True(vm.CheckForUpdatesCommand.CanExecute(null));
@@ -28,20 +28,20 @@ public sealed class AboutViewModelTests
     public async Task CheckForUpdatesAsync_NewerStableReleaseEnablesVerifiedDownloadNavigation()
     {
         var launcher = new RecordingLauncher();
-        using var vm = Create(new FixedFeed(Release("1.2.0")), launcher);
+        using var vm = Create(new FixedFeed(Release("1.3.0")), launcher);
 
         await vm.CheckForUpdatesCommand.ExecuteAsync();
 
         Assert.Equal(UpdateState.Available, vm.State);
-        Assert.Equal("1.2.0", vm.AvailableVersion);
+        Assert.Equal("1.3.0", vm.AvailableVersion);
         Assert.True(vm.CheckForUpdatesCommand.CanExecute(null));
         Assert.True(vm.OpenReleaseCommand.CanExecute(null));
         vm.OpenReleaseCommand.Execute(null);
-        Assert.Equal("https://github.com/Spark0896/LumaTherm/releases/download/v1.2.0/LumaTherm.exe", launcher.LastOpened!.AbsoluteUri);
+        Assert.Equal("https://github.com/Spark0896/LumaTherm/releases/download/v1.3.0/LumaTherm.exe", launcher.LastOpened!.AbsoluteUri);
     }
 
     [Theory]
-    [InlineData("1.1.0")]
+    [InlineData("1.2.0")]
     [InlineData("1.0.9")]
     public async Task CheckForUpdatesAsync_CurrentOrOlderReleaseKeepsDownloadNavigationDisabled(string latest)
     {
@@ -85,7 +85,7 @@ public sealed class AboutViewModelTests
         await vm.CheckForUpdatesCommand.ExecuteAsync();
         Assert.Equal(1, feed.Calls);
 
-        feed.Complete(Release("1.1.0"));
+        feed.Complete(Release("1.2.0"));
         await first;
         Assert.Equal(UpdateState.Current, vm.State);
     }

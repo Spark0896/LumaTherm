@@ -22,7 +22,7 @@ public sealed class GitHubReleaseFeedTests
 
         Assert.NotNull(captured);
         Assert.Equal("https://api.github.com/repos/Spark0896/LumaTherm/releases/latest", captured.RequestUri!.AbsoluteUri);
-        Assert.Equal("LumaTherm/1.1.0", Assert.Single(captured.Headers.UserAgent).ToString());
+        Assert.Equal("LumaTherm/1.2.0", Assert.Single(captured.Headers.UserAgent).ToString());
         Assert.Equal(TimeSpan.FromSeconds(5), client.Timeout);
         Assert.Equal("1.2.0", release.Version.ToString());
         Assert.Equal("https://github.com/Spark0896/LumaTherm/releases/tag/v1.2.0", release.ReleasePageUrl.AbsoluteUri);

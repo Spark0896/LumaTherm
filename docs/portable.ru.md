@@ -1,24 +1,24 @@
 # Portable-установка
 
-Portable-архив — не просто исполняемый файл без регистрации. В нём находятся `app\LumaTherm.exe`, `LumaTherm-1.1.0-sparse.msix`, `LumaTherm.cer`, скрипты регистрации, подписанный якорь payload и `SHA256SUMS.txt`. Для Windows lighting integration нужна явная регистрация sparse identity.
+Portable-архив — не просто исполняемый файл без регистрации. В нём находятся `app\LumaTherm.exe`, `LumaTherm-1.2.0-sparse.msix`, `LumaTherm.cer`, скрипты регистрации, подписанный якорь payload и `SHA256SUMS.txt`. Для Windows lighting integration нужна явная регистрация sparse identity.
 
 ## Установка из архива
 
-1. Загрузите `LumaTherm-1.1.0-portable-win-x64.zip` и релизный `SHA256SUMS.txt` с [GitHub Releases](https://github.com/Spark0896/LumaTherm/releases).
+1. Загрузите `LumaTherm-1.2.0-portable-win-x64.zip` и релизный `SHA256SUMS.txt` с [GitHub Releases](https://github.com/Spark0896/LumaTherm/releases).
 2. До распаковки в папке загрузок проверьте хэш архива:
 
 ```powershell
-Get-FileHash .\LumaTherm-1.1.0-portable-win-x64.zip -Algorithm SHA256
+Get-FileHash .\LumaTherm-1.2.0-portable-win-x64.zip -Algorithm SHA256
 Get-Content .\SHA256SUMS.txt
 ```
 
-Сравните результат со строкой `LumaTherm-1.1.0-portable-win-x64.zip`; при несовпадении остановитесь.
+Сравните результат со строкой `LumaTherm-1.2.0-portable-win-x64.zip`; при несовпадении остановитесь.
 3. Распакуйте zip в постоянную локальную папку. Не используйте временную папку загрузок, носитель, который будете перемещать, или путь, который планируете переименовать.
 4. Откройте повышенный PowerShell в распакованной папке, проверьте внутренние хэши и выполните регистрацию:
 
 ```powershell
 Get-Content .\SHA256SUMS.txt
-.\install.ps1 -ConfirmCertificateImport
+.\Register-LumaTherm.ps1 -ConfirmCertificateImport
 ```
 
 Скрипт проверяет внутренние SHA-256, подписи пакета и приложения, подписанный якорь payload, точные метаданные identity и внешнюю папку. Если сертификат ещё не доверен, после явного подтверждения он импортирует только публичный сертификат в `LocalMachine\Root` («Доверенные корневые центры сертификации»). Закрытый ключ не импортируется. Для импорта нужны права администратора.
@@ -30,7 +30,7 @@ Get-Content .\SHA256SUMS.txt
 Для удаления identity откройте повышенный PowerShell в той же папке:
 
 ```powershell
-.\uninstall.ps1 -RemoveCertificate
+.\Unregister-LumaTherm.ps1 -RemoveCertificate
 ```
 
 Команда просит подтверждение, если не передан `-Force`. Параметр `-RemoveCertificate` удаляет только точный сертификат из комплекта из доверенного корневого хранилища компьютера, а `-RemoveUserData` дополнительно удаляет защищённую папку `%LOCALAPPDATA%\LumaTherm`. Не удаляйте папку portable без снятия регистрации: может остаться неработающая identity.

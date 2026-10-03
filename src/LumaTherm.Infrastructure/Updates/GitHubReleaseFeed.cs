@@ -29,7 +29,7 @@ public sealed class GitHubReleaseFeed : IReleaseFeed, IDisposable
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         using var request = new HttpRequestMessage(HttpMethod.Get, LatestReleaseUri);
-        request.Headers.UserAgent.Add(new ProductInfoHeaderValue("LumaTherm", "1.1.0"));
+        request.Headers.UserAgent.Add(new ProductInfoHeaderValue("LumaTherm", "1.2.0"));
         using var response = await _client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
             .ConfigureAwait(false);
         response.EnsureSuccessStatusCode();

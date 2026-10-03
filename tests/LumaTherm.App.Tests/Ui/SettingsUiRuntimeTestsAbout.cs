@@ -36,7 +36,7 @@ public sealed class SettingsUiRuntimeTestsAbout(ThermalCoreStaFixture sta)
                 Assert.Equal(Visibility.Visible, aboutContent.Visibility);
                 Assert.Equal(Visibility.Visible, indicator.Visibility);
                 Assert.Equal(Visibility.Collapsed, Assert.IsAssignableFrom<FrameworkElement>(shell.FindName("DashboardContent")).Visibility);
-                Assert.Contains("1.1.0", FlattenText(aboutContent), StringComparison.Ordinal);
+                Assert.Contains("1.2.0", FlattenText(aboutContent), StringComparison.Ordinal);
                 Assert.Contains("бесплат", FlattenText(aboutContent), StringComparison.OrdinalIgnoreCase);
                 Assert.Contains("открытым исходным кодом", FlattenText(aboutContent), StringComparison.OrdinalIgnoreCase);
                 Assert.Contains("MIT", FlattenText(aboutContent), StringComparison.Ordinal);
@@ -150,9 +150,9 @@ public sealed class SettingsUiRuntimeTestsAbout(ThermalCoreStaFixture sta)
     private sealed class FixedFeed : IReleaseFeed
     {
         public Task<ReleaseInfo> GetLatestStableAsync(CancellationToken cancellationToken) => Task.FromResult(new ReleaseInfo(
-            new SemanticVersion(1, 1, 0),
-            new Uri("https://github.com/Spark0896/LumaTherm/releases/tag/v1.1.0"),
-            new Uri("https://github.com/Spark0896/LumaTherm/releases/download/v1.1.0/LumaTherm.exe")));
+            new SemanticVersion(1, 2, 0),
+            new Uri("https://github.com/Spark0896/LumaTherm/releases/tag/v1.2.0"),
+            new Uri("https://github.com/Spark0896/LumaTherm/releases/download/v1.2.0/LumaTherm.exe")));
     }
 
     private sealed class NoOpLauncher : ILinkLauncher { public void Open(Uri uri) { } }

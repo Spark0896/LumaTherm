@@ -15,7 +15,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
-$version = '1.1.0'
+$version = '1.2.0'
 $stableAppId = '{9F6F5FEA-A89E-4D1C-9D0C-6C7C9FB5D310}'
 $setupName = "LumaTherm-$version-win-x64-setup.exe"
 $portableZipName = "LumaTherm-$version-portable-win-x64.zip"
@@ -97,7 +97,7 @@ function Resolve-SdkTools([string]$Override) {
 
 function Resolve-Inno([string]$Override) {
     if (-not [string]::IsNullOrWhiteSpace($Override)) {
-        if (-not $isTest -or $Mode -notin @('Plan', 'Full')) { throw 'Inno Setup override is reserved for controlled Plan/Full packaging tests.' }
+        if ($Mode -notin @('Plan', 'Full')) { throw 'An explicit Inno Setup compiler path is supported only in Plan/Full mode.' }
         Assert-NoReparseComponents $Override
         return [IO.Path]::GetFullPath($Override)
     }

@@ -153,7 +153,7 @@ if ([string]::IsNullOrWhiteSpace($PortableDirectory)) { $PortableDirectory = $PS
 $portableRoot = [IO.Path]::GetFullPath($PortableDirectory).TrimEnd('\')
 Assert-NoReparseComponents $portableRoot
 if (-not (Test-Path -LiteralPath $portableRoot -PathType Container)) { throw "Portable directory not found: $portableRoot" }
-if ([string]::IsNullOrWhiteSpace($IdentityPackage)) { $IdentityPackage = Join-Path $portableRoot 'LumaTherm-1.1.0-sparse.msix' }
+if ([string]::IsNullOrWhiteSpace($IdentityPackage)) { $IdentityPackage = Join-Path $portableRoot 'LumaTherm-1.2.0-sparse.msix' }
 if ([string]::IsNullOrWhiteSpace($ApplicationDirectory)) { $ApplicationDirectory = Join-Path $portableRoot 'app' }
 if ([string]::IsNullOrWhiteSpace($CertificatePath)) { $CertificatePath = Join-Path $portableRoot 'LumaTherm.cer' }
 if ([string]::IsNullOrWhiteSpace($ChecksumPath)) { $ChecksumPath = Join-Path $portableRoot 'SHA256SUMS.txt' }
@@ -161,7 +161,7 @@ $identityPackage = Assert-SafePath $IdentityPackage $portableRoot
 $applicationDirectory = Assert-SafePath $ApplicationDirectory $portableRoot -Directory
 $certificatePath = Assert-SafePath $CertificatePath $portableRoot
 $checksumPath = Assert-SafePath $ChecksumPath $portableRoot
-if (-not ([IO.Path]::GetFileName($identityPackage).Equals('LumaTherm-1.1.0-sparse.msix', [StringComparison]::Ordinal))) { throw 'Unexpected sparse identity package name.' }
+if (-not ([IO.Path]::GetFileName($identityPackage).Equals('LumaTherm-1.2.0-sparse.msix', [StringComparison]::Ordinal))) { throw 'Unexpected sparse identity package name.' }
 $applicationExecutable = Assert-SafePath (Join-Path $applicationDirectory 'LumaTherm.exe') $portableRoot
 $events = [Collections.Generic.List[string]]::new()
 $events.Add('pathsVerified')
@@ -200,7 +200,7 @@ try {
 
     $anchor = Get-SignedPayloadAnchor $identityPackage
     if ([int]$anchor.version -ne 1) { throw 'Unsupported signed payload anchor version.' }
-    $externalRelative = @($actualRelative | Where-Object { $_ -cne 'LumaTherm-1.1.0-sparse.msix' })
+    $externalRelative = @($actualRelative | Where-Object { $_ -cne 'LumaTherm-1.2.0-sparse.msix' })
     Assert-ExactHashes @($anchor.files) $externalRelative $portableRoot 'Signed payload anchor'
     $events.Add('signedAnchorVerified')
     $events.Add('applicationSignatureVerified')
@@ -249,7 +249,7 @@ try {
             $events.Add('sameVersionPackageRemoved')
         }
         if ($RegistrationFailureForTest -eq 'Add') { throw 'Injected Add-AppxPackage failure for test.' }
-        $registrationAdded = $true; $registeredFullName = 'LumaTherm_1.1.0.0_x64__test'; $events.Add('registrationExecutedForTest')
+        $registrationAdded = $true; $registeredFullName = 'LumaTherm_1.2.0.0_x64__test'; $events.Add('registrationExecutedForTest')
         $installed = @([pscustomobject]@{ Name = $InstalledPackageNameForTest; Publisher = $InstalledPublisherForTest; Version = $InstalledVersionForTest; PackageExternalLocation = $InstalledExternalLocationForTest; PackageFullName = $registeredFullName; ApplicationId = $InstalledApplicationIdForTest; Extension = $InstalledExtensionForTest })
     } else {
         $preRegistrationPackages = @(Get-AppxPackage -Name 'LumaTherm')
