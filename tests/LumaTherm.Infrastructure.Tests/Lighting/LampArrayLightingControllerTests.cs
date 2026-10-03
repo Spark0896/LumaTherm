@@ -55,6 +55,38 @@ public sealed class LampArrayLightingControllerTests
     }
 
     [Fact]
+    public async Task FocusLoss_RetainsTheEnabledDeviceAndResumesWithoutReconnecting()
+    {
+        var handle = new InMemoryLampArrayHandle("selected", "GIGABYTE Device", 8, true);
+        await using var controller = new LampArrayLightingController(new InMemoryLampArrayPlatform(handle));
+        await controller.ConnectAsync(null, TestContext.Current.CancellationToken);
+
+        handle.IsAvailable = false;
+        Assert.True(controller.IsConnected);
+        Assert.Equal("selected", controller.ConnectedDevice?.Id);
+        Assert.False(controller.ConnectedDevice?.IsAvailable);
+        Assert.Equal(0, handle.DisableCount);
+
+        handle.IsAvailable = true;
+        await controller.SetColorAsync(new RgbColor(10, 20, 30), TestContext.Current.CancellationToken);
+        Assert.Equal(1, handle.EnableCount);
+        Assert.Equal([new RgbColor(10, 20, 30)], handle.Colors);
+    }
+
+    [Fact]
+    public async Task ConnectAsync_RegistersAnEnabledDeviceWhileWindowsControlsItsLighting()
+    {
+        var handle = new InMemoryLampArrayHandle("selected", "GIGABYTE Device", 8, false);
+        await using var controller = new LampArrayLightingController(new InMemoryLampArrayPlatform(handle));
+
+        Assert.True(await controller.ConnectAsync(null, TestContext.Current.CancellationToken));
+        Assert.True(controller.IsConnected);
+        Assert.False(controller.ConnectedDevice?.IsAvailable);
+        Assert.Equal(1, handle.EnableCount);
+        Assert.Equal(0, handle.DisableCount);
+    }
+
+    [Fact]
     public async Task ConnectAsync_PrefersTheSavedDeviceIdAndRoutesColorOnlyToIt()
     {
         var saved = new InMemoryLampArrayHandle("saved-device", "Other Device", 8, true);
@@ -117,10 +149,10 @@ public sealed class LampArrayLightingControllerTests
     }
 
     [Fact]
-    public async Task ConnectAsync_ReturnsFalseWhenNoDeviceIsAvailable()
+    public async Task ConnectAsync_ReturnsFalseWhenNoDeviceIsPresent()
     {
         var platform = new InMemoryLampArrayPlatform(
-            new InMemoryLampArrayHandle("unavailable", "Unavailable", 8, false));
+            new InMemoryLampArrayHandle("unavailable", "Unavailable", 8, false) { IsPresent = false });
         await using var controller = new LampArrayLightingController(platform);
 
         var connected = await controller.ConnectAsync(null, TestContext.Current.CancellationToken);
@@ -131,7 +163,7 @@ public sealed class LampArrayLightingControllerTests
     }
 
     [Fact]
-    public async Task ConnectAsync_RejectsADeviceThatBecomesUnavailableWhileEnableIsBlocked()
+    public async Task ConnectAsync_RejectsADeviceThatIsRemovedWhileEnableIsBlocked()
     {
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
         var enableEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -156,6 +188,7 @@ public sealed class LampArrayLightingControllerTests
                 await enableEntered.Task.WaitAsync(timeout.Token);
 
                 handle.IsAvailable = false;
+                handle.IsPresent = false;
             }
             finally
             {
@@ -327,6 +360,7 @@ public sealed class LampArrayLightingControllerTests
         {
             var handle = _handles.Single(candidate => candidate.Id == id);
             handle.IsAvailable = false;
+            handle.IsPresent = false;
             DevicesChanged?.Invoke(this, EventArgs.Empty);
         }
 
@@ -334,6 +368,7 @@ public sealed class LampArrayLightingControllerTests
         {
             var handle = _handles.Single(candidate => candidate.Id == id);
             handle.IsAvailable = true;
+            handle.IsPresent = true;
             DevicesChanged?.Invoke(this, EventArgs.Empty);
         }
 
@@ -355,6 +390,7 @@ public sealed class LampArrayLightingControllerTests
         public string Name { get; } = name;
         public int LampCount { get; } = lampCount;
         public bool IsAvailable { get; set; } = isAvailable;
+        public bool IsPresent { get; set; } = true;
         public int EnableCount { get; private set; }
         public int DisableCount { get; private set; }
         public List<RgbColor> Colors { get; } = [];

@@ -6,13 +6,20 @@
   xmlns:uap10="http://schemas.microsoft.com/appx/manifest/uap/windows10/10"
   xmlns:desktop="http://schemas.microsoft.com/appx/manifest/desktop/windows10"
   xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
-  IgnorableNamespaces="uap uap3 uap10 desktop rescap">
+  xmlns:rescap5="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities/5"
+  xmlns:virtualization="http://schemas.microsoft.com/appx/manifest/virtualization/windows10"
+  IgnorableNamespaces="uap uap3 uap10 desktop rescap rescap5 virtualization">
   <Identity Name="LumaTherm" Publisher="CN=LumaTherm Local" Version="1.2.0.0" ProcessorArchitecture="x64" />
   <Properties>
     <DisplayName>LumaTherm</DisplayName>
     <PublisherDisplayName>LumaTherm</PublisherDisplayName>
     <Logo>Assets\StoreLogo.png</Logo>
     <uap10:AllowExternalContent>true</uap10:AllowExternalContent>
+    <virtualization:FileSystemWriteVirtualization>
+      <virtualization:ExcludedDirectories>
+        <virtualization:ExcludedDirectory>$(KnownFolder:LocalAppData)\LumaTherm</virtualization:ExcludedDirectory>
+      </virtualization:ExcludedDirectories>
+    </virtualization:FileSystemWriteVirtualization>
   </Properties>
   <Dependencies>
     <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.22621.0" MaxVersionTested="10.0.26100.0" />
@@ -23,6 +30,7 @@
   </Resources>
   <Capabilities>
     <rescap:Capability Name="runFullTrust" />
+    <rescap:Capability Name="unvirtualizedResources" />
   </Capabilities>
   <Applications>
     <Application Id="LumaTherm" Executable="LumaTherm.exe" uap10:RuntimeBehavior="win32App" uap10:TrustLevel="mediumIL">
@@ -39,7 +47,7 @@
           <uap3:AppExtension Name="com.microsoft.windows.lighting" Id="LumaThermLighting" PublicFolder="public" DisplayName="LumaTherm" />
         </uap3:Extension>
         <desktop:Extension Category="windows.startupTask" Executable="LumaTherm.exe" EntryPoint="Windows.FullTrustApplication">
-          <desktop:StartupTask TaskId="LumaThermStartup" Enabled="false" DisplayName="LumaTherm" />
+          <desktop:StartupTask TaskId="LumaThermStartup" Enabled="true" rescap5:ImmediateRegistration="true" DisplayName="LumaTherm" />
         </desktop:Extension>
       </Extensions>
     </Application>

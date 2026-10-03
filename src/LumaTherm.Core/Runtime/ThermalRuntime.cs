@@ -526,6 +526,12 @@ public sealed class ThermalRuntime : IThermalRuntime
                 _lightingGate.Reset();
             }
 
+            if (_lightingController.ConnectedDevice is { IsAvailable: false, IsPresent: true })
+            {
+                _lightingGate.Reset();
+                return CreateSnapshot(RuntimeStatus.LightingWaiting, _targetReading, _displayedColor, _targetRange, null);
+            }
+
             if (_lightingGate.ShouldSend(nextColor, now))
             {
                 try
@@ -551,6 +557,11 @@ public sealed class ThermalRuntime : IThermalRuntime
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             throw;
+        }
+        catch (LightingControlUnavailableException)
+        {
+            _lightingGate.Reset();
+            return CreateSnapshot(RuntimeStatus.LightingWaiting, _targetReading, _displayedColor, _targetRange, null);
         }
         catch (Exception exception)
         {

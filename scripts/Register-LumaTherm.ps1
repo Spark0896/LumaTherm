@@ -19,7 +19,7 @@ param(
     [ValidateSet('Valid', 'Invalid')][string]$ReverifiedApplicationSignatureStatusForTest = 'Valid',
     [switch]$TrustedCertificatePresentForTest,
     [switch]$SimulateRegistrationForTest,
-    [ValidateSet('None', 'Add', 'PostVerify')][string]$RegistrationFailureForTest = 'None',
+    [ValidateSet('None', 'Add', 'PostVerify', 'LightingVerify')][string]$RegistrationFailureForTest = 'None',
     [string]$PreRegistrationPackagesJsonForTest,
     [string]$InstalledPackageNameForTest,
     [string]$InstalledPublisherForTest,
@@ -180,6 +180,8 @@ $certificate = [Security.Cryptography.X509Certificates.X509Certificate2]::new($c
 $ownedTrust = $false
 $registrationAdded = $false
 $registeredFullName = $null
+$lightingConfigured = $false
+$lightingFamilyName = 'LumaTherm_jzd30fs6ag6cm'
 $sameVersionPackageRemoved = $false
 $sameVersionRemovalCommand = $null
 try {
@@ -285,9 +287,54 @@ try {
         throw 'Post-registration identity, version, external location, application, or lighting extension verification failed.'
     }
     $events.Add('postRegistrationVerified')
+    if ($AuditOnly) { $events.Add('lightingPriorityConfigurationPlanned'); $lightingConfigured = $true }
+    else {
+        $lightingFamilyName = [string]$package.PackageFamilyName
+        & (Join-Path $portableRoot 'Set-LumaThermLighting.ps1') -Action Configure -FamilyName $lightingFamilyName
+        $lightingConfigured = $true
+        # Verify from this unpackaged installer as well: an app's private HKCU overlay
+        # must never be accepted as successful Windows lighting configuration.
+        $lightingRoot = 'Software\Microsoft\Lighting'
+        $lightingRoots = @($lightingRoot)
+        $devices = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($lightingRoot + '\Devices')
+        if ($null -ne $devices) {
+            try { $lightingRoots += @($devices.GetSubKeyNames() | ForEach-Object { $lightingRoot + '\Devices\' + $_ }) }
+            finally { $devices.Dispose() }
+        }
+        foreach ($root in $lightingRoots) {
+            $preferences = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($root)
+            $providers = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($root + '\Providers')
+            try {
+                if ($null -eq $preferences -or $null -eq $providers -or
+                    $preferences.GetValue('AmbientLightingEnabled') -ne 1 -or
+                    $preferences.GetValue('ControlledByForegroundApp') -ne 0 -or
+                    $providers.GetValue('1') -cne [string]$package.PackageFamilyName) {
+                    throw 'Windows lighting preferences are not visible to Windows; installation did not complete successfully.'
+                }
+            } finally {
+                if ($null -ne $preferences) { $preferences.Dispose() }
+                if ($null -ne $providers) { $providers.Dispose() }
+            }
+        }
+        $events.Add('lightingPriorityVerifiedOutsideApplication')
+        $events.Add('lightingPriorityConfigured')
+    }
+    if ($RegistrationFailureForTest -eq 'LightingVerify') { throw 'Injected external lighting verification failure for test.' }
     [pscustomobject]@{ events = $events.ToArray(); identityPackage = $identityPackage; applicationDirectory = $applicationDirectory; applicationExecutable = $applicationExecutable; certificateThumbprint = $certificate.Thumbprint; registrationCommand = $command; sameVersionRemovalCommand = $sameVersionRemovalCommand } | ConvertTo-Json -Depth 3 -Compress | Write-Output
 } catch {
     $errorMessage = $_.Exception.Message
+    if ($lightingConfigured) {
+        if ($AuditOnly) { $events.Add('lightingPreferenceRollbackPlanned') }
+        else {
+            try {
+                & (Join-Path $portableRoot 'Set-LumaThermLighting.ps1') -Action Restore -FamilyName $lightingFamilyName
+                $events.Add('lightingPreferencesRolledBack')
+            } catch {
+                $events.Add('lightingPreferenceRollbackFailed')
+                $errorMessage += " Lighting rollback failed; the recovery backup was retained: $($_.Exception.Message)"
+            }
+        }
+    }
     if ($registrationAdded) {
         if ($AuditOnly) {
             $events.Add($(if ($sameVersionPackageRemoved) { 'failedReplacementPackageRemovalPlanned' } else { 'packageRollbackPlanned' }))

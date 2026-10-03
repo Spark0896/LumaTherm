@@ -1,5 +1,6 @@
 using System.Net;
 using System.Text;
+using System.Text.Json.Nodes;
 using LumaTherm.Infrastructure.Updates;
 
 namespace LumaTherm.Infrastructure.Tests.Updates;
@@ -26,7 +27,38 @@ public sealed class GitHubReleaseFeedTests
         Assert.Equal(TimeSpan.FromSeconds(5), client.Timeout);
         Assert.Equal("1.2.0", release.Version.ToString());
         Assert.Equal("https://github.com/Spark0896/LumaTherm/releases/tag/v1.2.0", release.ReleasePageUrl.AbsoluteUri);
-        Assert.Equal("https://github.com/Spark0896/LumaTherm/releases/download/v1.2.0/LumaTherm-Setup.exe", release.DownloadUrl.AbsoluteUri);
+        Assert.Equal("https://github.com/Spark0896/LumaTherm/releases/download/v1.2.0/LumaTherm-1.2.0-win-x64-setup.exe", release.DownloadUrl.AbsoluteUri);
+    }
+
+    [Theory]
+    [InlineData("LumaTherm-1.2.0-portable-win-x64.zip")]
+    [InlineData("dashboard.png")]
+    [InlineData("SHA256SUMS.txt")]
+    public async Task GetLatestStableAsync_SelectsWindowsInstallerRegardlessOfAssetOrder(string leadingAsset)
+    {
+        var document = JsonNode.Parse(StableJson)!;
+        document["assets"]!.AsArray().Insert(0, new JsonObject
+        {
+            ["name"] = leadingAsset,
+            ["browser_download_url"] = $"https://github.com/Spark0896/LumaTherm/releases/download/v1.2.0/{leadingAsset}",
+        });
+        using var feed = FeedReturning(JsonResponse(document.ToJsonString()));
+
+        var release = await feed.GetLatestStableAsync(CancellationToken.None);
+
+        Assert.Equal("https://github.com/Spark0896/LumaTherm/releases/download/v1.2.0/LumaTherm-1.2.0-win-x64-setup.exe",
+            release.DownloadUrl.AbsoluteUri);
+    }
+
+    [Theory]
+    [InlineData("LumaTherm-1.1.0-win-x64-setup.exe")]
+    [InlineData("LumaTherm-1.2.0-win-arm64-setup.exe")]
+    public async Task GetLatestStableAsync_RejectsMissingInstallerForReleaseVersionAndArchitecture(string assetName)
+    {
+        var json = StableJson.Replace("LumaTherm-1.2.0-win-x64-setup.exe", assetName, StringComparison.Ordinal);
+        using var feed = FeedReturning(JsonResponse(json));
+
+        await Assert.ThrowsAsync<InvalidDataException>(() => feed.GetLatestStableAsync(CancellationToken.None));
     }
 
     [Theory]
@@ -62,7 +94,7 @@ public sealed class GitHubReleaseFeedTests
     public async Task GetLatestStableAsync_RejectsNonHttpsBrowserOrAssetUrls(string pageUrl, string downloadUrl)
     {
         var json = StableJson.Replace("https://github.com/Spark0896/LumaTherm/releases/tag/v1.2.0", pageUrl, StringComparison.Ordinal)
-            .Replace("https://github.com/Spark0896/LumaTherm/releases/download/v1.2.0/LumaTherm-Setup.exe", downloadUrl, StringComparison.Ordinal);
+            .Replace("https://github.com/Spark0896/LumaTherm/releases/download/v1.2.0/LumaTherm-1.2.0-win-x64-setup.exe", downloadUrl, StringComparison.Ordinal);
         using var feed = FeedReturning(JsonResponse(json));
 
         await Assert.ThrowsAsync<InvalidDataException>(() => feed.GetLatestStableAsync(CancellationToken.None));
@@ -128,8 +160,8 @@ public sealed class GitHubReleaseFeedTests
           {{stabilityFields}}
           {{(stabilityFields.Length == 0 ? string.Empty : ",")}}
           "assets":[{
-            "name":"LumaTherm-Setup.exe",
-            "browser_download_url":"https://github.com/Spark0896/LumaTherm/releases/download/v1.2.0/LumaTherm-Setup.exe"
+            "name":"LumaTherm-1.2.0-win-x64-setup.exe",
+            "browser_download_url":"https://github.com/Spark0896/LumaTherm/releases/download/v1.2.0/LumaTherm-1.2.0-win-x64-setup.exe"
           }]
         }
         """;
@@ -142,8 +174,8 @@ public sealed class GitHubReleaseFeedTests
           "draft":false,
           "prerelease":false,
           "assets":[{
-            "name":"LumaTherm-Setup.exe",
-            "browser_download_url":"https://github.com/Spark0896/LumaTherm/releases/download/v1.2.0/LumaTherm-Setup.exe"
+            "name":"LumaTherm-1.2.0-win-x64-setup.exe",
+            "browser_download_url":"https://github.com/Spark0896/LumaTherm/releases/download/v1.2.0/LumaTherm-1.2.0-win-x64-setup.exe"
           }]
         }
         """;

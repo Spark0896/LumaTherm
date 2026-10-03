@@ -25,6 +25,10 @@ The helper verifies all internal checksums, package and executable signatures, t
 
 ## Run, move, and remove
 
+Registration also automatically enables Dynamic Lighting and prioritizes LumaTherm in the background. Previous lighting preferences are saved locally and restored during unregistration when the user has not changed them since installation.
+
+Restart Windows after registration: the running lighting session can retain its previous controller order. Recovery information is stored in `HKCU\Software\LumaTherm\Installation`, so configuration requires no elevated writes to user-controlled backup files.
+
 Start `app\LumaTherm.exe` only after successful registration. The registered identity points at this exact external folder. Do not move, rename, or delete it while registered. First unregister it from the current folder, move or extract a fresh archive, then register again.
 
 To remove the identity, use an elevated PowerShell in the same portable folder:

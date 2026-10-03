@@ -10,15 +10,15 @@ public sealed class JsonSettingsStoreTests : IDisposable
     private readonly string _directory = Path.Combine(Path.GetTempPath(), $"LumaTherm-{Guid.NewGuid():N}");
 
     [Fact]
-    public async Task MissingFile_ReturnsSafeDefaults()
+    public async Task MissingFile_EnablesSyncAndStartupForFirstInstall()
     {
         var store = new JsonSettingsStore(Path.Combine(_directory, "settings.json"), TimeProvider.System);
 
         var result = await store.LoadAsync(TestContext.Current.CancellationToken);
         var settings = result.Settings;
 
-        Assert.False(settings.IsModeEnabled);
-        Assert.False(settings.IsAutostartEnabled);
+        Assert.True(settings.IsModeEnabled);
+        Assert.True(settings.IsAutostartEnabled);
         Assert.True(settings.MinimizeToTray);
         Assert.Equal(35, settings.Profile.ColdTemperature);
         Assert.Null(result.RecoveryMessage);

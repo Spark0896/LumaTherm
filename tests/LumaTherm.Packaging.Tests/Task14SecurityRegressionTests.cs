@@ -89,6 +89,8 @@ public sealed class Task14SecurityRegressionTests
         using var json = JsonDocument.Parse(result.StandardOutput);
         Assert.Contains("registrationExecutedForTest", json.RootElement.GetProperty("events").EnumerateArray().Select(value => value.GetString()));
         Assert.Contains("postRegistrationVerified", json.RootElement.GetProperty("events").EnumerateArray().Select(value => value.GetString()));
+        var events = json.RootElement.GetProperty("events").EnumerateArray().Select(value => value.GetString()).ToArray();
+        Assert.True(Array.IndexOf(events, "postRegistrationVerified") < Array.IndexOf(events, "lightingPriorityConfigurationPlanned"));
     }
 
     [Fact]
@@ -315,6 +317,7 @@ public sealed class Task14SecurityRegressionTests
     [InlineData("Reverify")]
     [InlineData("Add")]
     [InlineData("PostVerify")]
+    [InlineData("LightingVerify")]
     public void NewlyImportedTrustIsRolledBackAtEveryRegistrationFailureBoundary(string failurePoint)
     {
         using var fixture = SecurePortableFixture.Create();
@@ -337,7 +340,13 @@ public sealed class Task14SecurityRegressionTests
 
         Assert.NotEqual(0, result.ExitCode);
         Assert.Contains("certificateRollbackPlanned", result.StandardError + result.StandardOutput, StringComparison.Ordinal);
-        if (failurePoint == "PostVerify") Assert.Contains("packageRollbackPlanned", result.StandardError + result.StandardOutput, StringComparison.Ordinal);
+        if (failurePoint is "PostVerify" or "LightingVerify") Assert.Contains("packageRollbackPlanned", result.StandardError + result.StandardOutput, StringComparison.Ordinal);
+        if (failurePoint == "LightingVerify")
+        {
+            var diagnostic = result.StandardError + result.StandardOutput;
+            Assert.Contains("lightingPreferenceRollbackPlanned", diagnostic, StringComparison.Ordinal);
+            Assert.True(diagnostic.IndexOf("lightingPreferenceRollbackPlanned", StringComparison.Ordinal) < diagnostic.IndexOf("packageRollbackPlanned", StringComparison.Ordinal));
+        }
     }
 
     [Theory]
@@ -436,6 +445,7 @@ public sealed class Task14SecurityRegressionTests
             File.Copy(Path.Combine(RepositoryLayout.Root, "scripts", "Register-LumaTherm.cmd"), Path.Combine(root, "Register-LumaTherm.cmd"));
             File.Copy(Path.Combine(RepositoryLayout.Root, "scripts", "Register-LumaTherm.ps1"), Path.Combine(root, "Register-LumaTherm.ps1"));
             File.Copy(Path.Combine(RepositoryLayout.Root, "scripts", "Unregister-LumaTherm.ps1"), Path.Combine(root, "Unregister-LumaTherm.ps1"));
+            File.Copy(Path.Combine(RepositoryLayout.Root, "scripts", "Set-LumaThermLighting.ps1"), Path.Combine(root, "Set-LumaThermLighting.ps1"));
             using var rsa = RSA.Create(2048);
             var request = new CertificateRequest("CN=LumaTherm Local", rsa, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
             using var certificate = request.CreateSelfSigned(DateTimeOffset.UtcNow.AddMinutes(-1), DateTimeOffset.UtcNow.AddDays(1));
@@ -484,7 +494,7 @@ public sealed class Task14SecurityRegressionTests
 
         private static void WriteAnchorPackage(string root)
         {
-            var names = new[] { "app/LumaTherm.exe", "LICENSE", "LumaTherm.cer", "README.md", "Register-LumaTherm.cmd", "Register-LumaTherm.ps1", "Unregister-LumaTherm.ps1" };
+            var names = new[] { "app/LumaTherm.exe", "LICENSE", "LumaTherm.cer", "README.md", "Register-LumaTherm.cmd", "Register-LumaTherm.ps1", "Set-LumaThermLighting.ps1", "Unregister-LumaTherm.ps1" };
             var anchor = JsonSerializer.Serialize(new
             {
                 version = 1,
@@ -534,6 +544,7 @@ public sealed class Task14SecurityRegressionTests
             File.Copy(Path.Combine(RepositoryLayout.Root, "scripts", "Register-LumaTherm.cmd"), Path.Combine(repository, "scripts", "Register-LumaTherm.cmd"));
             File.Copy(Path.Combine(RepositoryLayout.Root, "scripts", "Register-LumaTherm.ps1"), Path.Combine(repository, "scripts", "Register-LumaTherm.ps1"));
             File.Copy(Path.Combine(RepositoryLayout.Root, "scripts", "Unregister-LumaTherm.ps1"), Path.Combine(repository, "scripts", "Unregister-LumaTherm.ps1"));
+            File.Copy(Path.Combine(RepositoryLayout.Root, "scripts", "Set-LumaThermLighting.ps1"), Path.Combine(repository, "scripts", "Set-LumaThermLighting.ps1"));
             File.Copy(Path.Combine(RepositoryLayout.Root, "packaging", "LumaTherm.iss"), Path.Combine(repository, "packaging", "LumaTherm.iss"));
             File.Copy(Path.Combine(RepositoryLayout.Root, "packaging", "sparse", "AppxManifest.xml"), Path.Combine(repository, "packaging", "sparse", "AppxManifest.xml"));
             File.WriteAllText(Path.Combine(repository, "README.md"), "readme");

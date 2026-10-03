@@ -61,8 +61,10 @@ public sealed class GitHubReleaseFeed : IReleaseFeed, IDisposable
         }
 
         var page = ParseHttpsUri(document.HtmlUrl, "release page");
-        var asset = document.Assets?.FirstOrDefault()
-            ?? throw new InvalidDataException("The release has no downloadable asset.");
+        var installerName = $"LumaTherm-{version}-win-x64-setup.exe";
+        var asset = document.Assets?.FirstOrDefault(candidate =>
+            string.Equals(candidate?.Name, installerName, StringComparison.Ordinal))
+            ?? throw new InvalidDataException("The release has no Windows x64 installer for this version.");
         var download = ParseHttpsUri(asset.BrowserDownloadUrl, "release asset");
         return new ReleaseInfo(version, page, download);
     }
@@ -125,6 +127,8 @@ public sealed class GitHubReleaseFeed : IReleaseFeed, IDisposable
 
     private sealed class GitHubAssetDocument
     {
+        [JsonPropertyName("name")]
+        public string? Name { get; init; }
         [JsonPropertyName("browser_download_url")]
         public string? BrowserDownloadUrl { get; init; }
     }

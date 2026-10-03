@@ -45,10 +45,11 @@ Actual captures of the current Arctic redesign in English. The [Russian README](
 
 1. Download the setup and `SHA256SUMS.txt` from [GitHub Releases](https://github.com/Spark0896/LumaTherm/releases), then [verify SHA-256](docs/installation.md#verify-sha-256).
 2. Run setup as Administrator and explicitly approve import of its bundled **public** certificate. This registers the Windows lighting identity; no private key is imported.
-3. Open LumaTherm, select an available LampArray device, then enable thermal synchronization.
-4. Enable Dynamic Lighting in Windows and prioritize LumaTherm above competing background lighting controllers.
+3. Leave **Launch LumaTherm** selected at the end of setup. A fresh installation starts thermal synchronization automatically and selects a compatible LampArray device.
+4. Setup enables Windows Dynamic Lighting and gives LumaTherm background priority automatically. Use **Windows lighting settings** to customize that order later.
+5. Save your work and accept the proposed Windows restart to start a new lighting session with the saved priority.
 
-The installer does not launch the app automatically. For optional startup, enable **Start with Windows** in Settings. If Windows has disabled the task, use **Windows startup settings** to allow it again.
+New installations enable **Start with Windows** and open in the tray on login. Existing preferences are preserved when upgrading. If Windows has disabled the task, use **Windows startup settings** to allow it again. If another app takes lighting control, LumaTherm waits and resumes automatically without an unavailable-device warning.
 
 ### Requirements
 

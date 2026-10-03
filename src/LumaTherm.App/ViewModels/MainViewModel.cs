@@ -147,7 +147,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         GpuName = snapshot.Temperature?.DeviceName ?? _localization.Get("Runtime.GpuNotFound");
         SensorSource = snapshot.Temperature?.SourceName ?? "—";
         LightingDeviceName = snapshot.LightingDevice?.Name ?? _localization.Get("Runtime.LightingNotFound");
-        HasLightingDevice = snapshot.LightingDevice is { IsAvailable: true };
+        HasLightingDevice = snapshot.LightingDevice is { IsPresent: true };
         OnPropertyChanged(nameof(IsHealthy));
 
         IsModeEnabled = snapshot.IsModeEnabled;
@@ -244,6 +244,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         RuntimeStatus.HoldingLastColor => "Runtime.HoldingLastColor",
         RuntimeStatus.SensorUnavailable => "Runtime.SensorUnavailable",
         RuntimeStatus.LightingUnavailable => "Runtime.LightingUnavailable",
+        RuntimeStatus.LightingWaiting => "Runtime.LightingWaiting",
         RuntimeStatus.Suspended => "Runtime.Suspended",
         RuntimeStatus.Faulted => "Runtime.Faulted",
         _ => "Runtime.Unknown",

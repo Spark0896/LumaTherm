@@ -306,6 +306,22 @@ public sealed class SettingsViewModelTests
     }
 
     [Fact]
+    public async Task DiscoverLighting_PresentDeviceWaitingForControlKeepsItsNameAndSavedSelection()
+    {
+        var recorder = new OperationRecorder();
+        var saved = AppSettings.Default with { PreferredLightingDeviceId = "lamp-a" };
+        using var vm = new SettingsViewModel(new FakeThermalRuntime(recorder), new FakeStartupService(recorder), saved,
+            new FakeColorPicker(null), new FakeLightingDeviceDiscovery(new LightingDeviceInfo("lamp-a", "Desk Lamp", 8, false)));
+
+        await vm.DiscoverLightingDevicesCommand.ExecuteAsync();
+
+        Assert.Equal("Desk Lamp", vm.LightingDeviceName);
+        Assert.Equal("lamp-a", vm.SelectedLightingDeviceId);
+        Assert.Contains("Windows", vm.LightingHardwareStatus);
+        Assert.DoesNotContain("недоступна", vm.LightingDeviceName);
+    }
+
+    [Fact]
     public async Task DiscoverLighting_OneAvailableDeviceKeepsCompactDirectLampArrayPresentation()
     {
         var recorder = new OperationRecorder();

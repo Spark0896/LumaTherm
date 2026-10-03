@@ -144,6 +144,19 @@ public sealed class InstallerScriptTests
     }
 
     [Fact]
+    public void UnregistrationPlansLightingRecoveryEvenWhenTheIdentityIsAlreadyAbsent()
+    {
+        using var fixture = PortableFixture.Create();
+        var result = fixture.Unregister("-AuditOnly", "-Force");
+        Assert.Equal(0, result.ExitCode);
+        using var json = JsonDocument.Parse(result.StandardOutput);
+        var events = json.RootElement.GetProperty("events").EnumerateArray().Select(value => value.GetString()).ToArray();
+        Assert.Contains("packageAlreadyAbsent", events);
+        Assert.Contains("lightingPreferenceRestorePlanned", events);
+        Assert.Empty(json.RootElement.GetProperty("removalCommand").EnumerateArray());
+    }
+
+    [Fact]
     public void UserDataCleanupRejectsAReparseDescendantBeforePlanningDeletion()
     {
         using var fixture = PortableFixture.Create();
@@ -272,6 +285,7 @@ public sealed class InstallerScriptTests
             File.Copy(Path.Combine(RepositoryLayout.Root, "scripts", "Register-LumaTherm.cmd"), Path.Combine(root, "Register-LumaTherm.cmd"));
             File.Copy(Path.Combine(RepositoryLayout.Root, "scripts", "Register-LumaTherm.ps1"), Path.Combine(root, "Register-LumaTherm.ps1"));
             File.Copy(Path.Combine(RepositoryLayout.Root, "scripts", "Unregister-LumaTherm.ps1"), Path.Combine(root, "Unregister-LumaTherm.ps1"));
+            File.Copy(Path.Combine(RepositoryLayout.Root, "scripts", "Set-LumaThermLighting.ps1"), Path.Combine(root, "Set-LumaThermLighting.ps1"));
             File.WriteAllText(Path.Combine(root, "README.md"), "readme");
             File.WriteAllText(Path.Combine(root, "LICENSE"), "license");
 
@@ -310,7 +324,7 @@ public sealed class InstallerScriptTests
 
         private static void WriteAnchorPackage(string root)
         {
-            var names = new[] { "app/LumaTherm.exe", "LICENSE", "LumaTherm.cer", "README.md", "Register-LumaTherm.cmd", "Register-LumaTherm.ps1", "Unregister-LumaTherm.ps1" };
+            var names = new[] { "app/LumaTherm.exe", "LICENSE", "LumaTherm.cer", "README.md", "Register-LumaTherm.cmd", "Register-LumaTherm.ps1", "Set-LumaThermLighting.ps1", "Unregister-LumaTherm.ps1" };
             var anchor = JsonSerializer.Serialize(new
             {
                 version = 1,
@@ -326,7 +340,7 @@ public sealed class InstallerScriptTests
 
         private static void WriteChecksums(string root)
         {
-            var names = new[] { "app/LumaTherm.exe", "LICENSE", "LumaTherm-1.2.0-sparse.msix", "LumaTherm.cer", "README.md", "Register-LumaTherm.cmd", "Register-LumaTherm.ps1", "Unregister-LumaTherm.ps1" };
+            var names = new[] { "app/LumaTherm.exe", "LICENSE", "LumaTherm-1.2.0-sparse.msix", "LumaTherm.cer", "README.md", "Register-LumaTherm.cmd", "Register-LumaTherm.ps1", "Set-LumaThermLighting.ps1", "Unregister-LumaTherm.ps1" };
             var lines = names.Select(name => $"{Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(Path.Combine(root, name.Replace('/', Path.DirectorySeparatorChar)))))} *{name}");
             File.WriteAllLines(Path.Combine(root, "SHA256SUMS.txt"), lines, new UTF8Encoding(false));
         }

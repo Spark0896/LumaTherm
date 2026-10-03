@@ -15,6 +15,7 @@ public interface ILampArrayHandle
     string Name { get; }
     int LampCount { get; }
     bool IsAvailable { get; }
+    bool IsPresent { get; }
 
     void Enable();
     void SetColor(RgbColor color);

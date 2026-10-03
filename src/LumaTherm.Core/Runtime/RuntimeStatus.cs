@@ -10,4 +10,5 @@ public enum RuntimeStatus
     LightingUnavailable,
     Suspended,
     Faulted,
+    LightingWaiting,
 }

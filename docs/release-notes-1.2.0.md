@@ -13,6 +13,11 @@
 - Переключатель автозапуска применяется сразу и показывает состояние Windows. Автозапуск открывает приложение в фоне.
 - Проверка числовых полей предотвращает сохранение неверных значений. Применение и отмена теста подсветки корректно завершают временный режим.
 - Русский и английский интерфейс, адаптация к размеру окна и читаемые элементы управления.
+- Проверка обновлений выбирает установщик Windows нужной версии, независимо от порядка файлов на GitHub.
+- Переключение окон больше не отключает LampArray: приложение ожидает возврата управления Windows и автоматически возобновляет подсветку без ложного предупреждения.
+- При новой установке синхронизация и автозапуск включены, приложение можно открыть сразу после установки. Для настройки фонового приоритета добавлена кнопка подсветки Windows.
+- Приоритет фоновой подсветки и Dynamic Lighting настраиваются автоматически при установке, включая подключённые и новые устройства. Прежние параметры сохраняются для восстановления при удалении.
+- Установщик предлагает перезапуск Windows: текущий сеанс подсветки может продолжать использовать прежний порядок контроллеров после записи настройки.
 
 **Обновление с 1.1.0:** закройте LumaTherm через «Выход» в трее и запустите новый установщик. Настройки и пользовательский профиль сохраняются. Для возврата к новой палитре нажмите «Цвета по умолчанию».
 
@@ -36,6 +41,11 @@ Both the setup and portable archive include the redesign.
 - Windows startup changes apply immediately and reflect Windows state. Startup opens the app in the background.
 - Numeric validation prevents invalid saves. Apply and Cancel correctly finish temporary lighting tests.
 - English and Russian UI, responsive window layouts, and readable controls.
+- Update checks select the Windows installer for the release version, regardless of GitHub asset order.
+- Switching windows no longer releases LampArray: the app waits for Windows control and resumes lighting automatically without a false disconnection warning.
+- Fresh installations enable sync and startup, with an option to launch immediately after setup. A Windows lighting settings button helps configure background priority.
+- Setup automatically configures Dynamic Lighting and background priority for existing and future devices, preserving previous preferences for restoration during uninstall.
+- Setup offers a Windows restart because the running lighting session can retain its previous controller order after the preferences are written.
 
 **Upgrading from 1.1.0:** exit LumaTherm from its tray menu and run the new setup. Saved preferences and custom profiles are preserved. Use **Default colors** to restore the new factory palette.
 
@@ -48,4 +58,6 @@ Download `LumaTherm-1.2.0-win-x64-setup.exe` or `LumaTherm-1.2.0-portable-win-x6
 
 ## Validation / Проверка
 
-Release validation covers automated tests, signed artifacts, and an in-place upgrade from 1.1.0 on the maintainer's Windows computer. An actual Windows reboot, sleep/resume, and visual LED inspection are separate hardware acceptance steps; they are not claimed by this release.
+Validation: **660 automated tests passed**, signed artifacts verified, final setup installed successfully, and an initial in-place upgrade from 1.1.0 preserved preferences. The running Windows session can retain its old lighting priority until restart; continuous control and startup after an actual Windows reboot, sleep/resume, and visual LED inspection remain separate hardware acceptance steps.
+
+Проверка: **660 тестов пройдено**, подписи проверены, финальный установщик установлен успешно; первоначальное обновление с 1.1.0 сохранило настройки. Текущий сеанс Windows может сохранять прежний приоритет до перезапуска. Постоянное управление и автозапуск после настоящего входа в Windows, сон/возобновление и визуальная проверка светодиодов ещё требуют аппаратной проверки.

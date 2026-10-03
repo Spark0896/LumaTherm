@@ -216,6 +216,7 @@ public sealed class MainWindowLifecycleTests(ThermalCoreStaFixture sta)
         public string Name => "Test LampArray";
         public int LampCount => 12;
         public bool IsAvailable => true;
+        public bool IsPresent => true;
         public int DisableCalls { get; private set; }
         public void Enable() { }
         public void SetColor(RgbColor color) { }

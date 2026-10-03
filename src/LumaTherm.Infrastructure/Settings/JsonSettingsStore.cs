@@ -20,7 +20,7 @@ public sealed class JsonSettingsStore(string path, TimeProvider timeProvider) : 
     {
         if (!File.Exists(_path))
         {
-            return new SettingsLoadResult(AppSettings.Default);
+            return new SettingsLoadResult(AppSettings.FirstRun);
         }
 
         try

@@ -5,8 +5,9 @@ internal static class Program
     [STAThread]
     private static void Main()
     {
+        var commandLine = Environment.GetCommandLineArgs().Skip(1).ToArray();
         var arguments = StartupActivationArguments.Resolve(
-            Environment.GetCommandLineArgs().Skip(1),
+            commandLine,
             StartupActivationArguments.GetPackagedActivationKind);
         var application = new App(arguments);
         application.InitializeComponent();

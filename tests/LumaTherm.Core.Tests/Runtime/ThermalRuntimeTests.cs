@@ -9,6 +9,43 @@ namespace LumaTherm.Core.Tests.Runtime;
 public sealed class ThermalRuntimeTests
 {
     [Fact]
+    public async Task LightingControlLoss_WaitsAndResendsTheSameColorWithoutReconnecting()
+    {
+        await using var fixture = RuntimeFixture.Create(modeEnabled: true, temperatures: [35]);
+        var first = await fixture.Runtime.ProcessOnceAsync(CancellationToken.None);
+        fixture.Lighting.HasControl = false;
+        fixture.Advance(TimeSpan.FromMilliseconds(100));
+
+        var waiting = await fixture.Runtime.ProcessOnceAsync(CancellationToken.None);
+        Assert.Equal(RuntimeStatus.LightingWaiting, waiting.Status);
+        Assert.Equal("Lamp", waiting.LightingDevice?.Name);
+        Assert.Equal(1, fixture.Lighting.SetColorCalls);
+        Assert.Equal(0, fixture.Lighting.ReleaseCalls);
+
+        fixture.Lighting.HasControl = true;
+        fixture.Advance(TimeSpan.FromMilliseconds(100));
+        var resumed = await fixture.Runtime.ProcessOnceAsync(CancellationToken.None);
+        Assert.Equal(RuntimeStatus.Active, resumed.Status);
+        Assert.Equal(first.Color, resumed.Color);
+        Assert.Equal(2, fixture.Lighting.SetColorCalls);
+        Assert.Equal(1, fixture.Lighting.ConnectCalls);
+    }
+
+    [Fact]
+    public async Task LightingControlLostDuringWrite_WaitsWithoutReportingADisconnectedDevice()
+    {
+        await using var fixture = RuntimeFixture.Create(modeEnabled: true, temperatures: [35]);
+        fixture.Lighting.LoseControlDuringWrite = true;
+
+        var waiting = await fixture.Runtime.ProcessOnceAsync(CancellationToken.None);
+
+        Assert.Equal(RuntimeStatus.LightingWaiting, waiting.Status);
+        Assert.NotNull(waiting.LightingDevice);
+        Assert.True(fixture.Lighting.IsConnected);
+        Assert.Equal(0, fixture.Lighting.ReleaseCalls);
+    }
+
+    [Fact]
     public async Task DisabledMode_DoesNotReadOrWrite()
     {
         await using var fixture = RuntimeFixture.Create(modeEnabled: false, temperatures: [68]);
@@ -1337,11 +1374,13 @@ public sealed class ThermalRuntimeTests
 
     private sealed class FakeLightingController : ILightingController
     {
+        public bool HasControl { get; set; } = true;
+        public bool LoseControlDuringWrite { get; set; }
         public bool IsConnected { get; private set; }
         public bool FailConnectedDevice { get; set; }
         public LightingDeviceInfo? ConnectedDevice => FailConnectedDevice
             ? throw new InvalidOperationException("device failed")
-            : IsConnected ? new LightingDeviceInfo("lamp", "Lamp", 4, true) : null;
+            : IsConnected ? new LightingDeviceInfo("lamp", "Lamp", 4, HasControl) : null;
         public event EventHandler? DevicesChanged
         {
             add { }
@@ -1377,6 +1416,11 @@ public sealed class ThermalRuntimeTests
         {
             cancellationToken.ThrowIfCancellationRequested();
             SetColorCalls++;
+            if (LoseControlDuringWrite)
+            {
+                HasControl = false;
+                throw new LightingControlUnavailableException();
+            }
             if (SetColorFailuresRemaining > 0)
             {
                 SetColorFailuresRemaining--;

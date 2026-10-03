@@ -25,7 +25,7 @@ public sealed class LampArrayLightingController : ILightingController
         {
             lock (_stateLock)
             {
-                return _connectedHandle is { IsAvailable: true };
+                return _connectedHandle is { IsPresent: true };
             }
         }
     }
@@ -36,7 +36,7 @@ public sealed class LampArrayLightingController : ILightingController
         {
             lock (_stateLock)
             {
-                return _connectedHandle is { IsAvailable: true } handle ? ToDeviceInfo(handle) : null;
+                return _connectedHandle is { IsPresent: true } handle ? ToDeviceInfo(handle) : null;
             }
         }
     }
@@ -74,8 +74,8 @@ public sealed class LampArrayLightingController : ILightingController
             }
 
             var handles = await _platform.FindAllAsync(cancellationToken).ConfigureAwait(false);
-            var available = handles.Where(handle => handle.IsAvailable).ToArray();
-            var selected = SelectHandle(available, preferredDeviceId);
+            var present = handles.Where(handle => handle.IsPresent).ToArray();
+            var selected = SelectHandle(present, preferredDeviceId);
 
             lock (_stateLock)
             {
@@ -90,7 +90,7 @@ public sealed class LampArrayLightingController : ILightingController
             selected.Enable();
             lock (_stateLock)
             {
-                if (_deviceGeneration == generation && selected.IsAvailable)
+                if (_deviceGeneration == generation && selected.IsPresent)
                 {
                     _connectedHandle = selected;
                     return true;
@@ -115,10 +115,15 @@ public sealed class LampArrayLightingController : ILightingController
             ThrowIfDisposed();
             lock (_stateLock)
             {
-                if (_connectedHandle is not { IsAvailable: true } handle)
+                if (_connectedHandle is not { IsPresent: true } handle)
                 {
                     DisconnectCurrentHandle();
                     throw new InvalidOperationException("No LampArray device is connected.");
+                }
+
+                if (!handle.IsAvailable)
+                {
+                    throw new LightingControlUnavailableException();
                 }
 
                 handle.SetColor(color);
@@ -210,16 +215,18 @@ public sealed class LampArrayLightingController : ILightingController
             }
         }
 
-        return available.FirstOrDefault(
+        var controllable = available.Where(handle => handle.IsAvailable).ToArray();
+        var candidates = controllable.Length > 0 ? controllable : available;
+        return candidates.FirstOrDefault(
                    handle => string.Equals(handle.Name, "GIGABYTE Device", StringComparison.Ordinal))
-               ?? available.FirstOrDefault(
+               ?? candidates.FirstOrDefault(
                    handle => handle.Id.Contains("VID_048D", StringComparison.OrdinalIgnoreCase)
                              && handle.Id.Contains("PID_5702", StringComparison.OrdinalIgnoreCase))
-               ?? available.FirstOrDefault();
+               ?? candidates.FirstOrDefault();
     }
 
     private static LightingDeviceInfo ToDeviceInfo(ILampArrayHandle handle) =>
-        new(handle.Id, handle.Name, handle.LampCount, handle.IsAvailable);
+        new(handle.Id, handle.Name, handle.LampCount, handle.IsAvailable, handle.IsPresent);
 
     private void DisconnectCurrentHandle()
     {
@@ -233,7 +240,7 @@ public sealed class LampArrayLightingController : ILightingController
         lock (_stateLock)
         {
             _deviceGeneration++;
-            if (_connectedHandle is { IsAvailable: false })
+            if (_connectedHandle is { IsPresent: false })
             {
                 DisconnectCurrentHandle();
             }

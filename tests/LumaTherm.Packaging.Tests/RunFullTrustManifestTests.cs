@@ -13,7 +13,7 @@ public sealed class RunFullTrustManifestTests
             RepositoryLayout.Root, "packaging", "sparse", "AppxManifest.xml"));
 
         var capabilities = Assert.Single(manifest.Root!.Elements(foundation + "Capabilities"));
-        var runFullTrust = Assert.Single(capabilities.Elements(rescap + "Capability"));
-        Assert.Equal("runFullTrust", (string?)runFullTrust.Attribute("Name"));
+        Assert.Equal(new[] { "runFullTrust", "unvirtualizedResources" },
+            capabilities.Elements(rescap + "Capability").Select(capability => (string?)capability.Attribute("Name")).ToArray());
     }
 }

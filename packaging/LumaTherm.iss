@@ -14,6 +14,8 @@ PrivilegesRequired=admin
 CloseApplications=yes
 CloseApplicationsFilter=LumaTherm.exe
 RestartApplications=no
+; A running Windows lighting session can retain the previous provider order.
+AlwaysRestart=yes
 DisableProgramGroupPage=yes
 UninstallDisplayIcon={app}\payload\app\LumaTherm.exe
 OutputBaseFilename=LumaTherm-1.2.0-win-x64-setup
@@ -39,6 +41,9 @@ Name: "{autoprograms}\LumaTherm"; Filename: "{app}\payload\app\LumaTherm.exe"; T
 
 [UninstallRun]
 Filename: "powershell.exe"; Parameters: "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File ""{app}\payload\Unregister-LumaTherm.ps1"" -Force -RemoveCertificate"; Flags: runhidden waituntilterminated; RunOnceId: "UnregisterLumaThermIdentity"
+
+[Run]
+Filename: "{app}\payload\app\LumaTherm.exe"; Description: "Launch LumaTherm"; Flags: postinstall nowait skipifsilent runasoriginaluser
 
 [Code]
 #include "LumaTherm.Consent.iss"

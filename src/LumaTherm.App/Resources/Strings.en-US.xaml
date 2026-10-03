@@ -62,6 +62,11 @@
     <sys:String x:Key="Tray.StatusHolding">Holding color</sys:String>
     <sys:String x:Key="Tray.StatusSensorUnavailable">No sensor</sys:String>
     <sys:String x:Key="Tray.StatusLightingUnavailable">No lighting</sys:String>
+    <sys:String x:Key="Tray.StatusLightingWaiting">Waiting for lighting control</sys:String>
+    <sys:String x:Key="Runtime.LightingWaiting">Waiting for Windows lighting control</sys:String>
+    <sys:String x:Key="Settings.HardwareWaiting">Device connected. Windows has assigned lighting control elsewhere.</sys:String>
+    <sys:String x:Key="Settings.WindowsLighting">Windows lighting settings</sys:String>
+    <sys:String x:Key="Settings.BackgroundLightingHint">Setup configures LumaTherm for continuous background sync. Windows settings let you change the lighting priority.</sys:String>
     <sys:String x:Key="Tray.StatusSuspended">Suspended</sys:String>
     <sys:String x:Key="Tray.StatusFaulted">Error</sys:String>
     <sys:String x:Key="Tray.StatusUnknown">Unknown</sys:String>

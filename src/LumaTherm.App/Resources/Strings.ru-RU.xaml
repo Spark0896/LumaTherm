@@ -62,6 +62,11 @@
     <sys:String x:Key="Tray.StatusHolding">Удержание цвета</sys:String>
     <sys:String x:Key="Tray.StatusSensorUnavailable">Нет датчика</sys:String>
     <sys:String x:Key="Tray.StatusLightingUnavailable">Нет подсветки</sys:String>
+    <sys:String x:Key="Tray.StatusLightingWaiting">Ожидание управления подсветкой</sys:String>
+    <sys:String x:Key="Runtime.LightingWaiting">Ожидание управления подсветкой Windows</sys:String>
+    <sys:String x:Key="Settings.HardwareWaiting">Устройство подключено. Windows передала управление подсветкой другому приложению.</sys:String>
+    <sys:String x:Key="Settings.WindowsLighting">Настройки подсветки Windows</sys:String>
+    <sys:String x:Key="Settings.BackgroundLightingHint">Установщик настраивает постоянную синхронизацию в фоне. В параметрах Windows можно изменить приоритет подсветки.</sys:String>
     <sys:String x:Key="Tray.StatusSuspended">Приостановлено</sys:String>
     <sys:String x:Key="Tray.StatusFaulted">Ошибка</sys:String>
     <sys:String x:Key="Tray.StatusUnknown">Неизвестно</sys:String>

@@ -240,6 +240,19 @@ public sealed class TrayIconServiceTests
     }
 
     [Fact]
+    public async Task FocusSwitch_AndReturn_DoNotEmitUnavailableWarnings()
+    {
+        var fixture = new TrayFixture(notificationsEnabled: true);
+        await using var service = fixture.CreateService();
+        for (var i = 0; i < 3; i++)
+        {
+            fixture.Runtime.Publish(Snapshot(RuntimeStatus.Active, true, 68));
+            fixture.Runtime.Publish(Snapshot(RuntimeStatus.LightingWaiting, true, 68));
+        }
+        Assert.Empty(fixture.Platform.Notifications);
+    }
+
+    [Fact]
     public async Task Notification_UsesCurrentLanguageForStableTitleAndMessage()
     {
         var fixture = new TrayFixture(notificationsEnabled: true);
@@ -524,6 +537,7 @@ public sealed class TrayIconServiceTests
                 "Tray.StatusHolding" => english ? "Holding color" : "Удержание цвета",
                 "Tray.StatusSensorUnavailable" => english ? "No sensor" : "Нет датчика",
                 "Tray.StatusLightingUnavailable" => english ? "No lighting" : "Нет подсветки",
+                "Tray.StatusLightingWaiting" => english ? "Waiting for lighting control" : "Ожидание управления подсветкой",
                 "Tray.StatusSuspended" => english ? "Suspended" : "Приостановлено",
                 "Tray.StatusFaulted" => english ? "Error" : "Ошибка",
                 "Tray.StatusUnknown" => english ? "Unknown" : "Неизвестно",

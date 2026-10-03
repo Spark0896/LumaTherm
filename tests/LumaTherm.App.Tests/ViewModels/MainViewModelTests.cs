@@ -79,6 +79,7 @@ public sealed class MainViewModelTests
     [InlineData(RuntimeStatus.HoldingLastColor, "Сохранение последнего цвета")]
     [InlineData(RuntimeStatus.SensorUnavailable, "Датчик температуры недоступен")]
     [InlineData(RuntimeStatus.LightingUnavailable, "Подсветка недоступна")]
+    [InlineData(RuntimeStatus.LightingWaiting, "Ожидание управления подсветкой Windows")]
     [InlineData(RuntimeStatus.Suspended, "Работа приостановлена")]
     [InlineData(RuntimeStatus.Faulted, "Ошибка работы")]
     public void SnapshotUpdate_MapsEveryRuntimeStatus(RuntimeStatus status, string expected)

@@ -38,6 +38,17 @@ public sealed class ManifestTests
     }
 
     [Fact]
+    public void LocalSettingsPersistAcrossReinstallWithoutExposingRegistryWrites()
+    {
+        XNamespace virtualization = "http://schemas.microsoft.com/appx/manifest/virtualization/windows10";
+        XNamespace rescap = "http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities";
+        var document = XDocument.Load(Path.Combine(RepositoryLayout.Root, "packaging", "sparse", "AppxManifest.xml"));
+        Assert.Contains(document.Descendants(rescap + "Capability"), capability => (string?)capability.Attribute("Name") == "unvirtualizedResources");
+        Assert.Empty(document.Descendants(virtualization + "ExcludedKey"));
+        Assert.Equal(@"$(KnownFolder:LocalAppData)\LumaTherm", Assert.Single(document.Descendants(virtualization + "ExcludedDirectory")).Value);
+    }
+
+    [Fact]
     public void FusionManifestUsesTheMsixV1ElementAcceptedByActivationContextParsing()
     {
         var manifest = XDocument.Load(Path.Combine(
@@ -71,7 +82,8 @@ public sealed class ManifestTests
         Assert.Equal("Windows.FullTrustApplication", (string?)startupExtension.Attribute("EntryPoint"));
         var startupTask = Assert.Single(startupExtension.Elements(Desktop + "StartupTask"));
         Assert.Equal("LumaThermStartup", (string?)startupTask.Attribute("TaskId"));
-        Assert.Equal("false", (string?)startupTask.Attribute("Enabled"));
+        Assert.Equal("true", (string?)startupTask.Attribute("Enabled"));
+        Assert.Equal("true", (string?)startupTask.Attribute(XNamespace.Get("http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities/5") + "ImmediateRegistration"));
         Assert.Equal("LumaTherm", (string?)startupTask.Attribute("DisplayName"));
 
         Assert.Null(app.Attribute("EntryPoint"));

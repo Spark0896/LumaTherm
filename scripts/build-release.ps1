@@ -195,6 +195,7 @@ function Write-SignedPayloadAnchor([string]$Destination, [string]$Published, [st
         'Register-LumaTherm.cmd' = Join-Path $repositoryRoot 'scripts\Register-LumaTherm.cmd'
         'Register-LumaTherm.ps1' = Join-Path $repositoryRoot 'scripts\Register-LumaTherm.ps1'
         'Unregister-LumaTherm.ps1' = Join-Path $repositoryRoot 'scripts\Unregister-LumaTherm.ps1'
+        'Set-LumaThermLighting.ps1' = Join-Path $repositoryRoot 'scripts\Set-LumaThermLighting.ps1'
     }
     foreach ($path in $inputs.Values) { Assert-SafeTree $path }
     $files = @($inputs.GetEnumerator() | ForEach-Object { [ordered]@{ path = $_.Key; sha256 = Get-Sha256Hex $_.Value } })
@@ -214,7 +215,7 @@ function Assemble-Portable([string]$Published, [string]$Sparse, [string]$Cer, [s
     Get-ChildItem -LiteralPath $Published -Force | Copy-Item -Destination (Join-Path $portableRoot 'app') -Recurse -Force
     Copy-Item -LiteralPath $Sparse -Destination (Join-Path $portableRoot $sparsePackageName) -Force
     Copy-Item -LiteralPath $Cer -Destination (Join-Path $portableRoot 'LumaTherm.cer') -Force
-    foreach ($name in @('Register-LumaTherm.cmd', 'Register-LumaTherm.ps1', 'Unregister-LumaTherm.ps1')) { Copy-Item -LiteralPath (Join-Path $repositoryRoot "scripts\$name") -Destination $portableRoot -Force }
+    foreach ($name in @('Register-LumaTherm.cmd', 'Register-LumaTherm.ps1', 'Unregister-LumaTherm.ps1', 'Set-LumaThermLighting.ps1')) { Copy-Item -LiteralPath (Join-Path $repositoryRoot "scripts\$name") -Destination $portableRoot -Force }
     foreach ($name in @('README.md', 'LICENSE')) { $source = Join-Path $repositoryRoot $name; if (-not (Test-Path -LiteralPath $source -PathType Leaf)) { throw "Required portable input is missing: $name" }; Copy-Item -LiteralPath $source -Destination $portableRoot -Force }
     $internalNames = @(Get-ChildItem -LiteralPath $portableRoot -File -Recurse | ForEach-Object { $_.FullName.Substring($portableRoot.Length + 1).Replace('\', '/') })
     Write-Checksums $portableRoot $internalNames

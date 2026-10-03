@@ -40,6 +40,12 @@ if (-not $Force) {
 
 $events = [Collections.Generic.List[string]]::new()
 $command = @()
+if ($AuditOnly) { $events.Add('lightingPreferenceRestorePlanned') }
+else {
+    $familyName = if ($packages.Count -eq 1) { [string]$packages[0].PackageFamilyName } else { 'LumaTherm_jzd30fs6ag6cm' }
+    & (Join-Path $PSScriptRoot 'Set-LumaThermLighting.ps1') -Action Restore -FamilyName $familyName
+    $events.Add('lightingPreferencesRestored')
+}
 if ($packages.Count -eq 0) { $events.Add('packageAlreadyAbsent') }
 else {
     $fullName = [string]$packages[0].PackageFullName

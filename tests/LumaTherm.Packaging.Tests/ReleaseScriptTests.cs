@@ -166,7 +166,7 @@ public sealed class ReleaseScriptTests
         using (var archive = ZipFile.OpenRead(zip))
         {
             var names = archive.Entries.Select(entry => entry.FullName).OrderBy(name => name, StringComparer.Ordinal).ToArray();
-            Assert.Equal(new[] { "LICENSE", "LumaTherm-1.2.0-sparse.msix", "LumaTherm.cer", "README.md", "Register-LumaTherm.cmd", "Register-LumaTherm.ps1", "SHA256SUMS.txt", "Unregister-LumaTherm.ps1", "app/LumaTherm.exe" }, names);
+            Assert.Equal(new[] { "LICENSE", "LumaTherm-1.2.0-sparse.msix", "LumaTherm.cer", "README.md", "Register-LumaTherm.cmd", "Register-LumaTherm.ps1", "SHA256SUMS.txt", "Set-LumaThermLighting.ps1", "Unregister-LumaTherm.ps1", "app/LumaTherm.exe" }, names);
         }
 
         var second = fixture.Run("-Mode", "AssemblePortable", "-PublishedAppPath", publish, "-SparsePackagePath", sparse, "-CertificatePublicPath", certificate);
@@ -236,6 +236,7 @@ public sealed class ReleaseScriptTests
             File.Copy(Path.Combine(RepositoryLayout.Root, "scripts", "Register-LumaTherm.cmd"), Path.Combine(repository, "scripts", "Register-LumaTherm.cmd"));
             File.Copy(Path.Combine(RepositoryLayout.Root, "scripts", "Register-LumaTherm.ps1"), Path.Combine(repository, "scripts", "Register-LumaTherm.ps1"));
             File.Copy(Path.Combine(RepositoryLayout.Root, "scripts", "Unregister-LumaTherm.ps1"), Path.Combine(repository, "scripts", "Unregister-LumaTherm.ps1"));
+            File.Copy(Path.Combine(RepositoryLayout.Root, "scripts", "Set-LumaThermLighting.ps1"), Path.Combine(repository, "scripts", "Set-LumaThermLighting.ps1"));
             File.Copy(Path.Combine(RepositoryLayout.Root, "packaging", "LumaTherm.iss"), Path.Combine(repository, "packaging", "LumaTherm.iss"));
             File.Copy(Path.Combine(RepositoryLayout.Root, "packaging", "sparse", "AppxManifest.xml"), Path.Combine(repository, "packaging", "sparse", "AppxManifest.xml"));
             File.Copy(Path.Combine(RepositoryLayout.Root, "README.md"), Path.Combine(repository, "README.md"));

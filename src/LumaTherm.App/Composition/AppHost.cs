@@ -319,6 +319,14 @@ public sealed class AppHost : IAsyncDisposable
                 lampEvent = lampId is null ? "lamp.disconnected" : "lamp.connected";
                 _lastLampId = lampId;
             }
+            else if (snapshot.Status == RuntimeStatus.LightingWaiting && _lastRuntimeStatus != RuntimeStatus.LightingWaiting)
+            {
+                lampEvent = "lamp.waiting";
+            }
+            else if (snapshot.Status == RuntimeStatus.Active && _lastRuntimeStatus == RuntimeStatus.LightingWaiting)
+            {
+                lampEvent = "lamp.control-restored";
+            }
 
             if (_lastModeEnabled != snapshot.IsModeEnabled)
             {

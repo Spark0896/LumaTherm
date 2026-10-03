@@ -220,6 +220,24 @@ public sealed class AppHostTests
     }
 
     [Fact]
+    public async Task FocusChanges_LogWaitingAndRestorationWithoutDeviceDisconnection()
+    {
+        var fixture = new HostFixture();
+        await using var host = new AppHost(fixture.Services, [], fixture.RequestExit);
+        await host.StartAsync(TestContext.Current.CancellationToken);
+        var snapshot = new RuntimeSnapshot(RuntimeStatus.Active, null, null, null,
+            new LightingDeviceInfo("lamp", "LampArray", 4, true), null, DateTimeOffset.UtcNow, true);
+        fixture.Runtime.Raise(snapshot);
+        fixture.Runtime.Raise(snapshot with { Status = RuntimeStatus.LightingWaiting, LightingDevice = snapshot.LightingDevice! with { IsAvailable = false } });
+        fixture.Runtime.Raise(snapshot with { Status = RuntimeStatus.LightingWaiting, LightingDevice = snapshot.LightingDevice! with { IsAvailable = false } });
+        fixture.Runtime.Raise(snapshot);
+
+        Assert.Equal(1, fixture.LogEvents.Count(value => value == "lamp.waiting"));
+        Assert.Equal(1, fixture.LogEvents.Count(value => value == "lamp.control-restored"));
+        Assert.DoesNotContain("lamp.disconnected", fixture.LogEvents);
+    }
+
+    [Fact]
     public async Task LoggerDisposalFailure_RetainsSentinelAndIsReported()
     {
         var fixture = new HostFixture(failLoggerDispose: true);

@@ -21,10 +21,17 @@ Compare the hexadecimal hash with the line named `LumaTherm-1.2.0-win-x64-setup.
 
 1. Run `LumaTherm-1.2.0-win-x64-setup.exe` as Administrator.
 2. Read the certificate prompt. This locally signed release must import its bundled **public** certificate into `LocalMachine\Root` (Trusted Root Certification Authorities) to register the Windows lighting identity. No private key is imported. Declining stops setup before replacement or registration.
-3. Choose shortcuts if desired. There is no post-install launch option and the installer does not launch the app.
-4. Start LumaTherm from the Start menu or desktop shortcut, select a Windows LampArray device, and leave thermal synchronization off until the device is available.
+3. Choose shortcuts if desired. Leave **Launch LumaTherm** selected to open the app after installation as your regular Windows user. Silent installation does not open a window.
+4. A new installation selects a compatible LampArray and starts thermal synchronization automatically. Setup enables Dynamic Lighting, puts LumaTherm first for current and future devices, and disables foreground takeover so thermal sync continues when you switch apps. You can change these choices in **Windows lighting settings**.
 
-The **Launch with Windows** switch is off by default. For an installed copy it
+Setup verifies the lighting preferences and saves their previous values locally. Uninstall restores values still matching the installer's configuration; a provider order changed later by the user is preserved. An unrecognized Windows preference format causes a visible installation failure instead of reporting successful configuration.
+
+Setup offers to restart Windows. The current lighting session can retain its old
+controller order after the preferences are written; restarting starts a new session
+with the saved configuration. Save your work before accepting the restart.
+
+The **Start with Windows** switch is enabled on a fresh installation. Saved preferences
+are preserved on upgrades. For an installed copy it
 controls the package startup task; Windows can also show this entry in
 **Settings → Apps → Startup**. Autostart launches LumaTherm in the background,
 so keep at least one tray-menu action enabled if you want a convenient way to

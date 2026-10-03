@@ -95,6 +95,11 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
             try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("ms-settings:startupapps") { UseShellExecute = true }); }
             catch (Exception) { SetValidation("Validation.OpenWindowsSettingsFailed"); }
         });
+        OpenLightingSettingsCommand = new RelayCommand(() =>
+        {
+            try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("ms-settings:personalization-lighting") { UseShellExecute = true }); }
+            catch (Exception) { SetValidation("Validation.OpenWindowsSettingsFailed"); }
+        });
         PickSelectedColorCommand = new AsyncRelayCommand(PickSelectedColorAsync, () => SelectedPoint is not null, _ => SetValidation("Validation.ColorPickFailed"));
         DiscoverLightingDevicesCommand = new AsyncRelayCommand(DiscoverLightingDevicesAsync);
         ResetDefaultsCommand = new RelayCommand(ResetDefaults);
@@ -180,7 +185,7 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
                 return;
             }
 
-            if (LightingDevices.FirstOrDefault(device => device.Id == value) is not { IsAvailable: true } selected)
+            if (LightingDevices.FirstOrDefault(device => device.Id == value) is not { IsPresent: true } selected)
             {
                 return;
             }
@@ -193,8 +198,8 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
             }
 
             LightingDeviceName = selected.Name;
-            SetLightingHardwareStatus("Settings.HardwareConnected");
-            IsLightingDeviceSelectorVisible = LightingDevices.Count(device => device.IsAvailable) > 1;
+            SetLightingHardwareStatus(selected.IsAvailable ? "Settings.HardwareConnected" : "Settings.HardwareWaiting");
+            IsLightingDeviceSelectorVisible = LightingDevices.Count(device => device.IsPresent) > 1;
         }
     }
     public bool IsLightingDeviceSelectorVisible { get => _isLightingDeviceSelectorVisible; private set => SetProperty(ref _isLightingDeviceSelectorVisible, value); }
@@ -202,6 +207,7 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
     public AsyncRelayCommand SaveCommand { get; }
     public AsyncRelayCommand ApplyAutostartCommand { get; }
     public RelayCommand OpenStartupSettingsCommand { get; }
+    public RelayCommand OpenLightingSettingsCommand { get; }
     public AsyncRelayCommand PickSelectedColorCommand { get; }
     public AsyncRelayCommand DiscoverLightingDevicesCommand { get; }
     public RelayCommand ResetDefaultsCommand { get; }
@@ -320,16 +326,17 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
         if (_liveSettings.PreferredLightingDeviceId is { Length: > 0 } savedId
             && !LightingDevices.Any(device => device.Id == savedId))
         {
-            LightingDevices.Add(new LightingDeviceInfo(savedId, Format("Settings.UnavailableDeviceFormat", savedId), 0, false));
+            LightingDevices.Add(new LightingDeviceInfo(savedId, Format("Settings.UnavailableDeviceFormat", savedId), 0, false, false));
             _unavailableSavedDeviceId = savedId;
         }
 
         SelectedLightingDeviceId = _liveSettings.PreferredLightingDeviceId
-            ?? devices.FirstOrDefault(device => device.IsAvailable)?.Id;
+            ?? devices.FirstOrDefault(device => device.IsAvailable)?.Id
+            ?? devices.FirstOrDefault(device => device.IsPresent)?.Id;
         var selectedDevice = LightingDevices.FirstOrDefault(device => device.Id == SelectedLightingDeviceId);
-        IsLightingDeviceSelectorVisible = devices.Count(device => device.IsAvailable) > 1
-            || selectedDevice is { IsAvailable: false };
-        if (selectedDevice is { IsAvailable: false })
+        IsLightingDeviceSelectorVisible = devices.Count(device => device.IsPresent) > 1
+            || selectedDevice is { IsPresent: false };
+        if (selectedDevice is { IsPresent: false })
         {
             LightingDeviceName = _localization.Get("Runtime.LightingUnavailable");
             SetLightingHardwareStatus("Settings.HardwareSavedUnavailable");
@@ -338,10 +345,10 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
         {
             SetLightingHardwareStatus("Settings.HardwareNotFound");
         }
-        else if (selectedDevice is { IsAvailable: true } selected)
+        else if (selectedDevice is { IsPresent: true } selected)
         {
             LightingDeviceName = selected.Name;
-            SetLightingHardwareStatus("Settings.HardwareConnected");
+            SetLightingHardwareStatus(selected.IsAvailable ? "Settings.HardwareConnected" : "Settings.HardwareWaiting");
         }
         else
         {
@@ -582,10 +589,14 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
         var selectedDevice = LightingDevices.FirstOrDefault(device => device.Id == SelectedLightingDeviceId);
         LightingDeviceName = snapshot.LightingDevice?.Name ?? selectedDevice switch
         {
-            { IsAvailable: false } => _localization.Get("Runtime.LightingUnavailable"),
-            { IsAvailable: true } => selectedDevice.Name,
+            { IsPresent: false } => _localization.Get("Runtime.LightingUnavailable"),
+            { IsPresent: true } => selectedDevice.Name,
             _ => _localization.Get("Runtime.LightingNotFound"),
         };
+        if (snapshot.LightingDevice is { IsPresent: true } connected)
+        {
+            SetLightingHardwareStatus(connected.IsAvailable ? "Settings.HardwareConnected" : "Settings.HardwareWaiting");
+        }
     }
 
     private static string ValidationKey(ArgumentException exception) => exception.Message switch

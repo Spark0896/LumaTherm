@@ -17,6 +17,8 @@ public sealed record AppSettings(
         2, ThermalProfile.Default, false, false, true, true, null,
         AppLanguage.System, TrayMenuOptions.Default);
 
+    public static AppSettings FirstRun { get; } = Default with { IsModeEnabled = true, IsAutostartEnabled = true };
+
     public AppSettings Validate()
     {
         if (SchemaVersion != 2) throw new InvalidDataException($"Unsupported settings schema {SchemaVersion}.");

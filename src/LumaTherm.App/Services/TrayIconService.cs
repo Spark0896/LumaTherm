@@ -122,6 +122,7 @@ public sealed class TrayIconService : IAsyncDisposable
             RuntimeStatus.HoldingLastColor => "Tray.StatusHolding",
             RuntimeStatus.SensorUnavailable => "Tray.StatusSensorUnavailable",
             RuntimeStatus.LightingUnavailable => "Tray.StatusLightingUnavailable",
+            RuntimeStatus.LightingWaiting => "Tray.StatusLightingWaiting",
             RuntimeStatus.Suspended => "Tray.StatusSuspended",
             RuntimeStatus.Faulted => "Tray.StatusFaulted",
             _ => "Tray.StatusUnknown",

@@ -2,7 +2,7 @@
 
 LumaTherm is an open-source WPF desktop utility for x64 Windows 11 22H2+ that maps live GPU temperature to devices exposed through Windows Dynamic Lighting LampArray. NVIDIA NVML is the primary sensor; MSI Afterburner shared memory is an optional fallback. Settings and logs are local. Updates are manually checked on GitHub.
 
-The primary workflow is: choose an available device, set a thermal profile, preview it, enable thermal sync, and leave monitoring running in the tray. The audience wants quick, understandable temperature feedback while gaming or working, without needing vendor-specific RGB integrations.
+A fresh installation configures Windows background priority, startup, and active thermal sync automatically. The primary workflow is: check the live reading, customize and preview the profile when needed, and leave monitoring running in the tray. The audience wants quick, understandable temperature feedback while gaming or working, without needing vendor-specific RGB integrations.
 
 Confirmed redesign requirements: follow the user's Arctic Minimal reference; full navigation labels; calm dark blue-gray surfaces; clear temperature and hardware state; usable color editing; stable tray interaction; truthful Windows startup state; English and Russian UI and documentation. The user explicitly selected factory colors 35°C #006BFF, 65°C #3CFF00, 85°C #FF0000. Preserve custom saved profiles.
 

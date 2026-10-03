@@ -4,6 +4,10 @@ All notable changes are documented here. Version numbers follow semantic version
 
 ## [1.2.0] - 2026-10-03
 
+- Retain LampArray ownership requests across focus changes, resume after Windows returns control, and suppress false device-unavailable notifications.
+- Enable sync and immediately registered Windows startup on fresh installations, add post-install launch and Windows background-lighting guidance.
+- Automatically configure and verify Windows Dynamic Lighting priority during registration; preserve original preferences and restore them safely on uninstall.
+
 ### Changed
 
 - Arctic Minimal WPF interface, two-peak identity, responsive navigation, fixed
@@ -25,6 +29,9 @@ All notable changes are documented here. Version numbers follow semantic version
   Cancel and close release the temporary session and restore normal operation.
 - Black/gray transitions preserve the neighboring hue; primary-button text renders
   with the intended contrast.
+- Manual update checks select the Windows x64 installer for the release version,
+  regardless of GitHub asset order; screenshots and portable archives cannot be
+  mistaken for the setup download.
 
 ## [1.1.0] - 2026-09-13
 
