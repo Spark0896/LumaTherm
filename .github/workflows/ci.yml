@@ -16,4 +16,4 @@ jobs:
           global-json-file: global.json
       - run: dotnet restore LumaTherm.sln -p:NuGetAudit=false
       - run: dotnet build LumaTherm.sln -c Release --no-restore -p:NuGetAudit=false
-      - run: dotnet test LumaTherm.sln -c Release --no-build -p:NuGetAudit=false
+      - run: dotnet test LumaTherm.sln -c Release -m:1 --no-build -p:NuGetAudit=false

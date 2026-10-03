@@ -69,3 +69,16 @@ The independent review's initial F1/F2 findings (numeric binding errors bypassin
 save; arbitrary-point overview/overlapping labels) and Delete focus finding were
 addressed with regression tests. Rendered primary-button contrast was also fixed
 and asserted using the actual TextBlock foreground. See [finish review](arctic-review.md).
+
+## Clean Windows CI follow-up
+
+The first GitHub run built successfully but exposed test-harness portability
+issues: the asset reproduction test hardcoded a private `.dotnet` host; the child
+process timeout expired before cold PowerShell startup acquired its file lock;
+and the WPF lifecycle test synchronously blocked dispatcher-owned asynchronous
+cleanup, starving the shared STA queue. The harness now resolves the installed
+SDK, retains a bounded 10-second process deadline with actual lock-release proof,
+and pumps the dispatcher during bounded lifecycle waits. The CI solution run is
+serial, matching local verification. No tests were skipped or disabled. After this
+batch the full local suite again passed 628/628; application source and screenshots
+were unchanged.

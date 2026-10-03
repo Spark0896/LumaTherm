@@ -119,7 +119,7 @@ public sealed class ManifestTests
             Directory.CreateDirectory(generatedSource);
             File.Copy(Path.Combine(RepositoryLayout.Root, "src", "LumaTherm.App", "Assets", "LogoGeometry.xaml"),
                 Path.Combine(generatedSource, "LogoGeometry.xaml"));
-            var startInfo = new ProcessStartInfo(Path.Combine(RepositoryLayout.Root, ".dotnet", "dotnet.exe"))
+            var startInfo = new ProcessStartInfo(RepositoryLayout.DotnetHost)
             {
                 WorkingDirectory = RepositoryLayout.Root
             };

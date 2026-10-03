@@ -108,7 +108,7 @@ public sealed class MainWindowLifecycleTests(ThermalCoreStaFixture sta)
                 Assert.Equal(0, lampPlatform.DisposeCalls);
 
                 trayPlatform.RaiseExit();
-                application.ShutdownRequested.Task.WaitAsync(TimeSpan.FromSeconds(2)).GetAwaiter().GetResult();
+                WaitWithUiPump(application.ShutdownRequested.Task);
 
                 Assert.Equal(1, runtime.StopCalls);
                 Assert.Equal(0, runtime.DisposeCalls);
@@ -117,9 +117,9 @@ public sealed class MainWindowLifecycleTests(ThermalCoreStaFixture sta)
             }
             finally
             {
-                tray?.DisposeAsync().AsTask().GetAwaiter().GetResult();
-                ui?.DisposeAsync().AsTask().GetAwaiter().GetResult();
-                runtime.DisposeAsync().AsTask().GetAwaiter().GetResult();
+                if (tray is not null) WaitWithUiPump(tray.DisposeAsync().AsTask());
+                if (ui is not null) WaitWithUiPump(ui.DisposeAsync().AsTask());
+                WaitWithUiPump(runtime.DisposeAsync().AsTask());
             }
 
             Assert.Equal(1, runtime.DisposeCalls);
@@ -129,6 +129,20 @@ public sealed class MainWindowLifecycleTests(ThermalCoreStaFixture sta)
     private static void SimulateDeactivated(Window window) =>
         typeof(Window).GetMethod("OnDeactivated", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
             .Invoke(window, [EventArgs.Empty]);
+
+    private static void WaitWithUiPump(Task task)
+    {
+        var dispatcher = Dispatcher.CurrentDispatcher;
+        var frame = new DispatcherFrame();
+        var timer = new DispatcherTimer(DispatcherPriority.Send) { Interval = TimeSpan.FromSeconds(2) };
+        timer.Tick += (_, _) => frame.Continue = false;
+        task.ContinueWith(_ => dispatcher.BeginInvoke(() => frame.Continue = false), TaskScheduler.Default);
+        timer.Start();
+        Dispatcher.PushFrame(frame);
+        timer.Stop();
+        Assert.True(task.IsCompleted, "UI operation did not complete within the bounded dispatcher pump.");
+        task.GetAwaiter().GetResult();
+    }
 
     private sealed class TrackingRuntime(IThermalRuntime inner) : IThermalRuntime
     {
