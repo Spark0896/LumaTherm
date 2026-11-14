@@ -13,17 +13,21 @@ public partial class TemperatureSparkline : UserControl
 {
     public static readonly DependencyProperty ItemsSourceProperty = DependencyProperty.Register(nameof(ItemsSource), typeof(IEnumerable<TemperaturePoint>), typeof(TemperatureSparkline), new FrameworkPropertyMetadata(null, FrameworkPropertyMetadataOptions.AffectsRender, OnItemsSourceChanged));
     public static readonly DependencyProperty ProfileProperty = DependencyProperty.Register(nameof(Profile), typeof(ThermalProfile), typeof(TemperatureSparkline), new FrameworkPropertyMetadata(null));
+    public static readonly DependencyProperty WindowEndProperty = DependencyProperty.Register(
+        nameof(WindowEnd), typeof(DateTimeOffset?), typeof(TemperatureSparkline),
+        new FrameworkPropertyMetadata(null, FrameworkPropertyMetadataOptions.AffectsRender));
     private INotifyCollectionChanged? _observedCollection;
     public TemperatureSparkline() { InitializeComponent(); Loaded += OnLoaded; Unloaded += OnUnloaded; }
     public IEnumerable<TemperaturePoint>? ItemsSource { get => (IEnumerable<TemperaturePoint>?)GetValue(ItemsSourceProperty); set => SetValue(ItemsSourceProperty, value); }
     public ThermalProfile? Profile { get => (ThermalProfile?)GetValue(ProfileProperty); set => SetValue(ProfileProperty, value); }
+    public DateTimeOffset? WindowEnd { get => (DateTimeOffset?)GetValue(WindowEndProperty); set => SetValue(WindowEndProperty, value); }
     internal IReadOnlyList<Point> ProjectedPoints => Project(ActualWidth, ActualHeight);
     private IReadOnlyList<Point> Project(double width, double height)
     {
         var readings = ItemsSource?.Where(point => double.IsFinite(point.Celsius)).OrderBy(point => point.Timestamp).ToArray() ?? [];
         if (readings.Length == 0) return [];
-        var end = readings[^1].Timestamp;
-        return readings.Where(point => end - point.Timestamp <= TimeSpan.FromSeconds(60)).Select(point => new Point(
+        var end = WindowEnd ?? readings[^1].Timestamp;
+        return readings.Where(point => point.Timestamp <= end && end - point.Timestamp <= TimeSpan.FromSeconds(60)).Select(point => new Point(
             30 + Math.Clamp(1 - (end - point.Timestamp).TotalSeconds / 60, 0, 1) * Math.Max(0, width - 34),
             6 + (1 - Math.Clamp(point.Celsius / 120, 0, 1)) * Math.Max(0, height - 12))).ToArray();
     }

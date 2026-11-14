@@ -2,17 +2,17 @@
 
 ## Supported contract
 
-LumaTherm 1.2.0 is an x64 Windows 11 desktop application. It requires:
+LumaTherm 1.2.1 is an x64 Windows 11 desktop application. It requires:
 
 - Windows 11 version 22H2 or newer;
 - an NVIDIA GPU with a working NVIDIA driver for the preferred NVML temperature source;
 - a Windows Dynamic Lighting-compatible **Windows LampArray** device for lighting output.
 
-MSI Afterburner shared memory can supply a read-only fallback temperature when it is installed, running, and configured to expose that data. It is not required on a clean Windows 11 install.
+MSI Afterburner shared memory can supply a read-only fallback temperature when it is installed, running, and configured to expose that data. Its producer polling timestamp must be no more than five seconds old; configure a polling interval of five seconds or less. It is not required on a clean Windows 11 install.
 
 ## Explicit limits
 
-LumaTherm controls devices only through the Windows LampArray API. It does not guarantee support for all RGB hardware, every motherboard, every USB lighting accessory, or every manufacturer application. It neither ships manufacturer libraries nor sends direct HID commands. A device that is not exposed to Windows as an available LampArray cannot be controlled by LumaTherm.
+LumaTherm controls devices only through the Windows LampArray API. It does not guarantee support for all RGB hardware, every motherboard, every USB lighting accessory, or every manufacturer application. It neither ships manufacturer libraries nor sends direct HID commands. A device that is not exposed to Windows as a LampArray is outside the supported output contract. A discovered LampArray that is temporarily unavailable remains a supported device: LumaTherm shows **Waiting for Windows lighting control** and resumes when Windows grants ownership. This state is distinct from no LampArray being found; the app cannot force Windows to grant control.
 
 Another Dynamic Lighting controller can make a device unavailable. Enable Dynamic Lighting in Windows and prioritize LumaTherm over conflicting background controllers. For GIGABYTE devices, close only the RGB Fusion page if it owns the device, then retry discovery; LumaTherm does not manipulate GIGABYTE software.
 

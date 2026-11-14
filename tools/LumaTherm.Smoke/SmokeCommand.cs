@@ -275,7 +275,7 @@ public static class SmokeCommand
                 return false;
             }
 
-            if (!double.IsFinite(from) || !double.IsFinite(to) || from is < 0 or > 120 || to is < 0 or > 120 || seconds is < 0.1 or > 60)
+            if (!double.IsFinite(from) || !double.IsFinite(to) || !double.IsFinite(seconds) || from is < 0 or > 120 || to is < 0 or > 120 || seconds is < 0.1 or > 60)
             {
                 error = "simulate принимает температуру от 0 до 120 °C и длительность от 0.1 до 60 секунд.";
                 return false;

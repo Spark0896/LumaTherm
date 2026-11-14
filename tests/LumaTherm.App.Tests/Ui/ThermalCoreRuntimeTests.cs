@@ -388,6 +388,8 @@ public sealed class ThermalCoreRuntimeTests
             Assert.True(bounds.Right <= width + 0.5, $"{name} clips horizontally: {bounds}.");
             Assert.True(bounds.Top >= -0.5, $"{name} starts above the scroll extent: {bounds}.");
             Assert.True(bounds.Bottom <= view.DashboardScroller.ExtentHeight + 0.5, $"{name} ends beyond the scroll extent: {bounds}.");
+            if (name == "ModeToggle")
+                Assert.True(bounds.Bottom <= view.DashboardScroller.ViewportHeight + 0.5, "The sync switch must be visible without scrolling.");
         }
 
         if (compact)
@@ -424,7 +426,7 @@ public sealed class ThermalCoreRuntimeTests
 
         Assert.Equal("68°C", view.CurrentTemperatureText.Text);
         Assert.Equal("#FFC64A", view.CurrentColorText.Text);
-        Assert.Equal("Режим активен", view.ModeStatusText.Text);
+        Assert.Equal("Цвет отправлен устройству", view.ModeStatusText.Text);
         Assert.Equal(68, view.TemperatureRing.Temperature);
         Assert.Same(vm.History, view.HistorySparkline.ItemsSource);
         Assert.Single(vm.History);
@@ -489,6 +491,21 @@ public sealed class ThermalCoreRuntimeTests
             Assert.Equal(Visibility.Visible, settingsIndicator.Visibility);
         }
         finally { shell.Close(); }
+    });
+
+    [Fact]
+    public void Sparkline_MovesOldReadingAwayFromNowAndExpiresIt() => _sta.Run(() =>
+    {
+        var start = DateTimeOffset.UnixEpoch;
+        var sparkline = Arrange(new TemperatureSparkline
+        {
+            ItemsSource = new[] { new TemperaturePoint(start, 43) },
+            WindowEnd = start.AddSeconds(30),
+        }, 634, 132);
+
+        Assert.Equal(330, Assert.Single(sparkline.ProjectedPoints).X);
+        sparkline.WindowEnd = start.AddSeconds(61);
+        Assert.Empty(sparkline.ProjectedPoints);
     });
 
     [Fact]

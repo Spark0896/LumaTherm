@@ -105,7 +105,7 @@ if ($null -ne $previousJson) {
         $isProviders = $relative -ceq 'Providers' -or $relative -cmatch '^Devices\\[^\\]+\\Providers$'
         if (-not ($isRoot -or $isDevice -or $isProviders) -or
             ($isProviders -and -not (Is-Index $change.Name)) -or
-            (-not $isProviders -and $change.Name -cnotin @('AmbientLightingEnabled', 'ControlledByForegroundApp')) -or
+            (-not $isProviders -and $change.Name -cnotin @('AmbientLightingEnabled', 'ControlledByForegroundApp', 'Brightness')) -or
             -not (Valid-Value $change.Before $isProviders) -or -not (Valid-Value $change.After $isProviders)) {
             throw 'Lighting installation backup contains an unsupported preference.'
         }
@@ -165,6 +165,10 @@ $changes = [Collections.Generic.List[object]]::new()
 foreach ($root in $roots) {
     foreach ($name in @('AmbientLightingEnabled', 'ControlledByForegroundApp')) {
         $changes.Add([pscustomobject]@{ Key = $root; Name = $name; Before = (Read-Preference $root $name); After = [pscustomobject]@{ Kind = 'DWord'; Text = $(if ($name -eq 'AmbientLightingEnabled') { '1' } else { '0' }) } })
+    }
+    $brightness = Read-Preference $root 'Brightness'
+    if ($null -ne $brightness -and $brightness.Kind -ceq 'DWord' -and $brightness.Text -ceq '0') {
+        $changes.Add([pscustomobject]@{ Key = $root; Name = 'Brightness'; Before = $brightness; After = [pscustomobject]@{ Kind = 'DWord'; Text = '50' } })
     }
     $path = $root + '\Providers'
     $key = $userRoot.OpenSubKey($path)

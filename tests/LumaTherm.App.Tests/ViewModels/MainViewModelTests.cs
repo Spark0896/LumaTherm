@@ -10,6 +10,17 @@ namespace LumaTherm.App.Tests.ViewModels;
 
 public sealed class MainViewModelTests
 {
+    [Theory]
+    [InlineData(RuntimeStatus.LightingWaiting, null, 10)]
+    [InlineData(RuntimeStatus.SensorUnavailable, null, 11)]
+    [InlineData(RuntimeStatus.LightingUnavailable, ThermalRuntime.DeviceNotFoundMessage, 11)]
+    [InlineData(RuntimeStatus.LightingUnavailable, "Access denied", 12)]
+    public void StartupCheck_DistinguishesUndetectedHardwareFromAFailedConnection(RuntimeStatus status, string? message, int exitCode)
+    {
+        var snapshot = new RuntimeSnapshot(status, null, null, null, null, message, DateTimeOffset.UnixEpoch);
+        Assert.Equal(exitCode, LightingStartupCheck.Classify(snapshot));
+    }
+
     [Fact]
     public void SnapshotUpdate_ProjectsTemperatureColorAndStatus()
     {
@@ -26,6 +37,33 @@ public sealed class MainViewModelTests
         Assert.Equal("Desk lamp", vm.LightingDeviceName);
         Assert.True(vm.IsModeEnabled);
         Assert.Equal(ThermalRange.Warm, vm.CurrentRange);
+        Assert.Single(vm.History);
+    }
+
+    [Fact]
+    public void WaitingForControl_HidesPreviouslySentColorAndKeepsLiveTemperature()
+    {
+        var runtime = new FakeThermalRuntime();
+        using var vm = new MainViewModel(runtime);
+        runtime.Publish(Snapshot(RuntimeStatus.Active, 68, DateTimeOffset.UnixEpoch));
+
+        runtime.Publish(Snapshot(RuntimeStatus.LightingWaiting, 68, DateTimeOffset.UnixEpoch.AddSeconds(1)));
+
+        Assert.Equal("68°C", vm.TemperatureText);
+        Assert.Equal("—", vm.CurrentColorHex);
+        Assert.False(vm.IsHealthy);
+    }
+
+    [Fact]
+    public void SensorUnavailable_HidesTheStaleTemperatureButKeepsHistory()
+    {
+        var runtime = new FakeThermalRuntime();
+        using var vm = new MainViewModel(runtime);
+        var reading = Snapshot(RuntimeStatus.Active, 68, DateTimeOffset.UnixEpoch);
+        runtime.Publish(reading);
+        runtime.Publish(reading with { Status = RuntimeStatus.SensorUnavailable });
+
+        Assert.True(double.IsNaN(vm.CurrentTemperature));
         Assert.Single(vm.History);
     }
 

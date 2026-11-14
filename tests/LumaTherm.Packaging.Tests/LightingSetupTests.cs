@@ -37,6 +37,24 @@ public sealed class LightingSetupTests : IDisposable
     }
 
     [Fact]
+    public void InstallMakesZeroBrightnessVisibleAndUninstallRestoresIt()
+    {
+        using var global = Registry.CurrentUser.CreateSubKey(_root);
+        using var device = Registry.CurrentUser.CreateSubKey(_root + @"\Devices\device-a");
+        global.SetValue("Brightness", 0);
+        device.SetValue("Brightness", 0);
+
+        Pass();
+        Assert.Equal(50, global.GetValue("Brightness"));
+        Assert.Equal(50, device.GetValue("Brightness"));
+
+        Pass();
+        Pass("Restore");
+        Assert.Equal(0, global.GetValue("Brightness"));
+        Assert.Equal(0, device.GetValue("Brightness"));
+    }
+
+    [Fact]
     public void ReinstallKeepsOriginalBackupAndUninstallRestoresOrderAndToggleValues()
     {
         Seed(_root + @"\Providers", "WindowsLighting", "OtherApp");

@@ -85,7 +85,7 @@ public sealed class TrayIconService : IAsyncDisposable
         ArgumentNullException.ThrowIfNull(snapshot);
         ArgumentNullException.ThrowIfNull(settings);
         ArgumentNullException.ThrowIfNull(localization);
-        var temperature = snapshot.Temperature is null ? "—" : $"{snapshot.Temperature.Celsius:0}°C";
+        var temperature = snapshot.LiveTemperature is { } reading ? $"{reading.Celsius:0}°C" : "—";
         var tooltip = TruncateTooltip(
             $"{localization.Get("App.Name")} · {temperature} · {GetStatusLabel(snapshot.Status, localization)}",
             TooltipLimit);

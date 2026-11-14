@@ -13,11 +13,11 @@ public sealed class AboutViewModelTests
     [Fact]
     public void Constructor_DerivesCurrentVersionFromTheApplicationAssemblyMetadata()
     {
-        using var vm = Create(new FixedFeed(Release("1.2.0")));
+        using var vm = Create(new FixedFeed(Release("1.2.1")));
         var metadata = typeof(AboutViewModel).Assembly
             .GetCustomAttribute<AssemblyInformationalVersionAttribute>()!.InformationalVersion;
 
-        Assert.Equal("1.2.0", metadata);
+        Assert.Equal("1.2.1", metadata);
         Assert.Equal(metadata, vm.CurrentVersion);
         Assert.Equal(UpdateState.Idle, vm.State);
         Assert.True(vm.CheckForUpdatesCommand.CanExecute(null));
@@ -41,7 +41,33 @@ public sealed class AboutViewModelTests
     }
 
     [Theory]
-    [InlineData("1.2.0")]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task OpenLink_LaunchFailureIsLocalizedAndRetryPreservesTheAvailableRelease(bool openRelease)
+    {
+        var launcher = new RecordingLauncher { FailuresRemaining = 1 };
+        var localization = new FakeLocalization();
+        using var vm = Create(new FixedFeed(Release("1.3.0")), launcher, localization);
+        await vm.CheckForUpdatesCommand.ExecuteAsync();
+        var command = openRelease ? vm.OpenReleaseCommand : vm.OpenRepositoryCommand;
+
+        command.Execute(null);
+
+        Assert.Equal("open-failed-en", vm.StatusText);
+        Assert.Equal(UpdateState.Available, vm.State);
+        Assert.Equal("1.3.0", vm.AvailableVersion);
+        Assert.True(command.CanExecute(null));
+        localization.Apply(AppLanguage.Russian);
+        Assert.Equal("open-failed-ru", vm.StatusText);
+
+        command.Execute(null);
+
+        Assert.NotNull(launcher.LastOpened);
+        Assert.Equal("available-ru", vm.StatusText);
+    }
+
+    [Theory]
+    [InlineData("1.2.1")]
     [InlineData("1.0.9")]
     public async Task CheckForUpdatesAsync_CurrentOrOlderReleaseKeepsDownloadNavigationDisabled(string latest)
     {
@@ -85,7 +111,7 @@ public sealed class AboutViewModelTests
         await vm.CheckForUpdatesCommand.ExecuteAsync();
         Assert.Equal(1, feed.Calls);
 
-        feed.Complete(Release("1.2.0"));
+        feed.Complete(Release("1.2.1"));
         await first;
         Assert.Equal(UpdateState.Current, vm.State);
     }
@@ -148,8 +174,13 @@ public sealed class AboutViewModelTests
 
     private sealed class RecordingLauncher : ILinkLauncher
     {
+        public int FailuresRemaining { get; set; }
         public Uri? LastOpened { get; private set; }
-        public void Open(Uri uri) => LastOpened = uri;
+        public void Open(Uri uri)
+        {
+            if (FailuresRemaining-- > 0) throw new System.ComponentModel.Win32Exception("No browser is available.");
+            LastOpened = uri;
+        }
     }
 
     private sealed class FakeLocalization : ILocalizationService
@@ -163,6 +194,7 @@ public sealed class AboutViewModelTests
             "Update.Available" => CurrentLanguage == AppLanguage.Russian ? "available-ru" : "available-en",
             "Update.UpToDate" => CurrentLanguage == AppLanguage.Russian ? "current-ru" : "current-en",
             "Update.Failed" => CurrentLanguage == AppLanguage.Russian ? "failed-ru" : "failed-en",
+            "Update.OpenFailed" => CurrentLanguage == AppLanguage.Russian ? "open-failed-ru" : "open-failed-en",
             _ => throw new KeyNotFoundException(key),
         };
         public void Apply(AppLanguage language)

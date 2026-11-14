@@ -15,7 +15,7 @@
                         <TextBlock x:Name="AppDescriptionText" Text="{DynamicResource App.Description}" Foreground="{StaticResource MutedTextBrush}" FontSize="12" VerticalAlignment="Center" Margin="18,0,0,0" MaxWidth="360" TextTrimming="CharacterEllipsis" />
                     </StackPanel>
                     <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="12,0,10,0">
-                        <Ellipse x:Name="DeviceStatusDot" Width="6" Height="6" Margin="0,0,8,0"><Ellipse.Style><Style TargetType="Ellipse"><Setter Property="Fill" Value="{StaticResource SuccessColorBrush}" /><Style.Triggers><DataTrigger Binding="{Binding HasLightingDevice}" Value="False"><Setter Property="Fill" Value="{StaticResource IconIdleBrush}" /></DataTrigger></Style.Triggers></Style></Ellipse.Style></Ellipse>
+                        <Ellipse x:Name="DeviceStatusDot" Width="6" Height="6" Margin="0,0,8,0"><Ellipse.Style><Style TargetType="Ellipse"><Setter Property="Fill" Value="{StaticResource SuccessColorBrush}" /><Style.Triggers><DataTrigger Binding="{Binding IsHealthy}" Value="False"><Setter Property="Fill" Value="{StaticResource IconIdleBrush}" /></DataTrigger></Style.Triggers></Style></Ellipse.Style></Ellipse>
                         <TextBlock Text="{Binding LightingDeviceName}" Foreground="{StaticResource MutedTextBrush}" FontSize="12" MaxWidth="170" TextTrimming="CharacterEllipsis" />
                     </StackPanel>
                     <StackPanel Grid.Column="2" Orientation="Horizontal" shell:WindowChrome.IsHitTestVisibleInChrome="True">

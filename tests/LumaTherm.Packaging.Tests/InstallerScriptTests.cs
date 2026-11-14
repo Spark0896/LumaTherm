@@ -130,10 +130,10 @@ public sealed class InstallerScriptTests
     {
         using var fixture = PortableFixture.Create();
         var exact = fixture.Unregister("-AuditOnly", "-Force", "-InstalledPackageNameForTest", "LumaTherm",
-            "-InstalledPublisherForTest", "CN=LumaTherm Local", "-InstalledPackageFullNameForTest", "LumaTherm_1.2.0.0_x64__test");
+            "-InstalledPublisherForTest", "CN=LumaTherm Local", "-InstalledPackageFullNameForTest", "LumaTherm_1.2.1.0_x64__test");
         Assert.Equal(0, exact.ExitCode);
         using var json = JsonDocument.Parse(exact.StandardOutput);
-        Assert.Equal(new[] { "Remove-AppxPackage", "-Package", "LumaTherm_1.2.0.0_x64__test" },
+        Assert.Equal(new[] { "Remove-AppxPackage", "-Package", "LumaTherm_1.2.1.0_x64__test" },
             json.RootElement.GetProperty("removalCommand").EnumerateArray().Select(value => value.GetString()).ToArray());
         Assert.False(json.RootElement.GetProperty("removeUserData").GetBoolean());
 
@@ -196,7 +196,8 @@ public sealed class InstallerScriptTests
         var values = ParseKeyValues(lines);
         Assert.Equal("{{9F6F5FEA-A89E-4D1C-9D0C-6C7C9FB5D310}", values["AppId"]);
         Assert.Equal("LumaTherm", values["AppName"]);
-        Assert.Equal("1.2.0", values["AppVersion"]);
+        Assert.Equal("{#AppVersion}", values["AppVersion"]);
+        Assert.Contains("#define AppVersion \"1.2.1\"", lines);
         Assert.Equal(@"{autopf}\LumaTherm", values["DefaultDirName"]);
         Assert.Equal("x64compatible", values["ArchitecturesAllowed"]);
         Assert.Equal("admin", values["PrivilegesRequired"]);
@@ -215,6 +216,17 @@ public sealed class InstallerScriptTests
         Assert.Contains(lines, line => line.Contains("not UninstallSilent", StringComparison.Ordinal));
         Assert.Contains(lines, line => line.Contains("-RemoveUserData", StringComparison.Ordinal));
         Assert.DoesNotContain(lines, line => line.Contains("DelTree", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void SetupChecksLightingInTheInstallationUserSessionBeforeStartingMonitoring()
+    {
+        var script = File.ReadAllText(Path.Combine(RepositoryLayout.Root, "packaging", "LumaTherm.iss"));
+
+        Assert.DoesNotContain("AlwaysRestart=yes", script, StringComparison.Ordinal);
+        Assert.Contains("ExecAsOriginalUser(LumaThermExecutable, '--verify-lighting'", script, StringComparison.Ordinal);
+        Assert.Contains("Result := LightingSessionNeedsRestart", script, StringComparison.Ordinal);
+        Assert.Contains("--autostart", script, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -274,7 +286,7 @@ public sealed class InstallerScriptTests
 
         public string Root { get; }
         public string Thumbprint { get; }
-        public string PackagePath => Path.Combine(Root, "LumaTherm-1.2.0-sparse.msix");
+        public string PackagePath => Path.Combine(Root, "LumaTherm-1.2.1-sparse.msix");
         public string ApplicationDirectory => Path.Combine(Root, "app");
 
         public static PortableFixture Create()
@@ -330,17 +342,17 @@ public sealed class InstallerScriptTests
                 version = 1,
                 files = names.Select(name => new { path = name, sha256 = Sha(Path.Combine(root, name.Replace('/', Path.DirectorySeparatorChar))) }).ToArray()
             });
-            using var archive = ZipFile.Open(Path.Combine(root, "LumaTherm-1.2.0-sparse.msix"), ZipArchiveMode.Create);
+            using var archive = ZipFile.Open(Path.Combine(root, "LumaTherm-1.2.1-sparse.msix"), ZipArchiveMode.Create);
             var payload = archive.CreateEntry("PayloadHashes.json");
             using (var writer = new StreamWriter(payload.Open(), new UTF8Encoding(false))) writer.Write(anchor);
             var manifest = archive.CreateEntry("AppxManifest.xml");
             using var manifestWriter = new StreamWriter(manifest.Open(), new UTF8Encoding(false));
-            manifestWriter.Write("<Package xmlns=\"http://schemas.microsoft.com/appx/manifest/foundation/windows10\"><Identity Name=\"LumaTherm\" Publisher=\"CN=LumaTherm Local\" Version=\"1.2.0.0\" /></Package>");
+            manifestWriter.Write("<Package xmlns=\"http://schemas.microsoft.com/appx/manifest/foundation/windows10\"><Identity Name=\"LumaTherm\" Publisher=\"CN=LumaTherm Local\" Version=\"1.2.1.0\" /></Package>");
         }
 
         private static void WriteChecksums(string root)
         {
-            var names = new[] { "app/LumaTherm.exe", "LICENSE", "LumaTherm-1.2.0-sparse.msix", "LumaTherm.cer", "README.md", "Register-LumaTherm.cmd", "Register-LumaTherm.ps1", "Set-LumaThermLighting.ps1", "Unregister-LumaTherm.ps1" };
+            var names = new[] { "app/LumaTherm.exe", "LICENSE", "LumaTherm-1.2.1-sparse.msix", "LumaTherm.cer", "README.md", "Register-LumaTherm.cmd", "Register-LumaTherm.ps1", "Set-LumaThermLighting.ps1", "Unregister-LumaTherm.ps1" };
             var lines = names.Select(name => $"{Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(Path.Combine(root, name.Replace('/', Path.DirectorySeparatorChar)))))} *{name}");
             File.WriteAllLines(Path.Combine(root, "SHA256SUMS.txt"), lines, new UTF8Encoding(false));
         }

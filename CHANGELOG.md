@@ -2,6 +2,49 @@
 
 All notable changes are documented here. Version numbers follow semantic versioning.
 
+## [1.2.1] - 2026-11-14
+
+### Changed
+
+- Start thermal sync in the tray after setup and check that Windows accepts a
+  color before reporting lighting ready. Restore an explicitly muted Windows
+  brightness to 50% during setup and keep the previous setting for uninstall.
+- Put thermal sync controls and lighting status at the top of the dashboard.
+  Show the last submitted color separately from the thermal profile and hide
+  stale temperatures from the live dashboard and tray.
+
+### Fixed
+
+- Retry lighting writes and releases after transient errors. Drop closed
+  LampArray handles and reconnect while preserving an explicitly selected device.
+
+- Keep sensor fallback and remaining source cleanup working when one source fails;
+  reject stale MSI Afterburner polling timestamps instead of presenting frozen
+  shared memory as a fresh reading.
+- Recover malformed JSON field types and profiles through the normal quarantine
+  path; preserve valid settings when reading fails temporarily. Persist only
+  canonical thermal points and reject incomplete HEX colors containing spaces.
+- Preserve manual activation during hidden startup and recover from incomplete
+  activation-pipe clients. Browser launch errors now show a localized retryable
+  status instead of shutting down the app.
+- Deliver device-change notifications even if unplugged LampArray cleanup fails.
+- Resolve the installed .NET SDK when the repository-local host is absent and
+  run release SDK commands from the solution directory.
+- Reject non-finite smoke simulation durations before connecting to lighting.
+- Reject unsupported Windows versions before setup replaces application files;
+  resolve the registration wrapper's PowerShell under the actual Windows root.
+- Stop setup before file replacement or certificate import when the original
+  unelevated account cannot be verified as the same user as the elevated setup.
+  Launch setup normally and confirm its UAC prompt using the intended account;
+  pre-elevated and alternate-account launches are unsupported.
+
+### Documentation
+
+- Clarify first-run versus recovery defaults, settings I/O failures, LampArray
+  ownership waiting, Afterburner freshness, certificate trust, SDK selection and
+  installation account requirements. Detailed findings and verification are in
+  [the project review](docs/qa/2026-10-17-project-review.md).
+
 ## [1.2.0] - 2026-10-03
 
 - Retain LampArray ownership requests across focus changes, resume after Windows returns control, and suppress false device-unavailable notifications.

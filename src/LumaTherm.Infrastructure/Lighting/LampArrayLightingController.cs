@@ -25,7 +25,7 @@ public sealed class LampArrayLightingController : ILightingController
         {
             lock (_stateLock)
             {
-                return _connectedHandle is { IsPresent: true };
+                return !_disposed && _connectedHandle is { IsPresent: true };
             }
         }
     }
@@ -36,7 +36,8 @@ public sealed class LampArrayLightingController : ILightingController
         {
             lock (_stateLock)
             {
-                return _connectedHandle is { IsPresent: true } handle ? ToDeviceInfo(handle) : null;
+                return !_disposed && _connectedHandle is { IsPresent: true } handle
+                    && ToDeviceInfo(handle) is { IsPresent: true } device ? device : null;
             }
         }
     }
@@ -207,12 +208,8 @@ public sealed class LampArrayLightingController : ILightingController
     {
         if (preferredDeviceId is not null)
         {
-            var preferred = available.FirstOrDefault(
+            return available.FirstOrDefault(
                 handle => string.Equals(handle.Id, preferredDeviceId, StringComparison.Ordinal));
-            if (preferred is not null)
-            {
-                return preferred;
-            }
         }
 
         var controllable = available.Where(handle => handle.IsAvailable).ToArray();
@@ -231,8 +228,21 @@ public sealed class LampArrayLightingController : ILightingController
     private void DisconnectCurrentHandle()
     {
         var handle = _connectedHandle;
-        _connectedHandle = null;
-        handle?.Disable();
+        if (handle is null)
+        {
+            return;
+        }
+
+        try
+        {
+            handle.Disable();
+            _connectedHandle = null;
+        }
+        catch when (!handle.IsPresent)
+        {
+            // An unplugged device no longer holds control. Discard its stale handle.
+            _connectedHandle = null;
+        }
     }
 
     private void OnDevicesChanged(object? sender, EventArgs eventArgs)

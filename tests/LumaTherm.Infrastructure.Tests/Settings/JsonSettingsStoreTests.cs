@@ -77,6 +77,46 @@ public sealed class JsonSettingsStoreTests : IDisposable
         Assert.Equal("Настройки были повреждены и сброшены", result.RecoveryMessage);
     }
 
+    [Theory]
+    [InlineData("""{"schemaVersion":"2"}""")]
+    [InlineData("""{"schemaVersion":null}""")]
+    [InlineData("""{"schemaVersion":0,"coldTemperature":"35"}""")]
+    [InlineData("""{"schemaVersion":1,"profile":{"coldTemperature":{}}}""")]
+    [InlineData("""{"schemaVersion":2,"profile":{"points":[],"coldTemperature":35,"smoothingSeconds":0.8},"trayMenu":{}}""")]
+    public async Task WrongJsonValueKinds_AreQuarantinedAndDefaultsAreReturned(string json)
+    {
+        Directory.CreateDirectory(_directory);
+        var path = Path.Combine(_directory, "settings.json");
+        await File.WriteAllTextAsync(path, json, TestContext.Current.CancellationToken);
+        var store = new JsonSettingsStore(path, TimeProvider.System);
+
+        var result = await store.LoadAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(AppSettings.Default, result.Settings);
+        Assert.NotNull(result.RecoveryMessage);
+        Assert.False(File.Exists(path));
+        Assert.Equal(json, await File.ReadAllTextAsync(Assert.Single(Directory.GetFiles(_directory, "settings.corrupt-*.json")), TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task TemporarilyUnreadableFile_IsPreservedWithoutBeingTreatedAsCorrupt()
+    {
+        var path = Path.Combine(_directory, "settings.json");
+        var store = new JsonSettingsStore(path, TimeProvider.System);
+        await store.SaveAsync(AppSettings.Default with { PreferredLightingDeviceId = "saved-device" }, TestContext.Current.CancellationToken);
+        var original = await File.ReadAllBytesAsync(path, TestContext.Current.CancellationToken);
+
+        using (var heldFile = new FileStream(path, FileMode.Open, FileAccess.Write, FileShare.Delete))
+        {
+            await Assert.ThrowsAsync<IOException>(() => store.LoadAsync(TestContext.Current.CancellationToken));
+            Assert.True(File.Exists(path));
+            Assert.Empty(Directory.GetFiles(_directory, "settings.corrupt-*.json"));
+        }
+
+        Assert.Equal(original, await File.ReadAllBytesAsync(path, TestContext.Current.CancellationToken));
+        Assert.Equal("saved-device", (await store.LoadAsync(TestContext.Current.CancellationToken)).Settings.PreferredLightingDeviceId);
+    }
+
     [Fact]
     public async Task CorruptFilesWithSameTimestamp_AreQuarantinedWithoutOverwritingDiagnostics()
     {

@@ -64,7 +64,13 @@
     <sys:String x:Key="Tray.StatusLightingUnavailable">No lighting</sys:String>
     <sys:String x:Key="Tray.StatusLightingWaiting">Waiting for lighting control</sys:String>
     <sys:String x:Key="Runtime.LightingWaiting">Waiting for Windows lighting control</sys:String>
-    <sys:String x:Key="Settings.HardwareWaiting">Device connected. Windows has assigned lighting control elsewhere.</sys:String>
+    <sys:String x:Key="Settings.HardwareWaiting">Device detected. Windows has not granted lighting control.</sys:String>
+    <sys:String x:Key="Dashboard.ColorSent">Color sent to lighting</sys:String>
+    <sys:String x:Key="Dashboard.SentColor">Color sent</sys:String>
+    <sys:String x:Key="Dashboard.ControlWaitingHint">Sync resumes automatically when Windows grants control.</sys:String>
+    <sys:String x:Key="Dashboard.LightingUnavailableHint">LumaTherm is retrying the connection. Check that the selected device is connected.</sys:String>
+    <sys:String x:Key="Dashboard.SensorUnavailableHint">Waiting for a fresh GPU temperature.</sys:String>
+    <sys:String x:Key="Dashboard.RuntimeFaultHint">Open the log from About for details.</sys:String>
     <sys:String x:Key="Settings.WindowsLighting">Windows lighting settings</sys:String>
     <sys:String x:Key="Settings.BackgroundLightingHint">Setup configures LumaTherm for continuous background sync. Windows settings let you change the lighting priority.</sys:String>
     <sys:String x:Key="Tray.StatusSuspended">Suspended</sys:String>
@@ -83,6 +89,7 @@
     <sys:String x:Key="Update.Available">An update is available.</sys:String>
     <sys:String x:Key="Update.UpToDate">You are up to date.</sys:String>
     <sys:String x:Key="Update.Failed">Unable to check for updates.</sys:String>
+    <sys:String x:Key="Update.OpenFailed">Could not open the link. Check your default browser and try again.</sys:String>
     <sys:String x:Key="Update.CheckAction">Check for updates</sys:String>
     <sys:String x:Key="Update.OpenRelease">Open release download</sys:String>
     <sys:String x:Key="Update.Install">Install update</sys:String>
@@ -139,7 +146,7 @@
     <sys:String x:Key="Settings.TrayExitAlwaysVisible">Exit is always available for safe shutdown.</sys:String>
     <sys:String x:Key="Settings.OpenLightingTest">Test lighting</sys:String>
     <sys:String x:Key="TestWindow.Temperature">Simulate GPU temperature</sys:String>
-    <sys:String x:Key="TestWindow.Preview">Device preview</sys:String>
+    <sys:String x:Key="TestWindow.Preview">Color preview</sys:String>
     <sys:String x:Key="TestWindow.Profile">Draft thermal profile</sys:String>
     <sys:String x:Key="TestWindow.ProfileHint">Edit any number of temperature points. Changes are saved only when you apply them.</sys:String>
     <sys:String x:Key="TestWindow.SelectedPoint">Selected point</sys:String>
@@ -180,7 +187,7 @@
 
     <sys:String x:Key="Settings.RefreshDevices">Refresh devices</sys:String>
     <sys:String x:Key="Nav.LightingTest">Lighting test</sys:String>
-    <sys:String x:Key="TestWindow.CurrentColor">Current color</sys:String>
+    <sys:String x:Key="TestWindow.CurrentColor">Preview color</sys:String>
     <sys:String x:Key="Settings.AutostartHint">Saved immediately. Starts quietly in the tray after sign-in.</sys:String>
     <sys:String x:Key="ColorPicker.Hint">Pick a swatch, adjust RGB, or paste a HEX color.</sys:String>
     <sys:String x:Key="Dashboard.Manage">Manage</sys:String>
@@ -191,9 +198,10 @@
     <sys:String x:Key="Settings.SmoothingHint">Lower values react faster. Higher values make transitions gentler.</sys:String>
     <sys:String x:Key="Dashboard.GpuTemperature">GPU temperature</sys:String>
     <sys:String x:Key="Validation.OpenWindowsSettingsFailed">Unable to open Windows startup settings.</sys:String>
+    <sys:String x:Key="Validation.OpenLightingSettingsFailed">Unable to open Windows lighting settings.</sys:String>
     <sys:String x:Key="Dashboard.ThermalSync">Thermal sync</sys:String>
     <sys:String x:Key="ProfileEditor.Remove">Remove</sys:String>
-    <sys:String x:Key="TestWindow.DeviceHint">The preview shows the same color sent to the device. Physical LEDs may look different.</sys:String>
+    <sys:String x:Key="TestWindow.DeviceHint">The preview shows the profile color. The device displays it when Windows grants control.</sys:String>
     <sys:String x:Key="Dashboard.ActiveDevice">Active device</sys:String>
     <sys:String x:Key="Dashboard.EditProfile">Edit profile</sys:String>
     <sys:String x:Key="Settings.WindowsStartup">Windows startup settings</sys:String>

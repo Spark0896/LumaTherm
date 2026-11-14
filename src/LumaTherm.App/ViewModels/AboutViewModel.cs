@@ -24,6 +24,7 @@ public sealed class AboutViewModel : ObservableObject, IDisposable
     private readonly SemanticVersion _currentVersion;
     private ReleaseInfo? _availableRelease;
     private UpdateState _state;
+    private bool _navigationFailed;
     private bool _disposed;
 
     public AboutViewModel(IReleaseFeed releaseFeed, ILinkLauncher linkLauncher, ILocalizationService localization)
@@ -35,7 +36,7 @@ public sealed class AboutViewModel : ObservableObject, IDisposable
         CurrentVersion = _currentVersion.ToString();
         CheckForUpdatesCommand = new AsyncRelayCommand(CheckForUpdatesAsync, () => !_disposed && State != UpdateState.Checking);
         OpenReleaseCommand = new RelayCommand(OpenRelease, () => !_disposed && State == UpdateState.Available && _availableRelease is not null);
-        OpenRepositoryCommand = new RelayCommand(() => _linkLauncher.Open(RepositoryUri), () => !_disposed);
+        OpenRepositoryCommand = new RelayCommand(() => OpenLink(RepositoryUri), () => !_disposed);
         _localization.LanguageChanged += OnLanguageChanged;
     }
 
@@ -53,7 +54,7 @@ public sealed class AboutViewModel : ObservableObject, IDisposable
             OpenReleaseCommand.RaiseCanExecuteChanged();
         }
     }
-    public string StatusText => _localization.Get(State switch
+    public string StatusText => _localization.Get(_navigationFailed ? "Update.OpenFailed" : State switch
     {
         UpdateState.Idle => "Update.Ready",
         UpdateState.Checking => "Update.Checking",
@@ -81,6 +82,7 @@ public sealed class AboutViewModel : ObservableObject, IDisposable
     private async Task CheckForUpdatesAsync()
     {
         if (_disposed || State == UpdateState.Checking) return;
+        _navigationFailed = false;
         _availableRelease = null;
         State = UpdateState.Checking;
         try
@@ -108,7 +110,21 @@ public sealed class AboutViewModel : ObservableObject, IDisposable
 
     private void OpenRelease()
     {
-        if (_availableRelease is not null) _linkLauncher.Open(_availableRelease.DownloadUrl);
+        if (_availableRelease is not null) OpenLink(_availableRelease.DownloadUrl);
+    }
+
+    private void OpenLink(Uri uri)
+    {
+        try
+        {
+            _linkLauncher.Open(uri);
+            _navigationFailed = false;
+        }
+        catch (Exception)
+        {
+            _navigationFailed = true;
+        }
+        OnPropertyChanged(nameof(StatusText));
     }
 
     private void OnLanguageChanged(object? sender, EventArgs args)

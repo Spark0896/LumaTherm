@@ -35,24 +35,12 @@ public static class ProductionAppServices
             () => logger = new RollingFileLogger(Path.Combine(localData, "logs", "lumatherm.log")),
             appLogger => new SingleInstanceAdapter(new SingleInstanceCoordinator(errorSink: exception => WriteFailure(appLogger, "app.unhandled", exception))),
             () => new FileSessionSentinel(Path.Combine(localData, "session.lock")),
-            () => new LoggingSettingsStore(new JsonSettingsStore(Path.Combine(localData, "settings.json"), TimeProvider.System), () => logger),
+            () => new LoggingSettingsStore(CreateSettingsStore(), () => logger),
             (settings, store) =>
             {
-                var sources = new ITemperatureSource[]
-                {
-                    new NvmlTemperatureSource(new NvmlApi(), TimeProvider.System),
-                    new AfterburnerTemperatureSource(new MahmMemoryReader(), TimeProvider.System),
-                };
-                var platform = new WindowsLampArrayPlatform();
-                lighting = new LampArrayLightingController(platform);
+                lighting = CreateLightingController();
                 lightingDiscovery = new LightingDeviceDiscoveryService(lighting);
-                return new ThermalRuntime(
-                    new TemperatureProvider(sources),
-                    new ColorEngine(settings.Profile, settings.Profile.ColdTemperature),
-                    lighting,
-                    settings,
-                    store,
-                    TimeProvider.System);
+                return CreateRuntime(settings, store, lighting);
             },
             _ => new LoggingStartupService(CreateStartupService(), () => logger),
             (runtime, startup, settings) =>
@@ -66,6 +54,28 @@ public static class ProductionAppServices
             new WpfAppDispatcher(application.Dispatcher),
             localization.Get);
     }
+
+    internal static ILightingController CreateLightingController() => new LampArrayLightingController(new WindowsLampArrayPlatform());
+
+    internal static ThermalRuntime CreateRuntime(AppSettings settings, ISettingsStore store, ILightingController lighting)
+    {
+        var sources = new ITemperatureSource[]
+        {
+            new NvmlTemperatureSource(new NvmlApi(), TimeProvider.System),
+            new AfterburnerTemperatureSource(new MahmMemoryReader(), TimeProvider.System),
+        };
+        return new ThermalRuntime(
+            new TemperatureProvider(sources),
+            new ColorEngine(settings.Profile, settings.Profile.ColdTemperature),
+            lighting,
+            settings,
+            store,
+            TimeProvider.System);
+    }
+
+    internal static JsonSettingsStore CreateSettingsStore() => new(
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "LumaTherm", "settings.json"),
+        TimeProvider.System);
 
     private static IStartupService CreateStartupService()
     {

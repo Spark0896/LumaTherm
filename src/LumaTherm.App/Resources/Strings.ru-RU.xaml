@@ -64,7 +64,13 @@
     <sys:String x:Key="Tray.StatusLightingUnavailable">Нет подсветки</sys:String>
     <sys:String x:Key="Tray.StatusLightingWaiting">Ожидание управления подсветкой</sys:String>
     <sys:String x:Key="Runtime.LightingWaiting">Ожидание управления подсветкой Windows</sys:String>
-    <sys:String x:Key="Settings.HardwareWaiting">Устройство подключено. Windows передала управление подсветкой другому приложению.</sys:String>
+    <sys:String x:Key="Settings.HardwareWaiting">Устройство обнаружено. Windows пока не предоставила управление подсветкой.</sys:String>
+    <sys:String x:Key="Dashboard.ColorSent">Цвет отправлен устройству</sys:String>
+    <sys:String x:Key="Dashboard.SentColor">Отправленный цвет</sys:String>
+    <sys:String x:Key="Dashboard.ControlWaitingHint">Синхронизация возобновится автоматически, когда Windows вернёт управление.</sys:String>
+    <sys:String x:Key="Dashboard.LightingUnavailableHint">LumaTherm повторяет подключение. Проверьте, что выбранное устройство подключено.</sys:String>
+    <sys:String x:Key="Dashboard.SensorUnavailableHint">Ожидание свежих данных о температуре GPU.</sys:String>
+    <sys:String x:Key="Dashboard.RuntimeFaultHint">Подробности в журнале на странице «О программе».</sys:String>
     <sys:String x:Key="Settings.WindowsLighting">Настройки подсветки Windows</sys:String>
     <sys:String x:Key="Settings.BackgroundLightingHint">Установщик настраивает постоянную синхронизацию в фоне. В параметрах Windows можно изменить приоритет подсветки.</sys:String>
     <sys:String x:Key="Tray.StatusSuspended">Приостановлено</sys:String>
@@ -83,6 +89,7 @@
     <sys:String x:Key="Update.Available">Доступно обновление.</sys:String>
     <sys:String x:Key="Update.UpToDate">Установлена актуальная версия.</sys:String>
     <sys:String x:Key="Update.Failed">Не удалось проверить обновления.</sys:String>
+    <sys:String x:Key="Update.OpenFailed">Не удалось открыть ссылку. Проверьте браузер по умолчанию и попробуйте ещё раз.</sys:String>
     <sys:String x:Key="Update.CheckAction">Проверить обновления</sys:String>
     <sys:String x:Key="Update.OpenRelease">Открыть загрузку релиза</sys:String>
     <sys:String x:Key="Update.Install">Установить обновление</sys:String>
@@ -139,7 +146,7 @@
     <sys:String x:Key="Settings.TrayExitAlwaysVisible">Выход всегда доступен для безопасного завершения.</sys:String>
     <sys:String x:Key="Settings.OpenLightingTest">Проверить подсветку</sys:String>
     <sys:String x:Key="TestWindow.Temperature">Имитация температуры GPU</sys:String>
-    <sys:String x:Key="TestWindow.Preview">Предпросмотр устройства</sys:String>
+    <sys:String x:Key="TestWindow.Preview">Предпросмотр цвета</sys:String>
     <sys:String x:Key="TestWindow.Profile">Черновик температурного профиля</sys:String>
     <sys:String x:Key="TestWindow.ProfileHint">Добавляйте любое число температурных точек. Изменения сохранятся только после применения.</sys:String>
     <sys:String x:Key="TestWindow.SelectedPoint">Выбранная точка</sys:String>
@@ -180,7 +187,7 @@
 
     <sys:String x:Key="Settings.RefreshDevices">Обновить список</sys:String>
     <sys:String x:Key="Nav.LightingTest">Тест подсветки</sys:String>
-    <sys:String x:Key="TestWindow.CurrentColor">Текущий цвет</sys:String>
+    <sys:String x:Key="TestWindow.CurrentColor">Цвет в предпросмотре</sys:String>
     <sys:String x:Key="Settings.AutostartHint">Сохраняется сразу. При входе в Windows запускается в трее.</sys:String>
     <sys:String x:Key="ColorPicker.Hint">Выберите образец, настройте RGB или вставьте HEX-код.</sys:String>
     <sys:String x:Key="Dashboard.Manage">Выбрать</sys:String>
@@ -191,9 +198,10 @@
     <sys:String x:Key="Settings.SmoothingHint">Меньше — быстрее реакция. Больше — плавнее переходы.</sys:String>
     <sys:String x:Key="Dashboard.GpuTemperature">Температура GPU</sys:String>
     <sys:String x:Key="Validation.OpenWindowsSettingsFailed">Не удалось открыть автозагрузку Windows.</sys:String>
+    <sys:String x:Key="Validation.OpenLightingSettingsFailed">Не удалось открыть параметры подсветки Windows.</sys:String>
     <sys:String x:Key="Dashboard.ThermalSync">Термосинхронизация</sys:String>
     <sys:String x:Key="ProfileEditor.Remove">Удалить</sys:String>
-    <sys:String x:Key="TestWindow.DeviceHint">Предпросмотр показывает цвет, отправляемый устройству. Оттенок физических светодиодов может отличаться.</sys:String>
+    <sys:String x:Key="TestWindow.DeviceHint">Предпросмотр показывает цвет профиля. Устройство использует его, когда Windows предоставляет управление.</sys:String>
     <sys:String x:Key="Dashboard.ActiveDevice">Устройство</sys:String>
     <sys:String x:Key="Dashboard.EditProfile">Изменить</sys:String>
     <sys:String x:Key="Settings.WindowsStartup">Автозагрузка Windows</sys:String>

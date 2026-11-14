@@ -1,4 +1,5 @@
 using LumaTherm.Core.Colors;
+using LumaTherm.Core.Lighting;
 using Windows.Devices.Enumeration;
 using Windows.Devices.Lights;
 
@@ -60,7 +61,8 @@ public sealed class WindowsLampArrayPlatform : ILampArrayPlatform
                     var handle = new WindowsLampArrayHandle(
                         lampArray,
                         device.Name,
-                        () => _availability.IsAvailable(device.Id));
+                        () => _availability.IsAvailable(device.Id),
+                        InvalidateHandle);
                     lock (_lifetimeLock)
                     {
                         if (_availability.CaptureGeneration() == snapshotGeneration && handle.IsPresent)
@@ -137,28 +139,107 @@ public sealed class WindowsLampArrayPlatform : ILampArrayPlatform
 
     private void ThrowIfDisposed() => ObjectDisposedException.ThrowIf(_disposed, this);
 
+    private static bool IsClosedHandle(Exception error) =>
+        unchecked((uint)error.HResult) is 0x80010108 or 0x800401FD or 0x80000013;
+
+    private void InvalidateHandle(WindowsLampArrayHandle failed)
+    {
+        lock (_lifetimeLock)
+        {
+            if (_handles.TryGetValue(failed.Id, out var cached) && ReferenceEquals(cached, failed))
+            {
+                _handles.Remove(failed.Id);
+            }
+        }
+    }
+
     private sealed class WindowsLampArrayHandle(
         LampArray lampArray,
         string name,
-        Func<bool> getPresence) : ILampArrayHandle
+        Func<bool> getPresence,
+        Action<WindowsLampArrayHandle> invalidateHandle) : ILampArrayHandle
     {
-        public string Id => lampArray.DeviceId;
-        public string Name { get; } = name;
-        public int LampCount => lampArray.LampCount;
-        public bool IsPresent => getPresence();
-        public bool IsAvailable => IsPresent && lampArray.IsAvailable;
+        private readonly string _id = lampArray.DeviceId;
+        private readonly int _lampCount = lampArray.LampCount;
+        private volatile bool _closed;
 
-        public void Enable() => lampArray.IsEnabled = true;
+        public string Id => _id;
+        public string Name { get; } = name;
+        public int LampCount => _lampCount;
+        public bool IsPresent => !_closed && getPresence();
+
+        public bool IsAvailable
+        {
+            get
+            {
+                if (!IsPresent)
+                {
+                    return false;
+                }
+
+                try { return lampArray.IsAvailable; }
+                catch (Exception error) when (IsClosedHandle(error))
+                {
+                    MarkClosed();
+                    return false;
+                }
+            }
+        }
+
+        public void Enable()
+        {
+            try { lampArray.IsEnabled = true; }
+            catch
+            {
+                invalidateHandle(this);
+                throw;
+            }
+        }
 
         public void SetColor(RgbColor color)
         {
             try { lampArray.SetColor(Windows.UI.Color.FromArgb(255, color.R, color.G, color.B)); }
-            catch (Exception) when (IsPresent && !IsAvailable)
+            catch (Exception error) when (IsClosedHandle(error))
             {
-                throw new LumaTherm.Core.Lighting.LightingControlUnavailableException();
+                MarkClosed();
+                throw;
+            }
+            catch (Exception) when (!IsAvailable && IsPresent)
+            {
+                throw new LightingControlUnavailableException();
+            }
+            catch
+            {
+                invalidateHandle(this);
+                throw;
+            }
+
+            if (!IsAvailable)
+            {
+                throw new LightingControlUnavailableException();
             }
         }
 
-        public void Disable() => lampArray.IsEnabled = false;
+        public void Disable()
+        {
+            if (_closed)
+            {
+                return;
+            }
+
+            try { lampArray.IsEnabled = false; }
+            catch (Exception error) when (IsClosedHandle(error))
+            {
+                // RPC_E_DISCONNECTED, CO_E_OBJNOTCONNECTED, RO_E_CLOSED.
+                // A closed native object has no connection left to release.
+                MarkClosed();
+            }
+        }
+
+        private void MarkClosed()
+        {
+            _closed = true;
+            invalidateHandle(this);
+        }
     }
 }

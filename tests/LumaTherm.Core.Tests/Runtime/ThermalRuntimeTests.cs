@@ -19,6 +19,7 @@ public sealed class ThermalRuntimeTests
         var waiting = await fixture.Runtime.ProcessOnceAsync(CancellationToken.None);
         Assert.Equal(RuntimeStatus.LightingWaiting, waiting.Status);
         Assert.Equal("Lamp", waiting.LightingDevice?.Name);
+        Assert.Null(waiting.Color);
         Assert.Equal(1, fixture.Lighting.SetColorCalls);
         Assert.Equal(0, fixture.Lighting.ReleaseCalls);
 
@@ -43,6 +44,27 @@ public sealed class ThermalRuntimeTests
         Assert.NotNull(waiting.LightingDevice);
         Assert.True(fixture.Lighting.IsConnected);
         Assert.Equal(0, fixture.Lighting.ReleaseCalls);
+    }
+
+    [Fact]
+    public async Task FailedColorWrite_WaitsBeforeReconnectingAndResending()
+    {
+        await using var fixture = RuntimeFixture.Create(modeEnabled: true, temperatures: [35, 35]);
+        fixture.Lighting.SetColorFailuresRemaining = 1;
+        var token = TestContext.Current.CancellationToken;
+
+        var failed = await fixture.Runtime.ProcessOnceAsync(token);
+        Assert.Equal(RuntimeStatus.LightingUnavailable, failed.Status);
+        Assert.Null(failed.Color);
+
+        fixture.Advance(TimeSpan.FromMilliseconds(100));
+        Assert.Equal(RuntimeStatus.LightingUnavailable, (await fixture.Runtime.ProcessOnceAsync(token)).Status);
+        Assert.Equal(1, fixture.Lighting.SetColorCalls);
+
+        fixture.Advance(TimeSpan.FromSeconds(1));
+        Assert.Equal(RuntimeStatus.Active, (await fixture.Runtime.ProcessOnceAsync(token)).Status);
+        Assert.Equal(2, fixture.Lighting.ConnectCalls);
+        Assert.Single(fixture.Lighting.Colors);
     }
 
     [Fact]
@@ -106,6 +128,44 @@ public sealed class ThermalRuntimeTests
         Assert.True(fixture.Runtime.CurrentSettings.IsModeEnabled);
         Assert.True(fixture.Runtime.CurrentSnapshot.IsModeEnabled);
         Assert.False(fixture.Runtime.CurrentSettings.NotificationsEnabled);
+    }
+
+    [Fact]
+    public async Task UpdatePreferences_ChangedLightingDevice_ReconnectsBeforeRendering()
+    {
+        await using var fixture = RuntimeFixture.Create(modeEnabled: true, temperatures: [35]);
+        await fixture.Runtime.ProcessOnceAsync(TestContext.Current.CancellationToken);
+
+        await fixture.Runtime.UpdatePreferencesAsync(
+            fixture.Runtime.CurrentSettings with { PreferredLightingDeviceId = "second-lamp" },
+            TestContext.Current.CancellationToken);
+        fixture.Advance(TimeSpan.FromMilliseconds(100));
+        var snapshot = await fixture.Runtime.ProcessOnceAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(RuntimeStatus.Active, snapshot.Status);
+        Assert.Equal("second-lamp", snapshot.LightingDevice?.Id);
+        Assert.Equal(1, fixture.Lighting.ReleaseCalls);
+        Assert.Equal(2, fixture.Lighting.ConnectCalls);
+        Assert.Equal(2, fixture.Lighting.SetColorCalls);
+        Assert.Equal("second-lamp", fixture.SettingsStore.Saved?.PreferredLightingDeviceId);
+    }
+
+    [Fact]
+    public async Task UpdatePreferences_UnchangedLightingDevice_KeepsCurrentConnection()
+    {
+        await using var fixture = RuntimeFixture.Create(modeEnabled: true, temperatures: [35]);
+        await fixture.Runtime.ProcessOnceAsync(TestContext.Current.CancellationToken);
+
+        await fixture.Runtime.UpdatePreferencesAsync(
+            fixture.Runtime.CurrentSettings with { NotificationsEnabled = false },
+            TestContext.Current.CancellationToken);
+        fixture.Advance(TimeSpan.FromMilliseconds(100));
+        var snapshot = await fixture.Runtime.ProcessOnceAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(RuntimeStatus.Active, snapshot.Status);
+        Assert.Equal("lamp", snapshot.LightingDevice?.Id);
+        Assert.Equal(0, fixture.Lighting.ReleaseCalls);
+        Assert.Equal(1, fixture.Lighting.ConnectCalls);
     }
 
     [Fact]
@@ -297,7 +357,7 @@ public sealed class ThermalRuntimeTests
     }
 
     [Fact]
-    public async Task MissingReading_WhenSafetyReleaseFails_DoesNotCrashOrRepeatRelease()
+    public async Task MissingReading_WhenSafetyReleaseFails_RetriesAfterDelay()
     {
         await using var fixture = RuntimeFixture.Create(modeEnabled: true, temperatures: [68, null]);
         await fixture.Runtime.ProcessOnceAsync(CancellationToken.None);
@@ -313,6 +373,11 @@ public sealed class ThermalRuntimeTests
         Assert.Equal(RuntimeStatus.SensorUnavailable, unavailable.Status);
         Assert.Equal(1, fixture.Lighting.ReleaseCalls);
         Assert.Contains("release failed", unavailable.Message);
+
+        fixture.Advance(TimeSpan.FromSeconds(1));
+        await fixture.Runtime.ProcessOnceAsync(CancellationToken.None);
+        Assert.Equal(2, fixture.Lighting.ReleaseCalls);
+        Assert.False(fixture.Lighting.IsConnected);
     }
 
     [Fact]
@@ -338,37 +403,47 @@ public sealed class ThermalRuntimeTests
     [Fact]
     public async Task LightingConnectionFailure_DoesNotDelaySensorPollingAndRetriesConnection()
     {
-        await using var fixture = RuntimeFixture.Create(modeEnabled: true, temperatures: [68, 69]);
+        await using var fixture = RuntimeFixture.Create(modeEnabled: true, temperatures: [68, 69, 70]);
         fixture.Lighting.ConnectFailuresRemaining = 1;
+        var token = TestContext.Current.CancellationToken;
 
-        var unavailable = await fixture.Runtime.ProcessOnceAsync(CancellationToken.None);
-        fixture.Advance(TimeSpan.FromMilliseconds(100));
-        var active = await fixture.Runtime.ProcessOnceAsync(CancellationToken.None);
-        fixture.Advance(TimeSpan.FromMilliseconds(400));
-        await fixture.Runtime.ProcessOnceAsync(CancellationToken.None);
+        var unavailable = await fixture.Runtime.ProcessOnceAsync(token);
+        fixture.Advance(TimeSpan.FromMilliseconds(500));
+        var retrying = await fixture.Runtime.ProcessOnceAsync(token);
+        fixture.Advance(TimeSpan.FromMilliseconds(500));
+        var active = await fixture.Runtime.ProcessOnceAsync(token);
 
         Assert.Equal(RuntimeStatus.LightingUnavailable, unavailable.Status);
+        Assert.Equal(RuntimeStatus.LightingUnavailable, retrying.Status);
+        Assert.Equal(69, retrying.Temperature?.Celsius);
         Assert.Equal(RuntimeStatus.Active, active.Status);
+        Assert.Equal(70, active.Temperature?.Celsius);
         Assert.Equal(2, fixture.Lighting.ConnectCalls);
-        Assert.Equal(2, fixture.Temperatures.ReadCalls);
+        Assert.Equal(1, fixture.Lighting.SetColorCalls);
+        Assert.Equal(3, fixture.Temperatures.ReadCalls);
     }
 
     [Fact]
     public async Task LightingWriteFailure_RetriesWithoutChangingSensorSchedule()
     {
-        await using var fixture = RuntimeFixture.Create(modeEnabled: true, temperatures: [68, 69]);
+        await using var fixture = RuntimeFixture.Create(modeEnabled: true, temperatures: [68, 69, 70]);
         fixture.Lighting.SetColorFailuresRemaining = 1;
+        var token = TestContext.Current.CancellationToken;
 
-        var unavailable = await fixture.Runtime.ProcessOnceAsync(CancellationToken.None);
-        fixture.Advance(TimeSpan.FromMilliseconds(100));
-        var active = await fixture.Runtime.ProcessOnceAsync(CancellationToken.None);
-        fixture.Advance(TimeSpan.FromMilliseconds(400));
-        await fixture.Runtime.ProcessOnceAsync(CancellationToken.None);
+        var unavailable = await fixture.Runtime.ProcessOnceAsync(token);
+        fixture.Advance(TimeSpan.FromMilliseconds(500));
+        var retrying = await fixture.Runtime.ProcessOnceAsync(token);
+        fixture.Advance(TimeSpan.FromMilliseconds(500));
+        var active = await fixture.Runtime.ProcessOnceAsync(token);
 
         Assert.Equal(RuntimeStatus.LightingUnavailable, unavailable.Status);
+        Assert.Equal(RuntimeStatus.LightingUnavailable, retrying.Status);
+        Assert.Equal(69, retrying.Temperature?.Celsius);
         Assert.Equal(RuntimeStatus.Active, active.Status);
-        Assert.Equal(3, fixture.Lighting.SetColorCalls);
-        Assert.Equal(2, fixture.Temperatures.ReadCalls);
+        Assert.Equal(70, active.Temperature?.Celsius);
+        Assert.Equal(2, fixture.Lighting.ConnectCalls);
+        Assert.Equal(2, fixture.Lighting.SetColorCalls);
+        Assert.Equal(3, fixture.Temperatures.ReadCalls);
     }
 
     [Fact]
@@ -642,6 +717,73 @@ public sealed class ThermalRuntimeTests
         Assert.Equal(1, fixture.Temperatures.DisposeCalls);
         Assert.Equal(1, fixture.Lighting.DisposeCalls);
         await fixture.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task Stop_WhenBackgroundLoopDisposalFails_StillReleasesAndDisposesOwnedResources()
+    {
+        var fixture = RuntimeFixture.Create(modeEnabled: true, temperatures: [68]);
+        try
+        {
+            await fixture.Runtime.ProcessOnceAsync(TestContext.Current.CancellationToken);
+            await fixture.Runtime.StartAsync(TestContext.Current.CancellationToken);
+            fixture.Clock.FailTimerDispose = true;
+
+            var failure = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                fixture.Runtime.StopAsync(TestContext.Current.CancellationToken));
+
+            Assert.Contains("timer failed", failure.Message);
+            Assert.Equal(RuntimeStatus.Disabled, fixture.Runtime.CurrentSnapshot.Status);
+            Assert.False(fixture.Lighting.IsConnected);
+            Assert.Equal(1, fixture.Lighting.ReleaseCalls);
+            Assert.Equal(1, fixture.Temperatures.DisposeCalls);
+            Assert.Equal(1, fixture.Lighting.DisposeCalls);
+            await fixture.Runtime.StopAsync(TestContext.Current.CancellationToken);
+            Assert.Equal(1, fixture.Lighting.ReleaseCalls);
+        }
+        finally
+        {
+            fixture.Clock.FailTimerDispose = false;
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [Fact]
+    public async Task BackgroundLoop_MetadataFailure_PublishesFaultAndRecoversOnNextTick()
+    {
+        var fixture = RuntimeFixture.Create(modeEnabled: true, temperatures: [68, 69]);
+        try
+        {
+            var active = await fixture.Runtime.ProcessOnceAsync(TestContext.Current.CancellationToken);
+            await fixture.Runtime.StartAsync(TestContext.Current.CancellationToken);
+            var faulted = new TaskCompletionSource<RuntimeSnapshot>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var recovered = new TaskCompletionSource<RuntimeSnapshot>(TaskCreationOptions.RunContinuationsAsynchronously);
+            fixture.Runtime.SnapshotChanged += (_, snapshot) =>
+            {
+                if (snapshot.Status == RuntimeStatus.Faulted) faulted.TrySetResult(snapshot);
+                if (snapshot.Status == RuntimeStatus.Active) recovered.TrySetResult(snapshot);
+            };
+
+            fixture.Lighting.FailConnectedDevice = true;
+            fixture.Advance(TimeSpan.FromMilliseconds(100));
+            var failure = await faulted.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+
+            Assert.Contains("device failed", failure.Message);
+            Assert.Equal(active.LightingDevice, failure.LightingDevice);
+            Assert.Equal(1, fixture.Clock.ActiveTimerCount);
+            fixture.Lighting.FailConnectedDevice = false;
+            fixture.Advance(TimeSpan.FromMilliseconds(500));
+            var resumed = await recovered.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+
+            Assert.Equal(69, resumed.Temperature?.Celsius);
+            Assert.Equal(RuntimeStatus.Active, fixture.Runtime.CurrentSnapshot.Status);
+        }
+        finally
+        {
+            fixture.Lighting.FailConnectedDevice = false;
+            await fixture.Runtime.SetModeEnabledAsync(false, TestContext.Current.CancellationToken);
+            await fixture.DisposeAsync();
+        }
     }
 
     [Fact]
@@ -1166,6 +1308,7 @@ public sealed class ThermalRuntimeTests
         private int _persistentFailureCalls;
         public int GetUtcNowFailuresRemaining { get; set; }
         public bool FailGetUtcNow { get; set; }
+        public bool FailTimerDispose { get; set; }
 
         public FakeTimeProvider(DateTimeOffset utcNow)
         {
@@ -1280,6 +1423,11 @@ public sealed class ThermalRuntimeTests
 
                 _disposed = true;
                 _owner.Remove(this);
+                if (_owner.FailTimerDispose)
+                {
+                    _owner.FailTimerDispose = false;
+                    throw new InvalidOperationException("timer failed");
+                }
             }
 
             public ValueTask DisposeAsync()
@@ -1374,13 +1522,14 @@ public sealed class ThermalRuntimeTests
 
     private sealed class FakeLightingController : ILightingController
     {
+        private string _connectedDeviceId = "lamp";
         public bool HasControl { get; set; } = true;
         public bool LoseControlDuringWrite { get; set; }
         public bool IsConnected { get; private set; }
         public bool FailConnectedDevice { get; set; }
         public LightingDeviceInfo? ConnectedDevice => FailConnectedDevice
             ? throw new InvalidOperationException("device failed")
-            : IsConnected ? new LightingDeviceInfo("lamp", "Lamp", 4, HasControl) : null;
+            : IsConnected ? new LightingDeviceInfo(_connectedDeviceId, "Lamp", 4, HasControl) : null;
         public event EventHandler? DevicesChanged
         {
             add { }
@@ -1409,6 +1558,7 @@ public sealed class ThermalRuntimeTests
             }
 
             IsConnected = true;
+            _connectedDeviceId = preferredDeviceId ?? "lamp";
             return Task.FromResult(true);
         }
 

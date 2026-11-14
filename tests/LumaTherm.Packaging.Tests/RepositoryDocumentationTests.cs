@@ -29,14 +29,14 @@ public sealed class RepositoryDocumentationTests
     ];
 
     [Fact]
-    public void OpenSourceReleaseDocuments_exist_and_describe_the_1_2_0_contract()
+    public void OpenSourceReleaseDocuments_exist_and_describe_the_1_2_1_contract()
     {
         var root = RepositoryLayout.Root;
         var missing = RequiredFiles.Where(path => !File.Exists(Path.Combine(root, path))).ToArray();
         Assert.True(missing.Length == 0, $"Missing repository documentation: {string.Join(", ", missing)}");
 
         var readme = File.ReadAllText(Path.Combine(root, "README.md"));
-        Assert.Contains("1.2.0", readme, StringComparison.Ordinal);
+        Assert.Contains("1.2.1", readme, StringComparison.Ordinal);
         Assert.Contains("https://github.com/Spark0896/LumaTherm", readme, StringComparison.Ordinal);
         Assert.DoesNotContain("controller-gated package", readme, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("hardware checks pending", readme, StringComparison.OrdinalIgnoreCase);
@@ -48,7 +48,7 @@ public sealed class RepositoryDocumentationTests
 
         var compatibility = File.ReadAllText(Path.Combine(root, "docs", "compatibility.md"));
         Assert.Contains("only through the Windows LampArray API", compatibility, StringComparison.Ordinal);
-        Assert.Contains("not exposed to Windows as an available LampArray cannot be controlled", compatibility, StringComparison.Ordinal);
+        Assert.Contains("not exposed to Windows as a LampArray is outside the supported output contract", compatibility, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -73,7 +73,7 @@ public sealed class RepositoryDocumentationTests
         var architecture = File.ReadAllText(Path.Combine(RepositoryLayout.Root, "docs", "architecture.md"));
 
         Assert.Contains("three saturated default points", architecture, StringComparison.Ordinal);
-        Assert.Contains("unlimited user-defined points (minimum two)", architecture, StringComparison.Ordinal);
+        Assert.Contains("additional points (minimum two)", architecture, StringComparison.Ordinal);
         Assert.Contains("0–120 °C", architecture, StringComparison.Ordinal);
         Assert.Contains("at least 1 °C apart", architecture, StringComparison.Ordinal);
         Assert.Contains("0.1–5.0 seconds", architecture, StringComparison.Ordinal);

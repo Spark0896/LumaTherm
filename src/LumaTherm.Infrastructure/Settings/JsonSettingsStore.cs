@@ -36,10 +36,6 @@ public sealed class JsonSettingsStore(string path, TimeProvider timeProvider) : 
         {
             return Recover();
         }
-        catch (IOException)
-        {
-            return Recover();
-        }
     }
 
     public async Task SaveAsync(AppSettings settings, CancellationToken cancellationToken)

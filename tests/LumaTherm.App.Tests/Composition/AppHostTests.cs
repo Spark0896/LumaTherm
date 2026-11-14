@@ -137,6 +137,23 @@ public sealed class AppHostTests
     }
 
     [Fact]
+    public async Task ActivationDuringHiddenStartup_IsRestoredOnceWhenTheUiIsReady()
+    {
+        var fixture = new HostFixture(blockSettingsLoad: true);
+        await using var host = new AppHost(fixture.Services, ["--autostart"], fixture.RequestExit);
+        var startup = host.StartAsync(TestContext.Current.CancellationToken);
+        await fixture.SettingsLoadEntered.Task.WaitAsync(TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken);
+
+        fixture.Instance.RaiseActivation();
+        fixture.Instance.RaiseActivation();
+        Assert.Equal(0, fixture.ActivationCalls);
+        fixture.ReleaseSettingsLoad();
+        Assert.True(await startup.WaitAsync(TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken));
+
+        Assert.Equal(1, fixture.ActivationCalls);
+    }
+
+    [Fact]
     public async Task ConcurrentStart_CallersShareOneOwnershipAndStartupOperation()
     {
         var fixture = new HostFixture(blockAcquire: true);
@@ -235,6 +252,29 @@ public sealed class AppHostTests
         Assert.Equal(1, fixture.LogEvents.Count(value => value == "lamp.waiting"));
         Assert.Equal(1, fixture.LogEvents.Count(value => value == "lamp.control-restored"));
         Assert.DoesNotContain("lamp.disconnected", fixture.LogEvents);
+    }
+
+    [Fact]
+    public async Task FirstConnectedDeviceWhileWaiting_LogsBothConnectionAndOwnershipStateOnce()
+    {
+        var fixture = new HostFixture();
+        await using var host = new AppHost(fixture.Services, ["--autostart"], fixture.RequestExit);
+        await host.StartAsync(TestContext.Current.CancellationToken);
+        var waiting = new RuntimeSnapshot(RuntimeStatus.LightingWaiting, null, null, null,
+            new LightingDeviceInfo("lamp", "LampArray", 4, false), null, DateTimeOffset.UtcNow, true);
+
+        fixture.Runtime.Raise(waiting);
+        fixture.Runtime.Raise(waiting);
+
+        Assert.Equal(1, fixture.LogEvents.Count(value => value == "lamp.connected"));
+        Assert.Equal(1, fixture.LogEvents.Count(value => value == "lamp.waiting"));
+
+        fixture.Runtime.Raise(waiting with
+        {
+            Status = RuntimeStatus.Active,
+            LightingDevice = waiting.LightingDevice! with { IsAvailable = true },
+        });
+        Assert.Equal(1, fixture.LogEvents.Count(value => value == "lamp.control-restored"));
     }
 
     [Fact]
@@ -427,7 +467,8 @@ public sealed class AppHostTests
             bool blockDiscoveryStart = false,
             bool failSentinelComplete = false,
             bool beginNewSentinelOnInstanceDispose = false,
-            bool blockUiDispose = false)
+            bool blockUiDispose = false,
+            bool blockSettingsLoad = false)
         {
             _logger = new FakeLogger(Events, LogEvents, StopTimeline, failLoggerDispose);
             var sentinelGate = blockSentinelComplete ? new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously) : null;
@@ -449,7 +490,8 @@ public sealed class AppHostTests
             _power = new FakeAsyncOwned(Events, "power.dispose");
             DiscoveryStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
             _discovery = new FakeDiscovery(Events, failDiscoveryStart, blockDiscoveryStart, DiscoveryStarted);
-            var store = new FakeStore(Events, settings ?? AppSettings.Default, asynchronousPrerequisites);
+            _settingsLoadGate = blockSettingsLoad ? new(TaskCreationOptions.RunContinuationsAsynchronously) : null;
+            var store = new FakeStore(Events, settings ?? AppSettings.Default, asynchronousPrerequisites, SettingsLoadEntered, _settingsLoadGate);
             Services = new AppServices(
                 () => { Events.Add("logger.create"); return _logger; },
                 _ => { Events.Add("instance.create"); return Instance; },
@@ -500,6 +542,9 @@ public sealed class AppHostTests
         public TaskCompletionSource UiDisposeStarted { get; }
         public void ReleaseUiDispose() => _uiDisposeGate?.TrySetResult();
         public TaskCompletionSource DiscoveryStarted { get; }
+        private readonly TaskCompletionSource? _settingsLoadGate;
+        public TaskCompletionSource SettingsLoadEntered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public void ReleaseSettingsLoad() => _settingsLoadGate?.TrySetResult();
         public void RequestExit() => Events.Add("exit");
     }
 
@@ -529,9 +574,9 @@ public sealed class AppHostTests
         public async Task CompleteAsync(CancellationToken cancellationToken) { events.Add("sentinel.complete"); completeEntered.TrySetResult(); if (completeGate is not null) await completeGate.Task.WaitAsync(cancellationToken); if (failComplete) throw new InvalidOperationException("sentinel"); MarkerPresent = false; completed(); }
     }
 
-    private sealed class FakeStore(List<string> events, AppSettings settings, bool asynchronous) : ISettingsStore
+    private sealed class FakeStore(List<string> events, AppSettings settings, bool asynchronous, TaskCompletionSource loadEntered, TaskCompletionSource? loadGate) : ISettingsStore
     {
-        public async Task<SettingsLoadResult> LoadAsync(CancellationToken cancellationToken) { events.Add("settings.load"); if (asynchronous) await Task.Delay(10, cancellationToken).ConfigureAwait(false); return new SettingsLoadResult(settings); }
+        public async Task<SettingsLoadResult> LoadAsync(CancellationToken cancellationToken) { events.Add("settings.load"); loadEntered.TrySetResult(); if (loadGate is not null) await loadGate.Task.WaitAsync(cancellationToken); if (asynchronous) await Task.Delay(10, cancellationToken).ConfigureAwait(false); return new SettingsLoadResult(settings); }
         public Task SaveAsync(AppSettings settings, CancellationToken cancellationToken) => Task.CompletedTask;
     }
 

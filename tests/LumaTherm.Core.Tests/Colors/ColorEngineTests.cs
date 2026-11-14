@@ -1,3 +1,4 @@
+using System.Text.Json;
 using LumaTherm.Core.Colors;
 
 namespace LumaTherm.Core.Tests.Colors;
@@ -16,6 +17,29 @@ public sealed class ColorEngineTests
     }
 
     private static readonly ThermalProfile Profile = ThermalProfile.Default;
+
+    [Fact]
+    public void ProfileJson_DerivedAliasesCannotOverwriteCanonicalPoints()
+    {
+        var json = """
+            {"Points":[{"Temperature":20,"Color":{"R":0,"G":0,"B":255}},{"Temperature":80,"Color":{"R":255,"G":0,"B":0}}],
+             "SmoothingSeconds":0.8,"ColdTemperature":75,"HotColor":{"R":0,"G":255,"B":0}}
+            """;
+
+        var profile = JsonSerializer.Deserialize<ThermalProfile>(json)!.Validate();
+
+        Assert.Equal(20, profile.ColdTemperature);
+        Assert.Equal(new RgbColor(255, 0, 0), profile.HotColor);
+    }
+
+    [Fact]
+    public void ProfileJson_EmptyPointsWithDerivedAliasesReachValidation()
+    {
+        var profile = JsonSerializer.Deserialize<ThermalProfile>("""{"Points":[],"SmoothingSeconds":0.8,"ColdTemperature":35}""");
+
+        Assert.NotNull(profile);
+        Assert.Throws<ArgumentException>(() => profile.Validate());
+    }
 
     [Theory]
     [InlineData(0, 0x00, 0x6B, 0xFF)]
@@ -195,6 +219,9 @@ public sealed class ColorEngineTests
     [InlineData("#50C8FF0")]
     [InlineData("#50C8FG")]
     [InlineData("##50C8FF")]
+    [InlineData(" FFFFF")]
+    [InlineData("FFFFF ")]
+    [InlineData("# FFFFF")]
     public void TryParseHex_RejectsValuesOtherThanSixOptionalPrefixedHexDigits(string? text)
     {
         Assert.False(RgbColor.TryParseHex(text, out _));

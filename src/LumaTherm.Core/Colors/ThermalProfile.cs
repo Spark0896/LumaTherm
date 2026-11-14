@@ -22,14 +22,16 @@ public sealed record ThermalProfile : IEquatable<ThermalProfile>
     public static ThermalProfile Default { get; } = new(35, new RgbColor(0x00, 0x6B, 0xFF), 65, new RgbColor(0x3C, 0xFF, 0x00), 85, new RgbColor(0xFF, 0x00, 0x00), 0.8);
     public IReadOnlyList<ThermalPoint> Points => Array.AsReadOnly(_points);
     public double SmoothingSeconds { get; init; }
-    public ThermalPoint ColdPoint => _points[0];
-    public ThermalPoint HotPoint => _points[^1];
-    public double ColdTemperature { get => ColdPoint.Temperature; init => _points = ReplacePoint(0, temperature: value); }
-    public RgbColor ColdColor { get => ColdPoint.Color; init => _points = ReplacePoint(0, color: value); }
-    public double WarmTemperature { get => _points[1].Temperature; init => _points = ReplacePoint(1, temperature: value); }
-    public RgbColor WarmColor { get => _points[1].Color; init => _points = ReplacePoint(1, color: value); }
-    public double HotTemperature { get => HotPoint.Temperature; init => _points = ReplacePoint(_points.Length - 1, temperature: value); }
-    public RgbColor HotColor { get => HotPoint.Color; init => _points = ReplacePoint(_points.Length - 1, color: value); }
+    // Schema 2 stores Points once; these convenience aliases must not be rebound
+    // after the JSON constructor or override the canonical point array.
+    [JsonIgnore] public ThermalPoint ColdPoint => _points[0];
+    [JsonIgnore] public ThermalPoint HotPoint => _points[^1];
+    [JsonIgnore] public double ColdTemperature { get => ColdPoint.Temperature; init => _points = ReplacePoint(0, temperature: value); }
+    [JsonIgnore] public RgbColor ColdColor { get => ColdPoint.Color; init => _points = ReplacePoint(0, color: value); }
+    [JsonIgnore] public double WarmTemperature { get => _points[1].Temperature; init => _points = ReplacePoint(1, temperature: value); }
+    [JsonIgnore] public RgbColor WarmColor { get => _points[1].Color; init => _points = ReplacePoint(1, color: value); }
+    [JsonIgnore] public double HotTemperature { get => HotPoint.Temperature; init => _points = ReplacePoint(_points.Length - 1, temperature: value); }
+    [JsonIgnore] public RgbColor HotColor { get => HotPoint.Color; init => _points = ReplacePoint(_points.Length - 1, color: value); }
 
     public static ThermalProfile Create(IEnumerable<ThermalPoint> points, double smoothingSeconds)
     {

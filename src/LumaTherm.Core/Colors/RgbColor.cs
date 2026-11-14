@@ -20,7 +20,7 @@ public readonly record struct RgbColor(byte R, byte G, byte B)
             digits = digits[1..];
         }
 
-        if (digits.Length != 6 || !uint.TryParse(digits, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var rgb))
+        if (digits.Length != 6 || !uint.TryParse(digits, NumberStyles.AllowHexSpecifier, CultureInfo.InvariantCulture, out var rgb))
         {
             return false;
         }

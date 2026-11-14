@@ -1,4 +1,4 @@
-#define AppVersion "1.2.0"
+#define AppVersion "1.2.1"
 #ifndef PayloadRoot
   #define PayloadRoot "..\artifacts\release\portable"
 #endif
@@ -6,19 +6,19 @@
 [Setup]
 AppId={{9F6F5FEA-A89E-4D1C-9D0C-6C7C9FB5D310}
 AppName=LumaTherm
-AppVersion=1.2.0
+AppVersion={#AppVersion}
 DefaultDirName={autopf}\LumaTherm
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
+MinVersion=10.0.22621
 PrivilegesRequired=admin
 CloseApplications=yes
 CloseApplicationsFilter=LumaTherm.exe
+SetupLogging=yes
 RestartApplications=no
-; A running Windows lighting session can retain the previous provider order.
-AlwaysRestart=yes
 DisableProgramGroupPage=yes
 UninstallDisplayIcon={app}\payload\app\LumaTherm.exe
-OutputBaseFilename=LumaTherm-1.2.0-win-x64-setup
+OutputBaseFilename=LumaTherm-{#AppVersion}-win-x64-setup
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
@@ -43,13 +43,15 @@ Name: "{autoprograms}\LumaTherm"; Filename: "{app}\payload\app\LumaTherm.exe"; T
 Filename: "powershell.exe"; Parameters: "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File ""{app}\payload\Unregister-LumaTherm.ps1"" -Force -RemoveCertificate"; Flags: runhidden waituntilterminated; RunOnceId: "UnregisterLumaThermIdentity"
 
 [Run]
-Filename: "{app}\payload\app\LumaTherm.exe"; Description: "Launch LumaTherm"; Flags: postinstall nowait skipifsilent runasoriginaluser
+Filename: "{app}\payload\app\LumaTherm.exe"; Description: "Open LumaTherm"; Flags: postinstall nowait skipifsilent runasoriginaluser
 
 [Code]
 #include "LumaTherm.Consent.iss"
 
 var
   RegistrationSucceeded: Boolean;
+  LightingSessionNeedsRestart: Boolean;
+  LightingCheckFailed: Boolean;
 
 function BuildNativePowerShellCommandParameters(const PowerShellParameters: String): String;
 var
@@ -68,6 +70,7 @@ procedure CurStepChanged(CurStep: TSetupStep);
 var
   ResultCode: Integer;
   Parameters: String;
+  LumaThermExecutable: String;
 begin
   if CurStep = ssPostInstall then
   begin
@@ -80,13 +83,40 @@ begin
     if ResultCode <> 0 then
       RaiseException(Format('Registration failed with exit code %d. The installer did not complete successfully.', [ResultCode]));
     RegistrationSucceeded := True;
+
+    LumaThermExecutable := ExpandConstant('{app}\payload\app\LumaTherm.exe');
+    if not ExecAsOriginalUser(LumaThermExecutable, '--verify-lighting', '', SW_HIDE, ewWaitUntilTerminated, ResultCode) then
+      RaiseException('Setup could not start the lighting check in the original Windows user session.');
+    Log(Format('LumaTherm lighting check exit code: %d', [ResultCode]));
+    LightingSessionNeedsRestart := ResultCode = 10;
+    LightingCheckFailed := ResultCode = 12;
+    if not ((ResultCode = 0) or ((ResultCode >= 10) and (ResultCode <= 13))) then
+      RaiseException(Format('Unexpected exit code %d from the LumaTherm lighting check.', [ResultCode]));
+    if ResultCode = 11 then
+      Log('No usable temperature sensor or lighting device yet. LumaTherm will retry in the background.');
+    if ResultCode = 13 then
+      Log('Saved thermal sync preference is disabled. LumaTherm will preserve it.');
+    if not ExecAsOriginalUser(LumaThermExecutable, '--autostart', '', SW_SHOWNORMAL, ewNoWait, ResultCode) then
+      RaiseException('Setup could not launch LumaTherm in the original Windows user session.');
+    if LightingCheckFailed then
+      SuppressibleMsgBox('LumaTherm is installed, but Setup could not verify lighting. LumaTherm will retry in the background. See the Setup log for details.', mbError, MB_OK, IDOK);
   end;
+end;
+
+function NeedRestart: Boolean;
+begin
+  Result := LightingSessionNeedsRestart;
 end;
 
 function GetCustomSetupExitCode: Integer;
 begin
   if RegistrationSucceeded then
-    Result := 0
+  begin
+    if LightingCheckFailed then
+      Result := 12
+    else
+      Result := 0;
+  end
   else
     Result := 1;
 end;

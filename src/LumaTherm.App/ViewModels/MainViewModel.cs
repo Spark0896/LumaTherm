@@ -19,22 +19,25 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     private RuntimeSnapshot _lastSnapshot;
     private string? _statusOverrideKey;
     private DateTimeOffset? _lastReadingTimestamp;
+    private DateTimeOffset? _historyEnd;
     private bool _disposed;
     private double _currentTemperature = double.NaN;
-    private RgbColor _displayColor = ThermalProfile.Default.ColdColor;
+    private RgbColor _displayColor;
+    private RgbColor? _sentColor;
+    private string _lightingStatusText = string.Empty;
+    private string _lightingDetails = string.Empty;
+    private bool _showLightingHelp;
     private ThermalRange? _currentRange;
     private ThermalProfile _profile = ThermalProfile.Default;
+    private readonly ColorEngine _profileColors = new(ThermalProfile.Default, ThermalProfile.Default.ColdTemperature);
     private string _temperatureText = "—°C";
     private string _statusText = string.Empty;
-    private string _currentColorHex = ThermalProfile.Default.ColdColor.ToHex();
+    private string _currentColorHex = "—";
     private string _gpuName = string.Empty;
     private string _sensorSource = "—";
     private string _lightingDeviceName = string.Empty;
     private bool _isModeEnabled;
-    private bool _hasLightingDevice;
     private string _smoothingText = string.Empty;
-    private string _autostartText = string.Empty;
-    private string _minimizeToTrayText = string.Empty;
 
     public MainViewModel(
         IThermalRuntime runtime,
@@ -49,11 +52,17 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         _localization.LanguageChanged += OnLanguageChanged;
         _runtime.SnapshotChanged += OnSnapshotChanged;
         ApplySnapshot(_lastSnapshot);
+        ApplySettingsProjection();
     }
 
     public ObservableCollection<TemperaturePoint> History { get; } = [];
+    public DateTimeOffset? HistoryEnd { get => _historyEnd; private set => SetProperty(ref _historyEnd, value); }
     public double CurrentTemperature { get => _currentTemperature; private set => SetProperty(ref _currentTemperature, value); }
     public RgbColor DisplayColor { get => _displayColor; private set => SetProperty(ref _displayColor, value); }
+    public RgbColor? SentColor { get => _sentColor; private set => SetProperty(ref _sentColor, value); }
+    public string LightingStatusText { get => _lightingStatusText; private set => SetProperty(ref _lightingStatusText, value); }
+    public string LightingDetails { get => _lightingDetails; private set => SetProperty(ref _lightingDetails, value); }
+    public bool ShowLightingHelp { get => _showLightingHelp; private set => SetProperty(ref _showLightingHelp, value); }
     public ThermalRange? CurrentRange { get => _currentRange; private set => SetProperty(ref _currentRange, value); }
     public ThermalProfile Profile { get => _profile; private set { if (SetProperty(ref _profile, value)) OnPropertyChanged(nameof(ProfileSummary)); } }
     public string ProfileSummary => string.Join(" · ", Profile.Points.Select(point => $"{point.Temperature:0.#}° {point.Color.ToHex()}"));
@@ -64,11 +73,8 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     public string SensorSource { get => _sensorSource; private set => SetProperty(ref _sensorSource, value); }
     public string LightingDeviceName { get => _lightingDeviceName; private set => SetProperty(ref _lightingDeviceName, value); }
     public bool IsModeEnabled { get => _isModeEnabled; private set => SetProperty(ref _isModeEnabled, value); }
-    public bool HasLightingDevice { get => _hasLightingDevice; private set => SetProperty(ref _hasLightingDevice, value); }
-    public bool IsHealthy => _lastSnapshot.Status == RuntimeStatus.Active;
+    public bool IsHealthy => _lastSnapshot.Status == RuntimeStatus.Active && SentColor is not null;
     public string SmoothingText { get => _smoothingText; private set => SetProperty(ref _smoothingText, value); }
-    public string AutostartText { get => _autostartText; private set => SetProperty(ref _autostartText, value); }
-    public string MinimizeToTrayText { get => _minimizeToTrayText; private set => SetProperty(ref _minimizeToTrayText, value); }
     public AsyncRelayCommand ToggleModeCommand { get; }
 
     internal void SynchronizeProfile(SettingsViewModel settingsViewModel)
@@ -138,21 +144,31 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     {
         _lastSnapshot = snapshot;
         _statusOverrideKey = null;
-        CurrentTemperature = snapshot.Temperature?.Celsius ?? double.NaN;
-        TemperatureText = snapshot.Temperature is { } temperature ? $"{temperature.Celsius:0.#}°C" : "—°C";
-        DisplayColor = snapshot.Color ?? ThermalProfile.Default.ColdColor;
-        CurrentColorHex = DisplayColor.ToHex();
+        var liveReading = snapshot.LiveTemperature;
+        CurrentTemperature = liveReading?.Celsius ?? double.NaN;
+        TemperatureText = liveReading is { } temperature ? $"{temperature.Celsius:0.#}°C" : "—";
+        SentColor = snapshot.Status is RuntimeStatus.Active or RuntimeStatus.HoldingLastColor ? snapshot.Color : null;
+        DisplayColor = SentColor ?? (liveReading is null
+            ? default
+            : _profileColors.Map(liveReading.Celsius));
+        CurrentColorHex = SentColor?.ToHex() ?? "—";
+        ApplyLightingStatus();
         CurrentRange = snapshot.Range;
         StatusText = _localization.Get(StatusKey(snapshot.Status));
         GpuName = snapshot.Temperature?.DeviceName ?? _localization.Get("Runtime.GpuNotFound");
         SensorSource = snapshot.Temperature?.SourceName ?? "—";
         LightingDeviceName = snapshot.LightingDevice?.Name ?? _localization.Get("Runtime.LightingNotFound");
-        HasLightingDevice = snapshot.LightingDevice is { IsPresent: true };
         OnPropertyChanged(nameof(IsHealthy));
 
         IsModeEnabled = snapshot.IsModeEnabled;
+        var hasNewReading = liveReading is not null && _lastReadingTimestamp != liveReading.Timestamp;
+        if (HistoryEnd is null || hasNewReading || snapshot.Timestamp < HistoryEnd ||
+            snapshot.Timestamp - HistoryEnd >= TimeSpan.FromSeconds(1))
+        {
+            HistoryEnd = snapshot.Timestamp;
+        }
 
-        if (snapshot.Temperature is { } reading && _lastReadingTimestamp != reading.Timestamp)
+        if (hasNewReading && liveReading is { } reading)
         {
             _lastReadingTimestamp = reading.Timestamp;
             History.Add(new TemperaturePoint(reading.Timestamp, reading.Celsius));
@@ -173,6 +189,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     {
         _statusOverrideKey = "Runtime.ToggleFailed";
         StatusText = _localization.Get(_statusOverrideKey);
+        LightingStatusText = StatusText;
     }
 
     private void OnProfileSaved(object? sender, ThermalProfile profile)
@@ -202,16 +219,34 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     private void SetProfile(ThermalProfile profile)
     {
         ArgumentNullException.ThrowIfNull(profile);
+        _profileColors.UpdateProfile(profile);
         Profile = profile;
     }
 
     private void OnLanguageChanged(object? sender, EventArgs args) => RunOnContext(() =>
     {
         StatusText = _localization.Get(_statusOverrideKey ?? StatusKey(_lastSnapshot.Status));
+        ApplyLightingStatus();
         if (_lastSnapshot.Temperature is null) GpuName = _localization.Get("Runtime.GpuNotFound");
         if (_lastSnapshot.LightingDevice is null) LightingDeviceName = _localization.Get("Runtime.LightingNotFound");
         ApplySettingsProjection();
     });
+
+    private void ApplyLightingStatus()
+    {
+        var status = _lastSnapshot.Status;
+        LightingStatusText = _localization.Get(_statusOverrideKey ??
+            (status == RuntimeStatus.Active && SentColor is not null ? "Dashboard.ColorSent" : StatusKey(status)));
+        ShowLightingHelp = status is RuntimeStatus.LightingWaiting or RuntimeStatus.LightingUnavailable;
+        LightingDetails = status switch
+        {
+            RuntimeStatus.LightingWaiting => _localization.Get("Dashboard.ControlWaitingHint"),
+            RuntimeStatus.LightingUnavailable => _localization.Get("Dashboard.LightingUnavailableHint"),
+            RuntimeStatus.HoldingLastColor or RuntimeStatus.SensorUnavailable => _localization.Get("Dashboard.SensorUnavailableHint"),
+            RuntimeStatus.Faulted => _localization.Get("Dashboard.RuntimeFaultHint"),
+            _ => string.Empty,
+        };
+    }
 
     private void OnSettingsChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs args)
     {
@@ -220,14 +255,11 @@ public sealed class MainViewModel : ObservableObject, IDisposable
 
     private void ApplySettingsProjection()
     {
-        if (_settingsViewModel is null) return;
-        var settings = _settingsViewModel.LiveSettings;
+        var settings = _settingsViewModel?.LiveSettings ?? _runtime.CurrentSettings;
         var culture = _localization.CurrentLanguage == LumaTherm.Core.Settings.AppLanguage.Russian
             ? CultureInfo.GetCultureInfo("ru-RU")
             : CultureInfo.GetCultureInfo("en-US");
         SmoothingText = string.Format(culture, _localization.Get("Dashboard.SecondsFormat"), settings.Profile.SmoothingSeconds);
-        AutostartText = _localization.Get(settings.IsAutostartEnabled ? "Common.On" : "Common.Off");
-        MinimizeToTrayText = _localization.Get(settings.MinimizeToTray ? "Common.On" : "Common.Off");
     }
 
     private void RunOnContext(Action action)

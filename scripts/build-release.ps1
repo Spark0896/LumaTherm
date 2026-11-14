@@ -15,7 +15,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
-$version = '1.2.0'
+$version = '1.2.1'
 $stableAppId = '{9F6F5FEA-A89E-4D1C-9D0C-6C7C9FB5D310}'
 $setupName = "LumaTherm-$version-win-x64-setup.exe"
 $portableZipName = "LumaTherm-$version-portable-win-x64.zip"
@@ -104,6 +104,14 @@ function Resolve-Inno([string]$Override) {
     $candidate = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'
     Assert-NoReparseComponents $candidate
     return [IO.Path]::GetFullPath($candidate)
+}
+
+function Resolve-DotnetHost {
+    $local = Join-Path $repositoryRoot '.dotnet\dotnet.exe'
+    if (Test-Path -LiteralPath $local -PathType Leaf) { return $local }
+    $installed = Get-Command dotnet.exe -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($null -ne $installed) { return $installed.Source }
+    return $local
 }
 
 function Open-ExternalCertificate {
@@ -286,7 +294,7 @@ $certificate = $null
 try {
     if (-not [string]::IsNullOrWhiteSpace($CertificatePath)) { $certificate = Open-ExternalCertificate; if (-not $Publisher.Equals($certificate.Subject, [StringComparison]::OrdinalIgnoreCase)) { throw 'Publisher does not match the external signing certificate subject.' }; $certificateSource = 'external-provided' }
     else { $certificateSource = 'not-provided' }
-    $dotnet = Join-Path $repositoryRoot '.dotnet\dotnet.exe'
+    $dotnet = Resolve-DotnetHost
     $publishArguments = @('publish', (Join-Path $repositoryRoot 'src\LumaTherm.App\LumaTherm.App.csproj'), '-c', 'Release', '-r', 'win-x64', '--self-contained', 'true', '-p:PublishSingleFile=true', '-p:IncludeNativeLibrariesForSelfExtract=true', '-p:DebugType=None', '-p:DebugSymbols=false', '-p:NuGetAudit=false', '-o', $publishRoot)
     $plan = [ordered]@{
         version = $version; setupName = $setupName; portableZipName = $portableZipName; sparsePackageName = $sparsePackageName; checksumName = 'SHA256SUMS.txt'; stableAppId = $stableAppId; certificateSource = $certificateSource
@@ -326,9 +334,12 @@ try {
     Remove-OwnedDirectory $artifactsRoot
     New-Item -ItemType Directory -Path $artifactsRoot, $publishRoot, $sparseLayoutRoot, $publicStagingRoot -Force | Out-Null
     try {
-        & $dotnet restore (Join-Path $repositoryRoot 'LumaTherm.sln') -r win-x64 '-p:NuGetAudit=false'; if ($LASTEXITCODE -ne 0) { throw 'Release restore failed.' }
-        & $dotnet test (Join-Path $repositoryRoot 'LumaTherm.sln') -c Release '-m:1' '--no-restore' '-p:NuGetAudit=false'; if ($LASTEXITCODE -ne 0) { throw 'Release tests failed.' }
-        & $dotnet @publishArguments; if ($LASTEXITCODE -ne 0) { throw 'Self-contained publish failed.' }
+        Push-Location -LiteralPath $repositoryRoot
+        try {
+            & $dotnet restore (Join-Path $repositoryRoot 'LumaTherm.sln') -r win-x64 '-p:NuGetAudit=false'; if ($LASTEXITCODE -ne 0) { throw 'Release restore failed.' }
+            & $dotnet test (Join-Path $repositoryRoot 'LumaTherm.sln') -c Release '-m:1' '--no-restore' '-p:NuGetAudit=false'; if ($LASTEXITCODE -ne 0) { throw 'Release tests failed.' }
+            & $dotnet @publishArguments; if ($LASTEXITCODE -ne 0) { throw 'Self-contained publish failed.' }
+        } finally { Pop-Location }
         $projectExe = Join-Path $publishRoot 'LumaTherm.App.exe'; $appExe = Join-Path $publishRoot 'LumaTherm.exe'
         if (Test-Path -LiteralPath $projectExe) { Move-Item -LiteralPath $projectExe -Destination $appExe }
         if (-not (Test-Path -LiteralPath $appExe -PathType Leaf)) { throw 'Published LumaTherm executable is missing.' }

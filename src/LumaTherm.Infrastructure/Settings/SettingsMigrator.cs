@@ -17,7 +17,8 @@ internal static class SettingsMigrator
     {
         using var document = JsonDocument.Parse(json);
         var root = document.RootElement;
-        if (root.ValueKind != JsonValueKind.Object || !TryGetProperty(root, "schemaVersion", out var schemaElement) || !schemaElement.TryGetInt32(out var schemaVersion))
+        if (root.ValueKind != JsonValueKind.Object || !TryGetProperty(root, "schemaVersion", out var schemaElement)
+            || schemaElement.ValueKind != JsonValueKind.Number || !schemaElement.TryGetInt32(out var schemaVersion))
         {
             throw new InvalidDataException("Settings schema version is missing or invalid.");
         }
@@ -103,7 +104,7 @@ internal static class SettingsMigrator
 
     private static double GetRequiredDouble(JsonElement root, string name)
     {
-        if (!TryGetProperty(root, name, out var element) || !element.TryGetDouble(out var value))
+        if (!TryGetProperty(root, name, out var element) || element.ValueKind != JsonValueKind.Number || !element.TryGetDouble(out var value))
         {
             throw new InvalidDataException($"Missing or invalid {name}.");
         }

@@ -248,6 +248,23 @@ public sealed class SmokeCommandTests
         Assert.Equal(1, lights.ReleaseCount);
     }
 
+    [Theory]
+    [InlineData("NaN")]
+    [InlineData("Infinity")]
+    [InlineData("-Infinity")]
+    public async Task JsonSimulation_RejectsNonfiniteDurationBeforeConfirmationOrLighting(string seconds)
+    {
+        var lights = new FakeLightingController(new LightingDeviceInfo("lamp", "GIGABYTE Device", 12, true));
+
+        var result = await RunWithPromptAsync(["simulate", "--from", "35", "--to", "85", "--seconds", seconds, "--confirm-light-write", "--json"], lights, new StringReader("YES"), cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.Equal(2, result.ExitCode);
+        Assert.Equal("error", JsonDocument.Parse(result.Output).RootElement.GetProperty("status").GetString());
+        Assert.Empty(result.Prompt);
+        Assert.Equal(0, lights.ConnectCount);
+        Assert.Empty(lights.Colors);
+    }
+
     [Fact]
     public async Task JsonSimulation_RejectsDurationBelowOneTenthSecondBeforeLighting()
     {

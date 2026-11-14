@@ -1,5 +1,7 @@
 # Arctic Minimal independent finish review
 
+Historical source/capture review from 2026-10-03. Its source-build verdict predates the separate [1.2.0 release validation](2026-10-03-release-1.2.0.md); the original observations and exclusions below are retained.
+
 ## 1. Disposition
 
 **ship** — final bounded verdict, 2026-10-03. F1, F2, K1, E1, and E2 are resolved at the scope of the original review. The final pass checked the remaining F1 sidebar route and its corrected-build verification; the previous resolved findings and visual packet carry forward. This verdict scores the listed fixes and evidence, not a new whole-surface audit or physical-hardware acceptance.

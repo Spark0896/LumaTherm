@@ -28,12 +28,14 @@ public sealed class GitHubReleaseFeed : IReleaseFeed, IDisposable
     public async Task<ReleaseInfo> GetLatestStableAsync(CancellationToken cancellationToken)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
+        using var requestCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        requestCancellation.CancelAfter(_client.Timeout);
         using var request = new HttpRequestMessage(HttpMethod.Get, LatestReleaseUri);
-        request.Headers.UserAgent.Add(new ProductInfoHeaderValue("LumaTherm", "1.2.0"));
-        using var response = await _client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
+        request.Headers.UserAgent.Add(new ProductInfoHeaderValue("LumaTherm", "1.2.1"));
+        using var response = await _client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, requestCancellation.Token)
             .ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
-        var payload = await ReadBoundedAsync(response.Content, cancellationToken).ConfigureAwait(false);
+        var payload = await ReadBoundedAsync(response.Content, requestCancellation.Token).ConfigureAwait(false);
 
         GitHubReleaseDocument? document;
         try

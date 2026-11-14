@@ -98,7 +98,7 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
         OpenLightingSettingsCommand = new RelayCommand(() =>
         {
             try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("ms-settings:personalization-lighting") { UseShellExecute = true }); }
-            catch (Exception) { SetValidation("Validation.OpenWindowsSettingsFailed"); }
+            catch (Exception) { SetValidation("Validation.OpenLightingSettingsFailed"); }
         });
         PickSelectedColorCommand = new AsyncRelayCommand(PickSelectedColorAsync, () => SelectedPoint is not null, _ => SetValidation("Validation.ColorPickFailed"));
         DiscoverLightingDevicesCommand = new AsyncRelayCommand(DiscoverLightingDevicesAsync);
@@ -582,7 +582,7 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
     private void ApplySnapshot(RuntimeSnapshot snapshot)
     {
         _lastSnapshot = snapshot;
-        TrayTemperaturePreview = snapshot.Temperature is { } reading
+        TrayTemperaturePreview = snapshot.LiveTemperature is { } reading
             ? string.Create(CultureInfo.InvariantCulture, $"{reading.Celsius:0}°C")
             : "—";
         GpuName = snapshot.Temperature?.DeviceName ?? _localization.Get("Runtime.GpuNotFound");
@@ -596,6 +596,17 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
         if (snapshot.LightingDevice is { IsPresent: true } connected)
         {
             SetLightingHardwareStatus(connected.IsAvailable ? "Settings.HardwareConnected" : "Settings.HardwareWaiting");
+        }
+        else if (snapshot.Status == RuntimeStatus.LightingUnavailable)
+        {
+            SetLightingHardwareStatus(SelectedLightingDeviceId is null
+                ? "Settings.HardwareNotFound"
+                : "Settings.HardwareSavedUnavailable");
+        }
+        else if (snapshot.Status is RuntimeStatus.Disabled or RuntimeStatus.Suspended &&
+            _lightingHardwareStatusKey is "Settings.HardwareConnected" or "Settings.HardwareWaiting")
+        {
+            SetLightingHardwareStatus("Settings.HardwareUnchecked");
         }
     }
 

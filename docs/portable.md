@@ -1,18 +1,18 @@
 # Portable deployment
 
-The portable archive is intentionally not a registration-free executable. It contains `app\LumaTherm.exe`, `LumaTherm-1.2.0-sparse.msix`, `LumaTherm.cer`, registration helpers, a signed payload anchor, and `SHA256SUMS.txt`. The sparse identity is required for Windows lighting integration and must be registered explicitly.
+The portable archive is intentionally not a registration-free executable. It contains `app\LumaTherm.exe`, `LumaTherm-1.2.1-sparse.msix`, `LumaTherm.cer`, registration helpers, a signed payload anchor, and `SHA256SUMS.txt`. The sparse identity is required for Windows lighting integration and must be registered explicitly.
 
 ## Install from the archive
 
-1. Download `LumaTherm-1.2.0-portable-win-x64.zip` and the release `SHA256SUMS.txt` from [GitHub Releases](https://github.com/Spark0896/LumaTherm/releases).
+1. Download `LumaTherm-1.2.1-portable-win-x64.zip` and the release `SHA256SUMS.txt` from [GitHub Releases](https://github.com/Spark0896/LumaTherm/releases).
 2. Before extraction, from the download directory, verify the archive hash:
 
 ```powershell
-Get-FileHash .\LumaTherm-1.2.0-portable-win-x64.zip -Algorithm SHA256
+Get-FileHash .\LumaTherm-1.2.1-portable-win-x64.zip -Algorithm SHA256
 Get-Content .\SHA256SUMS.txt
 ```
 
-Compare the result with the line named `LumaTherm-1.2.0-portable-win-x64.zip`; stop if it differs.
+Compare the result with the line named `LumaTherm-1.2.1-portable-win-x64.zip`; stop if it differs.
 3. Extract the zip to a permanent local folder. Do not use a temporary download directory, removable media you expect to move, or a path that will later be renamed.
 4. In an elevated PowerShell in the extracted folder, verify its internal hashes and register it:
 
@@ -21,7 +21,7 @@ Get-Content .\SHA256SUMS.txt
 .\Register-LumaTherm.ps1 -ConfirmCertificateImport
 ```
 
-The helper verifies all internal checksums, package and executable signatures, the signed payload anchor, exact identity metadata, and the external location. If the certificate is not already trusted, it imports the bundled public certificate to `LocalMachine\Root` (Trusted Root Certification Authorities) only after explicit confirmation. No private key is imported. Administrative elevation is required for that import.
+The helper verifies all internal checksums, package and executable signatures, the signed payload anchor, exact identity metadata, and the external location. If the certificate is not already trusted, it imports the bundled public certificate to `LocalMachine\Root` (Trusted Root Certification Authorities) only after explicit confirmation. No private key is imported. Administrative elevation is required for that import. Elevate PowerShell for the same Windows administrator account that will run LumaTherm; using another account's credentials registers the per-user lighting identity and preferences for that other account. Standard-user deployment is unsupported by this flow. Unregister from the same account used for registration.
 
 ## Run, move, and remove
 

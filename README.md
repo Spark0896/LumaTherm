@@ -41,13 +41,13 @@ Actual captures of the current Arctic redesign in English. The [Russian README](
 
 ## Get started
 
-**Version 1.2.0:** the Arctic redesign is included in the [setup and portable release](https://github.com/Spark0896/LumaTherm/releases/tag/v1.2.0). Upgrading preserves your saved preferences and custom profile.
+**Version 1.2.1:** the Arctic redesign is included in the [setup and portable release](https://github.com/Spark0896/LumaTherm/releases/tag/v1.2.1). Upgrading preserves your saved preferences and custom profile.
 
 1. Download the setup and `SHA256SUMS.txt` from [GitHub Releases](https://github.com/Spark0896/LumaTherm/releases), then [verify SHA-256](docs/installation.md#verify-sha-256).
-2. Run setup as Administrator and explicitly approve import of its bundled **public** certificate. This registers the Windows lighting identity; no private key is imported.
-3. Leave **Launch LumaTherm** selected at the end of setup. A fresh installation starts thermal synchronization automatically and selects a compatible LampArray device.
+2. Double-click setup from the administrator account that will run LumaTherm; approve Windows elevation for that same account and import of the bundled **public** certificate. This registers the Windows lighting identity; no private key is imported. See the [installation account requirements](docs/installation.md#install).
+3. On a fresh installation, thermal sync starts automatically and selects a compatible LampArray device. **Open LumaTherm** opens the dashboard after setup.
 4. Setup enables Windows Dynamic Lighting and gives LumaTherm background priority automatically. Use **Windows lighting settings** to customize that order later.
-5. Save your work and accept the proposed Windows restart to start a new lighting session with the saved priority.
+5. Setup checks color commands and starts monitoring in the tray. If Windows still withholds lighting control, setup offers a restart.
 
 New installations enable **Start with Windows** and open in the tray on login. Existing preferences are preserved when upgrading. If Windows has disabled the task, use **Windows startup settings** to allow it again. If another app takes lighting control, LumaTherm waits and resumes automatically without an unavailable-device warning.
 

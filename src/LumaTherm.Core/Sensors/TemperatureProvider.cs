@@ -1,3 +1,5 @@
+using System.Runtime.ExceptionServices;
+
 namespace LumaTherm.Core.Sensors;
 
 public sealed class TemperatureProvider : ITemperatureProvider
@@ -11,10 +13,22 @@ public sealed class TemperatureProvider : ITemperatureProvider
     {
         foreach (var source in _sources)
         {
-            var reading = await source.TryReadAsync(cancellationToken);
-            if (reading is not null)
+            cancellationToken.ThrowIfCancellationRequested();
+            try
             {
-                return reading;
+                var reading = await source.TryReadAsync(cancellationToken).ConfigureAwait(false);
+                if (reading is not null)
+                {
+                    return reading;
+                }
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception)
+            {
+                // A failed hardware source must not prevent reading the next one.
             }
         }
 
@@ -23,9 +37,27 @@ public sealed class TemperatureProvider : ITemperatureProvider
 
     public async ValueTask DisposeAsync()
     {
+        List<Exception>? failures = null;
         foreach (var source in _sources)
         {
-            await source.DisposeAsync();
+            try
+            {
+                await source.DisposeAsync().ConfigureAwait(false);
+            }
+            catch (Exception exception)
+            {
+                (failures ??= []).Add(exception);
+            }
+        }
+
+        if (failures is { Count: 1 })
+        {
+            ExceptionDispatchInfo.Capture(failures[0]).Throw();
+        }
+
+        if (failures is { Count: > 1 })
+        {
+            throw new AggregateException(failures);
         }
     }
 }

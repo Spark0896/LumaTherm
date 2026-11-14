@@ -246,6 +246,27 @@ public sealed class LampArrayLightingControllerTests
     }
 
     [Fact]
+    public async Task DevicesChanged_WhenRemovedDeviceCannotBeDisabled_StillClearsConnectionAndNotifies()
+    {
+        var handle = new InMemoryLampArrayHandle("selected", "GIGABYTE Device", 8, true)
+        {
+            DisableException = new InvalidOperationException("device was unplugged"),
+        };
+        var platform = new InMemoryLampArrayPlatform(handle);
+        await using var controller = new LampArrayLightingController(platform);
+        var notifications = 0;
+        controller.DevicesChanged += (_, _) => notifications++;
+        await controller.ConnectAsync(null, TestContext.Current.CancellationToken);
+
+        var exception = Record.Exception(() => platform.Remove("selected"));
+
+        Assert.Null(exception);
+        Assert.False(controller.IsConnected);
+        Assert.Null(controller.ConnectedDevice);
+        Assert.Equal(1, notifications);
+    }
+
+    [Fact]
     public async Task ConnectAsync_DisablesTheOldHandleBeforeSwitchingDevices()
     {
         var operations = new List<string>();
@@ -277,6 +298,35 @@ public sealed class LampArrayLightingControllerTests
 
         Assert.Equal(1, handle.DisableCount);
         Assert.False(controller.IsConnected);
+    }
+
+    [Fact]
+    public async Task ReleaseAsync_RetriesADisableThatFailedWhileTheDeviceWasPresent()
+    {
+        var token = TestContext.Current.CancellationToken;
+        var handle = new InMemoryLampArrayHandle("selected", "GIGABYTE Device", 8, true);
+        await using var controller = new LampArrayLightingController(new InMemoryLampArrayPlatform(handle));
+        await controller.ConnectAsync(null, token);
+        handle.DisableException = new InvalidOperationException("disable failed");
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => controller.ReleaseAsync(token));
+        Assert.True(controller.IsConnected);
+
+        handle.DisableException = null;
+        await controller.ReleaseAsync(token);
+        Assert.Equal(2, handle.DisableCount);
+        Assert.False(controller.IsConnected);
+    }
+
+    [Fact]
+    public async Task ConnectAsync_DoesNotSubstituteAnotherDeviceForAMissingSavedChoice()
+    {
+        var token = TestContext.Current.CancellationToken;
+        var other = new InMemoryLampArrayHandle("other", "Other Device", 8, true);
+        await using var controller = new LampArrayLightingController(new InMemoryLampArrayPlatform(other));
+
+        Assert.False(await controller.ConnectAsync("saved-device", token));
+        Assert.Equal(0, other.EnableCount);
     }
 
     [Fact]

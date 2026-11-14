@@ -77,6 +77,27 @@ public sealed class SingleInstanceCoordinatorTests
     }
 
     [Fact]
+    public async Task HeldOpenPartialClient_TimesOutSoLaterShowCanConnect()
+    {
+        var name = $"LumaTherm-Test-{Guid.NewGuid():N}";
+        using var timeout = CreateTimeout();
+        await using var owner = new SingleInstanceCoordinator(name);
+        await using var sender = new SingleInstanceCoordinator(name);
+        var signaled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        owner.ActivationRequested += (_, _) => signaled.TrySetResult();
+        Assert.True(await owner.TryAcquireAsync(timeout.Token));
+        Assert.False(await sender.TryAcquireAsync(timeout.Token));
+        await using var heldOpen = new NamedPipeClientStream(".", $"{name}.Activation", PipeDirection.Out, PipeOptions.Asynchronous);
+        await heldOpen.ConnectAsync(timeout.Token);
+        await heldOpen.WriteAsync("S"u8.ToArray(), timeout.Token);
+        await heldOpen.FlushAsync(timeout.Token);
+
+        await sender.SignalActivationAsync(timeout.Token);
+
+        await signaled.Task.WaitAsync(timeout.Token);
+    }
+
+    [Fact]
     public async Task RepeatedSignals_AreSerialized_AndHandlerFailuresAreObserved()
     {
         var name = $"LumaTherm-Test-{Guid.NewGuid():N}";

@@ -136,13 +136,14 @@ public sealed class MahmSnapshotParserTests
     }
 
     [Fact]
-    public async Task AfterburnerSource_ReturnsParsedReadingWithInjectedTimestamp()
+    public async Task AfterburnerSource_ReturnsParsedReadingWithProducerTimestamp()
     {
         var buffer = CreateValidSnapshot();
         WriteSingle(buffer, 32 + 1300, 67f);
         Encoding.ASCII.GetBytes("GPU 0\0").CopyTo(buffer, 32 + 1324 + 520);
         var timestamp = new DateTimeOffset(2026, 8, 19, 12, 0, 0, TimeSpan.Zero);
-        await using var source = new AfterburnerTemperatureSource(new SnapshotReader(buffer), new FixedTimeProvider(timestamp));
+        BinaryPrimitives.WriteInt32LittleEndian(buffer.AsSpan(20), checked((int)timestamp.ToUnixTimeSeconds()));
+        await using var source = new AfterburnerTemperatureSource(new SnapshotReader(buffer), new FixedTimeProvider(timestamp.AddSeconds(1)));
 
         var reading = await source.TryReadAsync(CancellationToken.None);
 
@@ -151,6 +152,37 @@ public sealed class MahmSnapshotParserTests
         Assert.Equal("MSI Afterburner", reading.SourceName);
         Assert.Equal("GPU 0", reading.DeviceName);
         Assert.Equal(timestamp, reading.Timestamp);
+    }
+
+    [Fact]
+    public async Task AfterburnerSource_WhenProducerStopsPolling_ReturnsNoReadingForFrozenSnapshot()
+    {
+        var buffer = CreateValidSnapshot();
+        WriteSingle(buffer, 32 + 1300, 67f);
+        var timestamp = new DateTimeOffset(2026, 10, 17, 12, 0, 0, TimeSpan.Zero);
+        BinaryPrimitives.WriteInt32LittleEndian(buffer.AsSpan(20), checked((int)timestamp.ToUnixTimeSeconds()));
+        var clock = new FixedTimeProvider(timestamp);
+        await using var source = new AfterburnerTemperatureSource(new SnapshotReader(buffer), clock);
+        Assert.NotNull(await source.TryReadAsync(CancellationToken.None));
+
+        clock.UtcNow = timestamp.AddSeconds(10);
+
+        Assert.Null(await source.TryReadAsync(CancellationToken.None));
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    [InlineData(1_792_238_401)]
+    public async Task AfterburnerSource_RejectsInvalidOrFuturePollingTimes(int pollingTime)
+    {
+        var buffer = CreateValidSnapshot();
+        WriteSingle(buffer, 32 + 1300, 67f);
+        BinaryPrimitives.WriteInt32LittleEndian(buffer.AsSpan(20), pollingTime);
+        var timestamp = new DateTimeOffset(2026, 10, 17, 12, 0, 0, TimeSpan.Zero);
+        await using var source = new AfterburnerTemperatureSource(new SnapshotReader(buffer), new FixedTimeProvider(timestamp));
+
+        Assert.Null(await source.TryReadAsync(CancellationToken.None));
     }
 
     private static byte[] CreateValidSnapshot()
@@ -183,6 +215,7 @@ public sealed class MahmSnapshotParserTests
 
     private sealed class FixedTimeProvider(DateTimeOffset utcNow) : TimeProvider
     {
-        public override DateTimeOffset GetUtcNow() => utcNow;
+        public DateTimeOffset UtcNow { get; set; } = utcNow;
+        public override DateTimeOffset GetUtcNow() => UtcNow;
     }
 }

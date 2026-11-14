@@ -23,7 +23,7 @@ public sealed class GitHubReleaseFeedTests
 
         Assert.NotNull(captured);
         Assert.Equal("https://api.github.com/repos/Spark0896/LumaTherm/releases/latest", captured.RequestUri!.AbsoluteUri);
-        Assert.Equal("LumaTherm/1.2.0", Assert.Single(captured.Headers.UserAgent).ToString());
+        Assert.Equal("LumaTherm/1.2.1", Assert.Single(captured.Headers.UserAgent).ToString());
         Assert.Equal(TimeSpan.FromSeconds(5), client.Timeout);
         Assert.Equal("1.2.0", release.Version.ToString());
         Assert.Equal("https://github.com/Spark0896/LumaTherm/releases/tag/v1.2.0", release.ReleasePageUrl.AbsoluteUri);
@@ -127,6 +127,39 @@ public sealed class GitHubReleaseFeedTests
     }
 
     [Fact]
+    public async Task GetLatestStableAsync_TimesOutWhenResponseBodyStopsArriving()
+    {
+        using var stream = new BlockingReadStream();
+        using var client = new HttpClient(new StubHandler((_, _) => Task.FromResult(
+            new HttpResponseMessage(HttpStatusCode.OK) { Content = new StreamContent(stream) })));
+        using var feed = new GitHubReleaseFeed(client);
+        client.Timeout = TimeSpan.FromMilliseconds(100);
+        using var callerCancellation = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+
+        var request = feed.GetLatestStableAsync(callerCancellation.Token);
+        await stream.ReadStarted.Task.WaitAsync(callerCancellation.Token);
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => request);
+        Assert.False(callerCancellation.IsCancellationRequested);
+    }
+
+    [Fact]
+    public async Task GetLatestStableAsync_HonorsCallerCancellationWhileReadingResponseBody()
+    {
+        using var stream = new BlockingReadStream();
+        using var client = new HttpClient(new StubHandler((_, _) => Task.FromResult(
+            new HttpResponseMessage(HttpStatusCode.OK) { Content = new StreamContent(stream) })));
+        using var feed = new GitHubReleaseFeed(client);
+        using var callerCancellation = new CancellationTokenSource();
+
+        var request = feed.GetLatestStableAsync(callerCancellation.Token);
+        await stream.ReadStarted.Task.WaitAsync(TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken);
+        callerCancellation.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => request.WaitAsync(TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
     public async Task GetLatestStableAsync_RejectsMalformedJson()
     {
         using var feed = FeedReturning(JsonResponse("{ definitely-not-json"));
@@ -184,5 +217,28 @@ public sealed class GitHubReleaseFeedTests
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
             send(request, cancellationToken);
+    }
+
+    private sealed class BlockingReadStream : Stream
+    {
+        public TaskCompletionSource ReadStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => throw new NotSupportedException();
+        public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+
+        public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            ReadStarted.TrySetResult();
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            return 0;
+        }
+
+        public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+        public override void Flush() => throw new NotSupportedException();
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
     }
 }

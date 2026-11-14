@@ -2,16 +2,16 @@
 
 ## Purpose
 
-This document separates the implemented software contract from evidence produced by manual hardware acceptance. It does not manufacture device observations, screenshots, SHA-256 values, install results, or release-publication claims.
+This document separates the implemented software contract from evidence produced by manual hardware acceptance. The dated observations below describe the historical 1.1.0 session. The later [1.2.0 release record](qa/2026-10-03-release-1.2.0.md) records its separate evidence and outstanding hardware checks. Source changes or automated tests do not update those observations.
 
 ## Safe read-only discovery
 
-These commands may inspect local state but do not take lighting ownership or set a color:
+From a source checkout with the pinned SDK, run these commands from the repository root. They may inspect local state but do not take lighting ownership or set a color. A local `.dotnet\dotnet.exe` can replace `dotnet` when present:
 
 ```powershell
-& .\.dotnet\dotnet.exe run --project tools\LumaTherm.Smoke -c Release -- sensor --json
-& .\.dotnet\dotnet.exe run --project tools\LumaTherm.Smoke -c Release -- sensor --skip-nvml --json
-& .\.dotnet\dotnet.exe run --project tools\LumaTherm.Smoke -c Release -- lights --json
+dotnet run --project tools\LumaTherm.Smoke -c Release -- sensor --json
+dotnet run --project tools\LumaTherm.Smoke -c Release -- sensor --skip-nvml --json
+dotnet run --project tools\LumaTherm.Smoke -c Release -- lights --json
 ```
 
 Capture the actual command, timestamp, operating-system version, anonymized device result where appropriate, and exit code at the time of a validation session. A missing MSI Afterburner reading is actionable only when that optional fallback was deliberately configured and expected.

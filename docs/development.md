@@ -10,7 +10,7 @@ dotnet build LumaTherm.sln -c Release --no-restore -p:NuGetAudit=false
 dotnet test LumaTherm.sln -c Release --no-build -p:NuGetAudit=false
 ```
 
-The repository can also use its local SDK bootstrap when present:
+The repository can also use its local SDK bootstrap when present. Otherwise use `dotnet` from the installed SDK; the same substitution applies to the diagnostic commands below and in troubleshooting/hardware-validation guides:
 
 ```powershell
 & .\.dotnet\dotnet.exe test .\tests\LumaTherm.Packaging.Tests -c Release -p:NuGetAudit=false

@@ -8,6 +8,8 @@ namespace LumaTherm.Core.Runtime;
 public sealed class ThermalRuntime : IThermalRuntime
 {
     private static readonly TimeSpan RenderInterval = TimeSpan.FromMilliseconds(100);
+    public const string DeviceNotFoundMessage = "No lighting device is available.";
+    private static readonly TimeSpan LightingFailureRetryInterval = TimeSpan.FromSeconds(1);
     private static readonly TimeSpan SensorInterval = TimeSpan.FromMilliseconds(500);
     private static readonly TimeSpan MissingHoldDuration = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan[] MissingRetryDelays =
@@ -46,6 +48,9 @@ public sealed class ThermalRuntime : IThermalRuntime
     private int _missingRetryIndex;
     private bool _releasedForMissing;
     private bool _releasePending;
+    private bool _lightingReconnectPending;
+    private DateTimeOffset? _lightingRetryAt;
+    private string? _lightingFailure;
     private bool _suspended;
     private bool _stopped;
     private bool _sourcesDisposed;
@@ -234,6 +239,13 @@ public sealed class ThermalRuntime : IThermalRuntime
                 await _processGate.WaitAsync(CancellationToken.None).ConfigureAwait(false);
                 try
                 {
+                    if (!string.Equals(merged.PreferredLightingDeviceId, previousSettings.PreferredLightingDeviceId, StringComparison.Ordinal)
+)
+                    {
+                        _lightingReconnectPending = _lightingController.IsConnected;
+                        _lightingRetryAt = null;
+                    }
+
                     if (!merged.Profile.ContentEquals(previousSettings.Profile))
                     {
                         _colorEngine.UpdateProfile(merged.Profile);
@@ -350,7 +362,14 @@ public sealed class ThermalRuntime : IThermalRuntime
             _stopped = true;
             _testSessionActive = false;
             _activeTestSession = null;
-            await StopLoopNoLockAsync().ConfigureAwait(false);
+            try
+            {
+                await StopLoopNoLockAsync().ConfigureAwait(false);
+            }
+            catch (Exception exception)
+            {
+                (failures ??= []).Add(exception);
+            }
             await _processGate.WaitAsync(CancellationToken.None).ConfigureAwait(false);
             try
             {
@@ -474,13 +493,12 @@ public sealed class ThermalRuntime : IThermalRuntime
         {
             if (now - missingSince >= MissingHoldDuration)
             {
-                string? releaseMessage = null;
-                if (!_releasedForMissing)
+                if (!_releasedForMissing && (_lightingRetryAt is null || now >= _lightingRetryAt))
                 {
-                    _releasedForMissing = true;
                     try
                     {
                         await ReleaseLightingAsync(cancellationToken).ConfigureAwait(false);
+                        _releasedForMissing = true;
                     }
                     catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                     {
@@ -488,7 +506,8 @@ public sealed class ThermalRuntime : IThermalRuntime
                     }
                     catch (Exception exception)
                     {
-                        releaseMessage = exception.Message;
+                        _lightingFailure = exception.Message;
+                        _lightingRetryAt = now + LightingFailureRetryInterval;
                     }
                 }
 
@@ -497,13 +516,16 @@ public sealed class ThermalRuntime : IThermalRuntime
                     _targetReading,
                     null,
                     _targetRange,
-                    releaseMessage ?? sensorMessage ?? "Temperature sources are unavailable.");
+                    _lightingFailure ?? sensorMessage ?? "Temperature sources are unavailable.");
             }
 
-            if (_displayedColor is not null)
+            if (_displayedColor is not null && _lightingController.ConnectedDevice is { IsPresent: true, IsAvailable: true })
             {
                 return CreateSnapshot(RuntimeStatus.HoldingLastColor, _targetReading, _displayedColor, _targetRange, sensorMessage);
             }
+
+            _displayedColor = null;
+            _lightingGate.Reset();
 
             return CreateSnapshot(RuntimeStatus.SensorUnavailable, null, null, null, sensorMessage ?? "Temperature sources are unavailable.");
         }
@@ -514,36 +536,42 @@ public sealed class ThermalRuntime : IThermalRuntime
         }
 
         var nextColor = _colorEngine.Step(renderTemperature.Value, renderElapsed);
+        // A metadata fault is surfaced as a fault snapshot by the loop. It
+        // does not invalidate a handle or delay the next metadata sample.
+        var connectedDevice = _lightingController.ConnectedDevice;
         try
         {
+            if (_lightingRetryAt is { } retryAt && now < retryAt)
+            {
+                return CreateSnapshot(RuntimeStatus.LightingUnavailable, _targetReading, null, _targetRange, _lightingFailure);
+            }
+
+            _lightingRetryAt = null;
+            if (_lightingReconnectPending)
+            {
+                await ReleaseLightingAsync(cancellationToken).ConfigureAwait(false);
+            }
+
             if (!_lightingController.IsConnected)
             {
                 if (!await _lightingController.ConnectAsync(_settings.PreferredLightingDeviceId, cancellationToken).ConfigureAwait(false))
                 {
-                    return CreateSnapshot(RuntimeStatus.LightingUnavailable, _targetReading, _displayedColor, _targetRange, "No lighting device is available.");
+                    return DelayLightingRetry(now, DeviceNotFoundMessage);
                 }
 
                 _lightingGate.Reset();
+                connectedDevice = _lightingController.ConnectedDevice;
             }
 
-            if (_lightingController.ConnectedDevice is { IsAvailable: false, IsPresent: true })
+            if (connectedDevice is { IsAvailable: false, IsPresent: true })
             {
-                _lightingGate.Reset();
-                return CreateSnapshot(RuntimeStatus.LightingWaiting, _targetReading, _displayedColor, _targetRange, null);
+                return WaitForLightingControl();
             }
 
             if (_lightingGate.ShouldSend(nextColor, now))
             {
-                try
-                {
-                    await _lightingController.SetColorAsync(nextColor, cancellationToken).ConfigureAwait(false);
-                    _displayedColor = nextColor;
-                }
-                catch
-                {
-                    _lightingGate.Reset();
-                    throw;
-                }
+                await _lightingController.SetColorAsync(nextColor, cancellationToken).ConfigureAwait(false);
+                _displayedColor = nextColor;
             }
 
             if (_testTemperature is not null)
@@ -556,18 +584,34 @@ public sealed class ThermalRuntime : IThermalRuntime
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
+            _lightingGate.Reset();
             throw;
         }
         catch (LightingControlUnavailableException)
         {
-            _lightingGate.Reset();
-            return CreateSnapshot(RuntimeStatus.LightingWaiting, _targetReading, _displayedColor, _targetRange, null);
+            return WaitForLightingControl();
         }
         catch (Exception exception)
         {
-            _lightingGate.Reset();
-            return CreateSnapshot(RuntimeStatus.LightingUnavailable, _targetReading, _displayedColor, _targetRange, exception.Message);
+            _lightingReconnectPending = true;
+            return DelayLightingRetry(now, exception.Message);
         }
+    }
+
+    private RuntimeSnapshot WaitForLightingControl()
+    {
+        _lightingGate.Reset();
+        _displayedColor = null;
+        return CreateSnapshot(RuntimeStatus.LightingWaiting, _targetReading, null, _targetRange, null);
+    }
+
+    private RuntimeSnapshot DelayLightingRetry(DateTimeOffset now, string message)
+    {
+        _lightingGate.Reset();
+        _displayedColor = null;
+        _lightingFailure = message;
+        _lightingRetryAt = now + LightingFailureRetryInterval;
+        return CreateSnapshot(RuntimeStatus.LightingUnavailable, _targetReading, null, _targetRange, message);
     }
 
     private bool ShouldPollSensor(DateTimeOffset now)
@@ -626,7 +670,7 @@ public sealed class ThermalRuntime : IThermalRuntime
                     }
                     catch (Exception exception)
                     {
-                        Publish(CreateSnapshot(RuntimeStatus.Faulted, _targetReading, _displayedColor, _targetRange, exception.Message));
+                        Publish(CreateFaultSnapshot(exception));
                     }
                 }
                 finally
@@ -704,9 +748,19 @@ public sealed class ThermalRuntime : IThermalRuntime
                 _colorEngine.UpdateProfile(updatedProfile);
             }
 
-            return loopStopFailure is null
-                ? CreateSnapshot(RuntimeStatus.Disabled, null, null, null, releaseMessage)
-                : CreateFaultSnapshot(loopStopFailure, releaseMessage);
+            if (loopStopFailure is not null)
+            {
+                return CreateFaultSnapshot(loopStopFailure, releaseMessage);
+            }
+
+            try
+            {
+                return CreateSnapshot(RuntimeStatus.Disabled, null, null, null, releaseMessage);
+            }
+            catch (Exception exception)
+            {
+                return CreateFaultSnapshot(exception, releaseMessage);
+            }
         }
         finally
         {
@@ -732,6 +786,9 @@ public sealed class ThermalRuntime : IThermalRuntime
     private async Task ReleaseLightingAsync(CancellationToken cancellationToken)
     {
         await _lightingController.ReleaseAsync(cancellationToken).ConfigureAwait(false);
+        _lightingReconnectPending = false;
+        _lightingRetryAt = null;
+        _lightingFailure = null;
         _lightingGate.Reset();
         _displayedColor = null;
     }

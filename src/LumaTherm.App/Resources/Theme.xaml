@@ -95,10 +95,10 @@
             </ControlTemplate.Triggers>
         </ControlTemplate></Setter.Value></Setter>
     </Style>
-    <Style x:Key="ApplicationToggleStyle" TargetType="CheckBox">
+    <Style x:Key="ApplicationToggleStyle" TargetType="ToggleButton">
         <Setter Property="Width" Value="44" /><Setter Property="Height" Value="28" />
         <Setter Property="FocusVisualStyle" Value="{StaticResource KeyboardFocusStyle}" />
-        <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="CheckBox">
+        <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ToggleButton">
             <Border x:Name="SwitchTrack" Height="24" Background="#50606D" CornerRadius="12" Padding="3">
                 <Ellipse x:Name="SwitchThumb" Width="18" Height="18" Fill="#EEF6FD" HorizontalAlignment="Left" />
             </Border>

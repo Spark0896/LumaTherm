@@ -1,5 +1,7 @@
 # Arctic redesign: verification record
 
+Historical source-build record. The subsequent [1.2.0 release validation](2026-10-03-release-1.2.0.md) records the later installation and publication scope; the observations below retain their original evidence boundary.
+
 Date: 2026-10-03. Scope: current Windows WPF source, all user-facing surfaces and
 their function paths. The user selected the Arctic Minimal reference and explicitly
 requested factory green instead of magenta. Impeccable 4.5.0 guided design and an

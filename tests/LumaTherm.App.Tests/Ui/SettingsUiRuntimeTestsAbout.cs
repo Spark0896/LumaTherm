@@ -36,7 +36,7 @@ public sealed class SettingsUiRuntimeTestsAbout(ThermalCoreStaFixture sta)
                 Assert.Equal(Visibility.Visible, aboutContent.Visibility);
                 Assert.Equal(Visibility.Visible, indicator.Visibility);
                 Assert.Equal(Visibility.Collapsed, Assert.IsAssignableFrom<FrameworkElement>(shell.FindName("DashboardContent")).Visibility);
-                Assert.Contains("1.2.0", FlattenText(aboutContent), StringComparison.Ordinal);
+                Assert.Contains("1.2.1", FlattenText(aboutContent), StringComparison.Ordinal);
                 Assert.Contains("бесплат", FlattenText(aboutContent), StringComparison.OrdinalIgnoreCase);
                 Assert.Contains("открытым исходным кодом", FlattenText(aboutContent), StringComparison.OrdinalIgnoreCase);
                 Assert.Contains("MIT", FlattenText(aboutContent), StringComparison.Ordinal);

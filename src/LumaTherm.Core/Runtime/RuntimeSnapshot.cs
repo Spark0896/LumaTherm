@@ -12,4 +12,8 @@ public sealed record RuntimeSnapshot(
     LightingDeviceInfo? LightingDevice,
     string? Message,
     DateTimeOffset Timestamp,
-    bool IsModeEnabled = false);
+    bool IsModeEnabled = false)
+{
+    public TemperatureReading? LiveTemperature => Status is RuntimeStatus.SensorUnavailable
+        or RuntimeStatus.HoldingLastColor or RuntimeStatus.Suspended or RuntimeStatus.Faulted ? null : Temperature;
+}

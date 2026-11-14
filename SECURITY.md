@@ -10,4 +10,4 @@ Reports are triaged on a best-effort basis. Please allow time for acknowledgemen
 
 ## Release trust
 
-Only obtain binaries from the project's GitHub Releases page and verify their SHA-256 values against the adjacent `SHA256SUMS.txt`. The portable flow may import a public certificate into `LocalMachine\TrustedPeople`; it never needs a private key. Treat an unexpected certificate prompt, mismatched signer, checksum mismatch, or changed artifact name as a reason to stop.
+Only obtain binaries from the project's GitHub Releases page and verify their SHA-256 values against the adjacent `SHA256SUMS.txt`. Setup and portable registration may import the bundled public certificate into `LocalMachine\Root` (Trusted Root Certification Authorities) after explicit approval; they never need to import a private key. Treat an unexpected certificate prompt, mismatched signer, checksum mismatch, or changed artifact name as a reason to stop.

@@ -81,9 +81,8 @@ public partial class TemperatureRing : UserControl
         var sweep = 270 * fraction;
         if (sweep > 0.01) DrawArc(drawingContext, center, radius, 135, sweep, valuePen);
 
-        var marker = PointOnCircle(center, radius, 135 + sweep);
         var dpi = VisualTreeHelper.GetDpi(this).PixelsPerDip;
-        var valueText = double.IsFinite(Temperature) ? $"{Temperature:0.#}°C" : "—°C";
+        var valueText = double.IsFinite(Temperature) ? $"{Temperature:0.#}°C" : "—";
         DrawCenteredText(drawingContext, valueText, center.Y - 23, 26, FontWeights.SemiBold, Color.FromRgb(0xEE, 0xF4, 0xF8), dpi);
         DrawCenteredText(drawingContext, NowLabel, center.Y + 13, 12, FontWeights.Normal, Color.FromRgb(0xAE, 0xBA, 0xC4), dpi);
     }

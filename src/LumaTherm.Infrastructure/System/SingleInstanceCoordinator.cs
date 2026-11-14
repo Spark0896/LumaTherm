@@ -6,6 +6,7 @@ namespace LumaTherm.Infrastructure.System;
 public sealed class SingleInstanceCoordinator : IAsyncDisposable
 {
     private const int MaximumMessageBytes = 16;
+    private static readonly TimeSpan ClientReadTimeout = TimeSpan.FromSeconds(1);
     private static readonly TimeSpan ShutdownTimeout = TimeSpan.FromSeconds(2);
     private readonly object _sync = new();
     private readonly string _mutexName;
@@ -166,7 +167,9 @@ public sealed class SingleInstanceCoordinator : IAsyncDisposable
             try
             {
                 await server.WaitForConnectionAsync(cancellationToken);
-                if (await ReadExactShowAsync(server, cancellationToken))
+                using var readCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                readCancellation.CancelAfter(ClientReadTimeout);
+                if (await ReadExactShowAsync(server, readCancellation.Token))
                 {
                     RaiseActivationRequested();
                 }
@@ -174,6 +177,10 @@ public sealed class SingleInstanceCoordinator : IAsyncDisposable
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
                 break;
+            }
+            catch (OperationCanceledException)
+            {
+                // A silent or partial client must not hold the activation server indefinitely.
             }
             catch (Exception exception)
             {

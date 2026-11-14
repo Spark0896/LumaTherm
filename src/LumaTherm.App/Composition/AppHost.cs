@@ -28,6 +28,7 @@ public sealed class AppHost : IAsyncDisposable
     private bool _sentinelBegun;
     private bool _cleanupCompleted;
     private bool _stopRequested;
+    private bool _pendingActivation;
     private string? _lastSensorSource;
     private string? _lastLampId;
     private RuntimeStatus? _lastRuntimeStatus;
@@ -119,6 +120,13 @@ public sealed class AppHost : IAsyncDisposable
                 _tray = _services.CreateTray(_ui, _runtime);
                 _power = _services.CreatePower(_runtime);
                 _discovery = _services.CreateDiscovery(_runtime, _ui);
+                bool activate;
+                lock (_sync)
+                {
+                    activate = _pendingActivation && !_stopRequested;
+                    _pendingActivation = false;
+                }
+                if (activate) _ui.ShowRestoreActivate();
             }, cancellationToken).ConfigureAwait(false);
             var warning = priorCrash
                 ? _services.Localize("Notification.PreviousSessionCrashed")
@@ -274,7 +282,12 @@ public sealed class AppHost : IAsyncDisposable
     {
         lock (_sync)
         {
-            if (_stopRequested || _cleanupCompleted || _ui is null) return;
+            if (_stopRequested || _cleanupCompleted) return;
+            if (_ui is null)
+            {
+                _pendingActivation = true;
+                return;
+            }
         }
         try
         {
@@ -300,6 +313,7 @@ public sealed class AppHost : IAsyncDisposable
     {
         string? sensorEvent = null;
         string? lampEvent = null;
+        string? lampControlEvent = null;
         string? runtimeEvent = null;
         lock (_sync)
         {
@@ -319,13 +333,21 @@ public sealed class AppHost : IAsyncDisposable
                 lampEvent = lampId is null ? "lamp.disconnected" : "lamp.connected";
                 _lastLampId = lampId;
             }
+            if (snapshot.Status == RuntimeStatus.LightingUnavailable && _lastRuntimeStatus != RuntimeStatus.LightingUnavailable)
+            {
+                lampControlEvent = "lamp.unavailable";
+            }
+            else if (snapshot.Status == RuntimeStatus.Faulted && _lastRuntimeStatus != RuntimeStatus.Faulted)
+            {
+                lampControlEvent = "runtime.faulted";
+            }
             else if (snapshot.Status == RuntimeStatus.LightingWaiting && _lastRuntimeStatus != RuntimeStatus.LightingWaiting)
             {
-                lampEvent = "lamp.waiting";
+                lampControlEvent = "lamp.waiting";
             }
             else if (snapshot.Status == RuntimeStatus.Active && _lastRuntimeStatus == RuntimeStatus.LightingWaiting)
             {
-                lampEvent = "lamp.control-restored";
+                lampControlEvent = "lamp.control-restored";
             }
 
             if (_lastModeEnabled != snapshot.IsModeEnabled)
@@ -338,6 +360,11 @@ public sealed class AppHost : IAsyncDisposable
 
         if (sensorEvent is not null) SafeLog(sensorEvent == "sensor.failed" ? AppLogLevel.Warning : AppLogLevel.Information, sensorEvent, snapshot.Message ?? snapshot.Temperature?.SourceName ?? "Sensor state changed.");
         if (lampEvent is not null) SafeLog(AppLogLevel.Information, lampEvent, snapshot.LightingDevice?.Name ?? "LampArray released or unavailable.");
+        if (lampControlEvent is not null)
+        {
+            var level = lampControlEvent is "lamp.unavailable" or "runtime.faulted" ? AppLogLevel.Warning : AppLogLevel.Information;
+            SafeLog(level, lampControlEvent, snapshot.Message ?? snapshot.LightingDevice?.Name ?? "LampArray control changed.");
+        }
         if (runtimeEvent is not null) SafeLog(AppLogLevel.Information, runtimeEvent, "Runtime mode changed.");
     }
 
